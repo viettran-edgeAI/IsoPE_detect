@@ -1,0 +1,40 @@
+{
+  "data": {
+    "train_benign_path": "../data/cleaned/benign_train_clean.parquet",
+    "val_benign_path": "../data/cleaned/benign_val_clean.parquet",
+    "test_benign_path": "../data/cleaned/benign_test_clean.parquet",
+    "test_malware_path": "../data/cleaned/malware_test_clean.parquet",
+    "val_malware_path": "../data/cleaned/malware_val_clean.parquet"
+  },
+  "feature_selection": {
+    "variance_threshold": 0.008,
+    "top_k_list": [15, 20, 25]
+  },
+  "model": {
+    "n_estimators": [200,500, 1000],
+    "max_samples": [512, 0.4],
+    "contamination": [0.005],
+    "max_features": [0.6, 0.8, 1.0],
+    "bootstrap": [false, true],
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "thresholding": {
+    "fpr_threshold": 0.05,
+    "val_fpr_delta": 0.0,
+    "strategy": "tpr",
+    "f_beta": 1.0
+  },
+  "outputs": {
+    "report_dir": "../reports",
+    "results_dir": "../results",
+    "optimized_data_dir": "../data/optimized",
+    "results_csv": "../reports/optimization_results.csv",
+    "optimized_params_json": "../reports/optimized_params.json",
+    "optimized_features_csv": "../reports/optimized_features.csv",
+    "roc_curve_svg": "../reports/roc_curve.svg",
+    "pr_curve_svg": "../reports/pr_curve.svg",
+    "score_distribution_svg": "../reports/score_distribution.svg",
+    "score_distribution_val_svg": "../reports/score_distribution_val.svg"
+  }
+}

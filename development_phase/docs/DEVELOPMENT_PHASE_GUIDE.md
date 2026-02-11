@@ -1,0 +1,149 @@
+# Development Phase Guide: PE Malware Detection
+
+Version: 2.1
+Date: 2026-02-11
+
+## Overview
+The development phase produces the final feature set and optimized Isolation Forest model for static PE anomaly detection. The pipeline uses two programs in development_phase/src:
+- feature_extraction.py: extract raw PE features and filter them into cleaned datasets.
+- model_optimization.py: select the best feature subset, tune the model, export artifacts, and analyze malware val/test separation.
+
+All datasets at each stage (raw, cleaned, optimized) share the same feature order and columns.
+
+## Required Dataset Layout
+These directories must exist at the workspace root:
+- BENIGN_TRAIN_DATASET
+- BENIGN_VALIDATION_DATASET
+- BENIGN_TEST_DATASET
+- MALWARE_VALIDATION_DATASET
+- MALWARE_TEST_DATASET
+
+## Directory Structure
+```
+development_phase/
+  src/
+    feature_extraction.py
+    model_optimization.py
+    model_config.json
+  data/
+    raw/
+    cleaned/
+    optimized/
+  reports/
+  results/
+    final/
+  schemas/
+```
+
+## Environment Setup
+Recommended: Python 3.11+
+
+Install dependencies:
+```
+pip install lief scikit-learn pandas numpy pyarrow scipy matplotlib umap-learn
+```
+
+## Stage 1+2: Preprocessing (Raw + Cleaned)
+Script: development_phase/src/feature_extraction.py
+
+Run:
+```
+cd /home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src
+python feature_extraction.py
+```
+
+CLI parameters:
+- --workers: number of parallel workers (default: cpu_count - 1).
+- --corr-threshold: correlation pruning threshold (default: 0.95).
+- --norm-var-threshold: normalized variance threshold for continuous features (default: 1e-7).
+
+Outputs:
+- Raw datasets: development_phase/data/raw/*_raw.parquet
+- Cleaned datasets: development_phase/data/cleaned/*_clean.parquet
+- Feature schema: development_phase/schemas/feature_schema.json
+- Selected schema: development_phase/schemas/feature_schema_selected.json
+- Report: development_phase/reports/feature_selection_report.md
+
+## Stage 3: Optimization + Malware Split Analysis
+Script: development_phase/src/model_optimization.py
+
+Run:
+```
+cd /home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src
+python model_optimization.py --config model_config.json
+```
+
+This script loads the cleaned datasets, selects top-k features using Cohen's d, runs grid search over Isolation Forest parameters, and exports the final model artifacts. It also generates a malware val/test clustering analysis (UMAP and t-SNE) using the optimized datasets. If raw malware parquet files are present, it computes imphash overlap as a family proxy.
+
+### Config File: development_phase/src/model_config.json
+
+#### data
+Paths to cleaned datasets used for training and evaluation.
+- train_benign_path
+- val_benign_path
+- test_benign_path
+- test_malware_path
+- val_malware_path
+
+#### feature_selection
+Controls feature selection before model training.
+- variance_threshold: variance threshold applied with sklearn VarianceThreshold.
+- top_k_list: list of top-k values to evaluate using Cohen's d ranking.
+
+#### model
+Isolation Forest hyperparameters.
+- n_estimators: number of trees (int or list).
+- max_samples: subsample size per tree (float, int, or "auto").
+- contamination: expected anomaly rate (float or list).
+- max_features: fraction of features per tree (float).
+- bootstrap: use bootstrapping (bool).
+- random_state: RNG seed (int).
+- n_jobs: parallelism for scikit-learn (int).
+
+#### thresholding
+Controls how decision thresholds are selected.
+- fpr_threshold: max allowed FPR on validation data.
+- strategy: one of fpr | f1 | tpr | youden | model.
+- f_beta: beta for F-score when strategy is f1.
+- val_fpr_target: optional explicit FPR target on validation.
+- val_fpr_delta: if val_fpr_target is not set, uses fpr_threshold - val_fpr_delta.
+
+#### outputs
+Where artifacts and reports are written.
+- report_dir
+- results_dir
+- optimized_data_dir
+- results_csv
+- optimized_params_json
+- optimized_features_csv
+- roc_curve_svg
+- pr_curve_svg
+- score_distribution_svg
+- score_distribution_val_svg
+
+### Outputs
+- Optimized datasets: development_phase/data/optimized/*_optimized.parquet
+- Model artifacts: development_phase/results/*
+- Optimization report: development_phase/reports/optimization_results.csv
+- Plots: development_phase/reports/roc_curve.svg and pr_curve.svg
+- Malware split analysis:
+  - development_phase/reports/malware_val_test_umap.png
+  - development_phase/reports/malware_val_test_tsne.png
+  - development_phase/reports/malware_val_test_embedding.csv
+  - development_phase/reports/malware_val_test_cluster_report.md
+
+## Pipeline Run Order
+1) Preprocessing:
+```
+python feature_extraction.py
+```
+
+2) Optimization:
+```
+python model_optimization.py --config model_config.json
+```
+
+## Troubleshooting
+- If extraction fails on many files, verify LIEF can parse your PE samples.
+- If malware split plots fail, ensure matplotlib and umap-learn are installed.
+- If no configuration meets the FPR constraint, relax thresholding.fpr_threshold or expand the grid in model_config.json.

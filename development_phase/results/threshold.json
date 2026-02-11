@@ -1,0 +1,10 @@
+{
+  "threshold": 0.06468058550146027,
+  "fpr_target": 0.05,
+  "val_fpr_achieved": 0.03668069753457607,
+  "val_tpr": 1.0,
+  "test_fpr": 0.04624624624624624,
+  "test_tpr": 0.956,
+  "auc": 0.9796055655655657,
+  "threshold_strategy": "tpr"
+}

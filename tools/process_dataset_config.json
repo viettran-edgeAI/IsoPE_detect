@@ -1,0 +1,6 @@
+{
+  "input_glob": "../raw_datasets/*",
+  "target_os": "Windows",
+  "output_dir": "../datasets/BENIGN_TRAIN_DATASET",
+  "extensions_override": null
+}

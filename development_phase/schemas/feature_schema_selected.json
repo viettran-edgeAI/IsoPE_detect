@@ -1,0 +1,3838 @@
+{
+  "schema_version": "1.0",
+  "created_date": "2026-02-11",
+  "total_raw_features": 623,
+  "selected_features": 476,
+  "feature_order": [
+    "file_size",
+    "dos_e_lfanew",
+    "coff_machine",
+    "coff_num_sections",
+    "coff_characteristics",
+    "coff_char_DLL",
+    "coff_char_LARGE_ADDRESS_AWARE",
+    "coff_char_RELOCS_STRIPPED",
+    "coff_char_DEBUG_STRIPPED",
+    "opt_major_linker",
+    "opt_minor_linker",
+    "opt_sizeof_init_data",
+    "opt_sizeof_uninit_data",
+    "opt_entrypoint",
+    "opt_imagebase",
+    "opt_section_alignment",
+    "opt_file_alignment",
+    "opt_major_os_ver",
+    "opt_minor_os_ver",
+    "opt_major_subsys_ver",
+    "opt_minor_subsys_ver",
+    "opt_sizeof_image",
+    "opt_sizeof_headers",
+    "opt_checksum",
+    "opt_subsystem",
+    "opt_dll_characteristics",
+    "opt_sizeof_heap_commit",
+    "opt_dllchar_DYNAMIC_BASE",
+    "opt_dllchar_NX_COMPAT",
+    "opt_dllchar_GUARD_CF",
+    "opt_dllchar_HIGH_ENTROPY_VA",
+    "opt_dllchar_NO_SEH",
+    "checksum_matches",
+    "sec0_entropy",
+    "sec0_vsize",
+    "sec0_vr_ratio",
+    "sec0_is_exec",
+    "sec0_is_write",
+    "sec0_has_code",
+    "sec1_entropy",
+    "sec1_vsize",
+    "sec1_is_exec",
+    "sec1_has_code",
+    "sec2_entropy",
+    "sec2_vsize",
+    "sec2_rsize",
+    "sec2_characteristics",
+    "sec2_is_exec",
+    "sec3_entropy",
+    "sec3_vsize",
+    "sec3_characteristics",
+    "sec3_is_write",
+    "sec4_entropy",
+    "sec4_vsize",
+    "sec4_vr_ratio",
+    "sec4_characteristics",
+    "sec4_is_write",
+    "sec5_entropy",
+    "sec5_vsize",
+    "sec5_rsize",
+    "sec5_vr_ratio",
+    "sec5_characteristics",
+    "sec5_is_write",
+    "sec6_entropy",
+    "sec6_vsize",
+    "sec6_rsize",
+    "sec6_vr_ratio",
+    "sec6_characteristics",
+    "sec6_is_write",
+    "sec7_entropy",
+    "sec7_vsize",
+    "sec7_vr_ratio",
+    "sec7_characteristics",
+    "sec7_is_write",
+    "sec8_entropy",
+    "sec8_rsize",
+    "sec8_vr_ratio",
+    "sec8_characteristics",
+    "sec9_entropy",
+    "sec9_rsize",
+    "sec9_vr_ratio",
+    "sec9_characteristics",
+    "sec9_is_write",
+    "sec_mean_entropy",
+    "sec_max_entropy",
+    "sec_min_entropy",
+    "sec_std_entropy",
+    "sec_name_hash_2",
+    "sec_name_hash_3",
+    "sec_name_hash_8",
+    "sec_name_hash_15",
+    "sec_name_hash_16",
+    "sec_name_hash_17",
+    "sec_name_hash_20",
+    "sec_name_hash_23",
+    "sec_name_hash_25",
+    "sec_name_hash_26",
+    "sec_name_hash_30",
+    "sec_name_hash_31",
+    "num_exec_sections",
+    "num_write_sections",
+    "has_imports",
+    "num_import_dlls",
+    "num_import_by_ordinal",
+    "imp_dll_hash_4",
+    "imp_dll_hash_5",
+    "imp_dll_hash_6",
+    "imp_dll_hash_8",
+    "imp_dll_hash_9",
+    "imp_dll_hash_17",
+    "imp_dll_hash_24",
+    "imp_dll_hash_26",
+    "imp_dll_hash_27",
+    "imp_dll_hash_28",
+    "imp_dll_hash_34",
+    "imp_dll_hash_37",
+    "imp_dll_hash_39",
+    "imp_dll_hash_40",
+    "imp_dll_hash_43",
+    "imp_dll_hash_48",
+    "imp_dll_hash_53",
+    "imp_dll_hash_54",
+    "imp_dll_hash_57",
+    "imp_dll_hash_61",
+    "imp_dll_hash_62",
+    "imp_dll_hash_63",
+    "imp_func_hash_0",
+    "imp_func_hash_1",
+    "imp_func_hash_2",
+    "imp_func_hash_3",
+    "imp_func_hash_4",
+    "imp_func_hash_5",
+    "imp_func_hash_6",
+    "imp_func_hash_7",
+    "imp_func_hash_8",
+    "imp_func_hash_9",
+    "imp_func_hash_10",
+    "imp_func_hash_11",
+    "imp_func_hash_12",
+    "imp_func_hash_13",
+    "imp_func_hash_14",
+    "imp_func_hash_15",
+    "imp_func_hash_16",
+    "imp_func_hash_17",
+    "imp_func_hash_18",
+    "imp_func_hash_19",
+    "imp_func_hash_20",
+    "imp_func_hash_21",
+    "imp_func_hash_22",
+    "imp_func_hash_23",
+    "imp_func_hash_24",
+    "imp_func_hash_25",
+    "imp_func_hash_26",
+    "imp_func_hash_27",
+    "imp_func_hash_28",
+    "imp_func_hash_29",
+    "imp_func_hash_30",
+    "imp_func_hash_31",
+    "imp_func_hash_32",
+    "imp_func_hash_33",
+    "imp_func_hash_34",
+    "imp_func_hash_35",
+    "imp_func_hash_36",
+    "imp_func_hash_37",
+    "imp_func_hash_38",
+    "imp_func_hash_39",
+    "imp_func_hash_40",
+    "imp_func_hash_41",
+    "imp_func_hash_42",
+    "imp_func_hash_43",
+    "imp_func_hash_44",
+    "imp_func_hash_45",
+    "imp_func_hash_46",
+    "imp_func_hash_47",
+    "imp_func_hash_48",
+    "imp_func_hash_49",
+    "imp_func_hash_50",
+    "imp_func_hash_51",
+    "imp_func_hash_52",
+    "imp_func_hash_53",
+    "imp_func_hash_54",
+    "imp_func_hash_55",
+    "imp_func_hash_56",
+    "imp_func_hash_57",
+    "imp_func_hash_58",
+    "imp_func_hash_59",
+    "imp_func_hash_60",
+    "imp_func_hash_61",
+    "imp_func_hash_62",
+    "imp_func_hash_63",
+    "imp_func_hash_64",
+    "imp_func_hash_65",
+    "imp_func_hash_66",
+    "imp_func_hash_67",
+    "imp_func_hash_68",
+    "imp_func_hash_69",
+    "imp_func_hash_70",
+    "imp_func_hash_71",
+    "imp_func_hash_72",
+    "imp_func_hash_73",
+    "imp_func_hash_74",
+    "imp_func_hash_75",
+    "imp_func_hash_76",
+    "imp_func_hash_77",
+    "imp_func_hash_78",
+    "imp_func_hash_79",
+    "imp_func_hash_80",
+    "imp_func_hash_81",
+    "imp_func_hash_82",
+    "imp_func_hash_83",
+    "imp_func_hash_84",
+    "imp_func_hash_85",
+    "imp_func_hash_86",
+    "imp_func_hash_87",
+    "imp_func_hash_88",
+    "imp_func_hash_89",
+    "imp_func_hash_90",
+    "imp_func_hash_91",
+    "imp_func_hash_92",
+    "imp_func_hash_93",
+    "imp_func_hash_94",
+    "imp_func_hash_95",
+    "imp_func_hash_96",
+    "imp_func_hash_97",
+    "imp_func_hash_98",
+    "imp_func_hash_99",
+    "imp_func_hash_100",
+    "imp_func_hash_101",
+    "imp_func_hash_102",
+    "imp_func_hash_103",
+    "imp_func_hash_104",
+    "imp_func_hash_105",
+    "imp_func_hash_106",
+    "imp_func_hash_107",
+    "imp_func_hash_108",
+    "imp_func_hash_109",
+    "imp_func_hash_110",
+    "imp_func_hash_111",
+    "imp_func_hash_112",
+    "imp_func_hash_113",
+    "imp_func_hash_114",
+    "imp_func_hash_115",
+    "imp_func_hash_116",
+    "imp_func_hash_117",
+    "imp_func_hash_118",
+    "imp_func_hash_119",
+    "imp_func_hash_120",
+    "imp_func_hash_121",
+    "imp_func_hash_122",
+    "imp_func_hash_123",
+    "imp_func_hash_124",
+    "imp_func_hash_125",
+    "imp_func_hash_126",
+    "imp_func_hash_127",
+    "imp_func_hash_128",
+    "imp_func_hash_129",
+    "imp_func_hash_130",
+    "imp_func_hash_131",
+    "imp_func_hash_132",
+    "imp_func_hash_133",
+    "imp_func_hash_134",
+    "imp_func_hash_135",
+    "imp_func_hash_136",
+    "imp_func_hash_137",
+    "imp_func_hash_138",
+    "imp_func_hash_139",
+    "imp_func_hash_140",
+    "imp_func_hash_141",
+    "imp_func_hash_142",
+    "imp_func_hash_143",
+    "imp_func_hash_144",
+    "imp_func_hash_145",
+    "imp_func_hash_146",
+    "imp_func_hash_147",
+    "imp_func_hash_148",
+    "imp_func_hash_149",
+    "imp_func_hash_150",
+    "imp_func_hash_151",
+    "imp_func_hash_152",
+    "imp_func_hash_153",
+    "imp_func_hash_154",
+    "imp_func_hash_155",
+    "imp_func_hash_156",
+    "imp_func_hash_157",
+    "imp_func_hash_158",
+    "imp_func_hash_159",
+    "imp_func_hash_160",
+    "imp_func_hash_161",
+    "imp_func_hash_162",
+    "imp_func_hash_163",
+    "imp_func_hash_164",
+    "imp_func_hash_165",
+    "imp_func_hash_166",
+    "imp_func_hash_168",
+    "imp_func_hash_169",
+    "imp_func_hash_170",
+    "imp_func_hash_171",
+    "imp_func_hash_172",
+    "imp_func_hash_173",
+    "imp_func_hash_174",
+    "imp_func_hash_175",
+    "imp_func_hash_176",
+    "imp_func_hash_177",
+    "imp_func_hash_178",
+    "imp_func_hash_179",
+    "imp_func_hash_180",
+    "imp_func_hash_181",
+    "imp_func_hash_182",
+    "imp_func_hash_183",
+    "imp_func_hash_184",
+    "imp_func_hash_185",
+    "imp_func_hash_186",
+    "imp_func_hash_187",
+    "imp_func_hash_188",
+    "imp_func_hash_189",
+    "imp_func_hash_190",
+    "imp_func_hash_191",
+    "imp_func_hash_192",
+    "imp_func_hash_193",
+    "imp_func_hash_194",
+    "imp_func_hash_195",
+    "imp_func_hash_196",
+    "imp_func_hash_197",
+    "imp_func_hash_198",
+    "imp_func_hash_199",
+    "imp_func_hash_200",
+    "imp_func_hash_201",
+    "imp_func_hash_202",
+    "imp_func_hash_203",
+    "imp_func_hash_204",
+    "imp_func_hash_205",
+    "imp_func_hash_206",
+    "imp_func_hash_207",
+    "imp_func_hash_208",
+    "imp_func_hash_209",
+    "imp_func_hash_210",
+    "imp_func_hash_211",
+    "imp_func_hash_212",
+    "imp_func_hash_213",
+    "imp_func_hash_214",
+    "imp_func_hash_215",
+    "imp_func_hash_216",
+    "imp_func_hash_217",
+    "imp_func_hash_218",
+    "imp_func_hash_219",
+    "imp_func_hash_220",
+    "imp_func_hash_221",
+    "imp_func_hash_222",
+    "imp_func_hash_223",
+    "imp_func_hash_224",
+    "imp_func_hash_225",
+    "imp_func_hash_226",
+    "imp_func_hash_227",
+    "imp_func_hash_228",
+    "imp_func_hash_229",
+    "imp_func_hash_230",
+    "imp_func_hash_231",
+    "imp_func_hash_232",
+    "imp_func_hash_233",
+    "imp_func_hash_234",
+    "imp_func_hash_235",
+    "imp_func_hash_236",
+    "imp_func_hash_237",
+    "imp_func_hash_238",
+    "imp_func_hash_239",
+    "imp_func_hash_240",
+    "imp_func_hash_241",
+    "imp_func_hash_242",
+    "imp_func_hash_243",
+    "imp_func_hash_244",
+    "imp_func_hash_245",
+    "imp_func_hash_246",
+    "imp_func_hash_247",
+    "imp_func_hash_248",
+    "imp_func_hash_249",
+    "imp_func_hash_250",
+    "imp_func_hash_251",
+    "imp_func_hash_252",
+    "imp_func_hash_253",
+    "imp_func_hash_254",
+    "imp_func_hash_255",
+    "imphash",
+    "num_suspicious_imports",
+    "has_exports",
+    "num_exports",
+    "export_name_count",
+    "exp_hash_0",
+    "exp_hash_1",
+    "exp_hash_2",
+    "exp_hash_3",
+    "exp_hash_4",
+    "exp_hash_5",
+    "exp_hash_6",
+    "exp_hash_7",
+    "exp_hash_8",
+    "exp_hash_9",
+    "exp_hash_10",
+    "exp_hash_11",
+    "exp_hash_12",
+    "exp_hash_13",
+    "exp_hash_14",
+    "exp_hash_15",
+    "exp_hash_16",
+    "exp_hash_17",
+    "exp_hash_18",
+    "exp_hash_19",
+    "exp_hash_20",
+    "exp_hash_21",
+    "exp_hash_22",
+    "exp_hash_23",
+    "exp_hash_24",
+    "exp_hash_25",
+    "exp_hash_26",
+    "exp_hash_27",
+    "exp_hash_28",
+    "exp_hash_29",
+    "exp_hash_30",
+    "exp_hash_31",
+    "has_resources",
+    "rsrc_num_directories",
+    "rsrc_num_data_entries",
+    "rsrc_total_size",
+    "rsrc_size_ratio",
+    "rsrc_num_types",
+    "rsrc_has_manifest",
+    "rsrc_has_version",
+    "rsrc_has_icons",
+    "rsrc_has_dialogs",
+    "rsrc_has_string_table",
+    "rsrc_mean_entropy",
+    "rsrc_max_entropy",
+    "tls_num_callbacks",
+    "tls_characteristics",
+    "tls_data_size",
+    "has_debug",
+    "has_pogo",
+    "has_repro",
+    "has_pdb",
+    "num_certificates",
+    "sig_verified",
+    "has_relocations",
+    "num_relocation_blocks",
+    "rich_key",
+    "rich_mean_id",
+    "rich_max_build_id",
+    "rich_total_count",
+    "has_load_config",
+    "lc_size",
+    "lc_security_cookie",
+    "lc_seh_count",
+    "lc_guard_flags",
+    "has_overlay",
+    "overlay_size",
+    "overlay_ratio",
+    "overlay_entropy",
+    "dd_EXPORT_TABLE_rva",
+    "dd_EXPORT_TABLE_size",
+    "dd_IMPORT_TABLE_rva",
+    "dd_IMPORT_TABLE_size",
+    "dd_EXCEPTION_TABLE_rva",
+    "dd_EXCEPTION_TABLE_size",
+    "dd_CERTIFICATE_TABLE_rva",
+    "dd_CERTIFICATE_TABLE_size",
+    "dd_BASE_RELOCATION_TABLE_size",
+    "dd_DEBUG_DIR_rva",
+    "dd_DEBUG_DIR_size",
+    "dd_TLS_TABLE_size",
+    "dd_LOAD_CONFIG_TABLE_rva",
+    "dd_BOUND_IMPORT_rva",
+    "dd_BOUND_IMPORT_size",
+    "dd_IAT_size",
+    "dd_DELAY_IMPORT_DESCRIPTOR_rva",
+    "dd_DELAY_IMPORT_DESCRIPTOR_size",
+    "dd_CLR_RUNTIME_HEADER_rva",
+    "dd_CLR_RUNTIME_HEADER_size",
+    "has_delay_imports"
+  ],
+  "log_transform_features": [
+    "file_size",
+    "coff_characteristics",
+    "opt_sizeof_init_data",
+    "opt_sizeof_uninit_data",
+    "opt_entrypoint",
+    "opt_file_alignment",
+    "opt_minor_os_ver",
+    "opt_sizeof_image",
+    "opt_sizeof_headers",
+    "opt_checksum",
+    "opt_subsystem",
+    "sec0_vsize",
+    "sec1_vsize",
+    "sec2_vsize",
+    "sec2_rsize",
+    "sec2_characteristics",
+    "sec3_vsize",
+    "sec3_characteristics",
+    "sec4_vsize",
+    "sec4_vr_ratio",
+    "sec4_characteristics",
+    "sec5_entropy",
+    "sec5_vsize",
+    "sec5_rsize",
+    "sec5_vr_ratio",
+    "sec5_characteristics",
+    "sec6_entropy",
+    "sec6_vsize",
+    "sec6_rsize",
+    "sec6_vr_ratio",
+    "sec6_characteristics",
+    "sec7_entropy",
+    "sec7_vsize",
+    "sec7_vr_ratio",
+    "sec7_characteristics",
+    "sec8_entropy",
+    "sec8_rsize",
+    "sec8_vr_ratio",
+    "sec8_characteristics",
+    "sec9_entropy",
+    "sec9_rsize",
+    "sec9_vr_ratio",
+    "sec9_characteristics",
+    "sec_name_hash_2",
+    "sec_name_hash_3",
+    "sec_name_hash_15",
+    "sec_name_hash_16",
+    "sec_name_hash_20",
+    "sec_name_hash_25",
+    "sec_name_hash_26",
+    "sec_name_hash_30",
+    "sec_name_hash_31",
+    "num_exec_sections",
+    "num_import_by_ordinal",
+    "imp_dll_hash_4",
+    "imp_dll_hash_5",
+    "imp_dll_hash_6",
+    "imp_dll_hash_8",
+    "imp_dll_hash_9",
+    "imp_dll_hash_17",
+    "imp_dll_hash_24",
+    "imp_dll_hash_26",
+    "imp_dll_hash_27",
+    "imp_dll_hash_28",
+    "imp_dll_hash_34",
+    "imp_dll_hash_37",
+    "imp_dll_hash_39",
+    "imp_dll_hash_40",
+    "imp_dll_hash_48",
+    "imp_dll_hash_54",
+    "imp_dll_hash_57",
+    "imp_dll_hash_61",
+    "imp_dll_hash_62",
+    "imp_dll_hash_63",
+    "imp_func_hash_0",
+    "imp_func_hash_1",
+    "imp_func_hash_2",
+    "imp_func_hash_3",
+    "imp_func_hash_4",
+    "imp_func_hash_5",
+    "imp_func_hash_6",
+    "imp_func_hash_7",
+    "imp_func_hash_8",
+    "imp_func_hash_9",
+    "imp_func_hash_10",
+    "imp_func_hash_11",
+    "imp_func_hash_12",
+    "imp_func_hash_13",
+    "imp_func_hash_14",
+    "imp_func_hash_16",
+    "imp_func_hash_17",
+    "imp_func_hash_18",
+    "imp_func_hash_20",
+    "imp_func_hash_21",
+    "imp_func_hash_22",
+    "imp_func_hash_23",
+    "imp_func_hash_25",
+    "imp_func_hash_26",
+    "imp_func_hash_27",
+    "imp_func_hash_28",
+    "imp_func_hash_30",
+    "imp_func_hash_31",
+    "imp_func_hash_32",
+    "imp_func_hash_33",
+    "imp_func_hash_35",
+    "imp_func_hash_36",
+    "imp_func_hash_37",
+    "imp_func_hash_38",
+    "imp_func_hash_39",
+    "imp_func_hash_40",
+    "imp_func_hash_41",
+    "imp_func_hash_42",
+    "imp_func_hash_43",
+    "imp_func_hash_44",
+    "imp_func_hash_45",
+    "imp_func_hash_46",
+    "imp_func_hash_47",
+    "imp_func_hash_48",
+    "imp_func_hash_49",
+    "imp_func_hash_50",
+    "imp_func_hash_51",
+    "imp_func_hash_52",
+    "imp_func_hash_53",
+    "imp_func_hash_54",
+    "imp_func_hash_55",
+    "imp_func_hash_56",
+    "imp_func_hash_57",
+    "imp_func_hash_58",
+    "imp_func_hash_59",
+    "imp_func_hash_60",
+    "imp_func_hash_61",
+    "imp_func_hash_63",
+    "imp_func_hash_64",
+    "imp_func_hash_66",
+    "imp_func_hash_67",
+    "imp_func_hash_68",
+    "imp_func_hash_69",
+    "imp_func_hash_70",
+    "imp_func_hash_71",
+    "imp_func_hash_72",
+    "imp_func_hash_73",
+    "imp_func_hash_74",
+    "imp_func_hash_75",
+    "imp_func_hash_76",
+    "imp_func_hash_77",
+    "imp_func_hash_78",
+    "imp_func_hash_79",
+    "imp_func_hash_80",
+    "imp_func_hash_81",
+    "imp_func_hash_82",
+    "imp_func_hash_83",
+    "imp_func_hash_84",
+    "imp_func_hash_85",
+    "imp_func_hash_86",
+    "imp_func_hash_87",
+    "imp_func_hash_88",
+    "imp_func_hash_89",
+    "imp_func_hash_90",
+    "imp_func_hash_91",
+    "imp_func_hash_92",
+    "imp_func_hash_93",
+    "imp_func_hash_94",
+    "imp_func_hash_95",
+    "imp_func_hash_96",
+    "imp_func_hash_98",
+    "imp_func_hash_99",
+    "imp_func_hash_100",
+    "imp_func_hash_101",
+    "imp_func_hash_102",
+    "imp_func_hash_103",
+    "imp_func_hash_104",
+    "imp_func_hash_105",
+    "imp_func_hash_106",
+    "imp_func_hash_107",
+    "imp_func_hash_108",
+    "imp_func_hash_109",
+    "imp_func_hash_110",
+    "imp_func_hash_111",
+    "imp_func_hash_112",
+    "imp_func_hash_115",
+    "imp_func_hash_116",
+    "imp_func_hash_117",
+    "imp_func_hash_118",
+    "imp_func_hash_119",
+    "imp_func_hash_120",
+    "imp_func_hash_121",
+    "imp_func_hash_122",
+    "imp_func_hash_123",
+    "imp_func_hash_124",
+    "imp_func_hash_125",
+    "imp_func_hash_126",
+    "imp_func_hash_127",
+    "imp_func_hash_128",
+    "imp_func_hash_129",
+    "imp_func_hash_130",
+    "imp_func_hash_131",
+    "imp_func_hash_132",
+    "imp_func_hash_133",
+    "imp_func_hash_134",
+    "imp_func_hash_136",
+    "imp_func_hash_137",
+    "imp_func_hash_138",
+    "imp_func_hash_139",
+    "imp_func_hash_140",
+    "imp_func_hash_142",
+    "imp_func_hash_143",
+    "imp_func_hash_144",
+    "imp_func_hash_145",
+    "imp_func_hash_146",
+    "imp_func_hash_147",
+    "imp_func_hash_148",
+    "imp_func_hash_149",
+    "imp_func_hash_150",
+    "imp_func_hash_151",
+    "imp_func_hash_152",
+    "imp_func_hash_153",
+    "imp_func_hash_154",
+    "imp_func_hash_155",
+    "imp_func_hash_156",
+    "imp_func_hash_157",
+    "imp_func_hash_158",
+    "imp_func_hash_159",
+    "imp_func_hash_160",
+    "imp_func_hash_161",
+    "imp_func_hash_162",
+    "imp_func_hash_163",
+    "imp_func_hash_164",
+    "imp_func_hash_165",
+    "imp_func_hash_166",
+    "imp_func_hash_168",
+    "imp_func_hash_169",
+    "imp_func_hash_171",
+    "imp_func_hash_172",
+    "imp_func_hash_173",
+    "imp_func_hash_174",
+    "imp_func_hash_175",
+    "imp_func_hash_176",
+    "imp_func_hash_179",
+    "imp_func_hash_180",
+    "imp_func_hash_181",
+    "imp_func_hash_182",
+    "imp_func_hash_183",
+    "imp_func_hash_184",
+    "imp_func_hash_185",
+    "imp_func_hash_186",
+    "imp_func_hash_187",
+    "imp_func_hash_188",
+    "imp_func_hash_189",
+    "imp_func_hash_190",
+    "imp_func_hash_191",
+    "imp_func_hash_192",
+    "imp_func_hash_193",
+    "imp_func_hash_194",
+    "imp_func_hash_195",
+    "imp_func_hash_196",
+    "imp_func_hash_197",
+    "imp_func_hash_198",
+    "imp_func_hash_199",
+    "imp_func_hash_200",
+    "imp_func_hash_202",
+    "imp_func_hash_203",
+    "imp_func_hash_204",
+    "imp_func_hash_205",
+    "imp_func_hash_206",
+    "imp_func_hash_207",
+    "imp_func_hash_208",
+    "imp_func_hash_209",
+    "imp_func_hash_210",
+    "imp_func_hash_211",
+    "imp_func_hash_212",
+    "imp_func_hash_213",
+    "imp_func_hash_214",
+    "imp_func_hash_216",
+    "imp_func_hash_217",
+    "imp_func_hash_218",
+    "imp_func_hash_219",
+    "imp_func_hash_220",
+    "imp_func_hash_221",
+    "imp_func_hash_222",
+    "imp_func_hash_223",
+    "imp_func_hash_224",
+    "imp_func_hash_225",
+    "imp_func_hash_226",
+    "imp_func_hash_227",
+    "imp_func_hash_229",
+    "imp_func_hash_230",
+    "imp_func_hash_231",
+    "imp_func_hash_232",
+    "imp_func_hash_233",
+    "imp_func_hash_234",
+    "imp_func_hash_235",
+    "imp_func_hash_236",
+    "imp_func_hash_237",
+    "imp_func_hash_238",
+    "imp_func_hash_239",
+    "imp_func_hash_240",
+    "imp_func_hash_241",
+    "imp_func_hash_242",
+    "imp_func_hash_243",
+    "imp_func_hash_244",
+    "imp_func_hash_245",
+    "imp_func_hash_246",
+    "imp_func_hash_247",
+    "imp_func_hash_248",
+    "imp_func_hash_249",
+    "imp_func_hash_250",
+    "imp_func_hash_251",
+    "imp_func_hash_252",
+    "imp_func_hash_253",
+    "imp_func_hash_254",
+    "imp_func_hash_255",
+    "imphash",
+    "num_exports",
+    "export_name_count",
+    "exp_hash_0",
+    "exp_hash_1",
+    "exp_hash_2",
+    "exp_hash_3",
+    "exp_hash_4",
+    "exp_hash_5",
+    "exp_hash_6",
+    "exp_hash_7",
+    "exp_hash_8",
+    "exp_hash_9",
+    "exp_hash_10",
+    "exp_hash_11",
+    "exp_hash_12",
+    "exp_hash_13",
+    "exp_hash_14",
+    "exp_hash_15",
+    "exp_hash_16",
+    "exp_hash_17",
+    "exp_hash_18",
+    "exp_hash_19",
+    "exp_hash_20",
+    "exp_hash_21",
+    "exp_hash_22",
+    "exp_hash_23",
+    "exp_hash_24",
+    "exp_hash_25",
+    "exp_hash_26",
+    "exp_hash_27",
+    "exp_hash_28",
+    "exp_hash_29",
+    "exp_hash_30",
+    "exp_hash_31",
+    "rsrc_num_directories",
+    "rsrc_num_data_entries",
+    "rsrc_total_size",
+    "rsrc_size_ratio",
+    "rsrc_num_types",
+    "rsrc_mean_entropy",
+    "rsrc_max_entropy",
+    "tls_num_callbacks",
+    "tls_characteristics",
+    "tls_data_size",
+    "num_relocation_blocks",
+    "rich_key",
+    "rich_total_count",
+    "lc_security_cookie",
+    "lc_seh_count",
+    "lc_guard_flags",
+    "overlay_size",
+    "dd_EXPORT_TABLE_rva",
+    "dd_EXPORT_TABLE_size",
+    "dd_IMPORT_TABLE_rva",
+    "dd_IMPORT_TABLE_size",
+    "dd_EXCEPTION_TABLE_rva",
+    "dd_EXCEPTION_TABLE_size",
+    "dd_CERTIFICATE_TABLE_rva",
+    "dd_BASE_RELOCATION_TABLE_size",
+    "dd_DEBUG_DIR_rva",
+    "dd_TLS_TABLE_size",
+    "dd_LOAD_CONFIG_TABLE_rva",
+    "dd_BOUND_IMPORT_rva",
+    "dd_BOUND_IMPORT_size",
+    "dd_IAT_size",
+    "dd_DELAY_IMPORT_DESCRIPTOR_rva",
+    "dd_DELAY_IMPORT_DESCRIPTOR_size",
+    "dd_CLR_RUNTIME_HEADER_rva"
+  ],
+  "feature_status": {
+    "file_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dos_magic": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "dos_e_lfanew": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "dos_checksum": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "dos_num_relocs": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "coff_machine": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "coff_num_sections": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "coff_timestamp": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "coff_sizeof_opt_header": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "coff_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "coff_char_EXECUTABLE_IMAGE": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "coff_char_DLL": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "coff_char_LARGE_ADDRESS_AWARE": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "coff_char_RELOCS_STRIPPED": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "coff_char_DEBUG_STRIPPED": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "coff_char_SYSTEM": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "opt_magic": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "opt_major_linker": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_minor_linker": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_sizeof_code": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "opt_sizeof_init_data": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_sizeof_uninit_data": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_entrypoint": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_baseof_code": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "opt_imagebase": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_section_alignment": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_file_alignment": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_major_os_ver": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_minor_os_ver": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_major_image_ver": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "opt_minor_image_ver": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "opt_major_subsys_ver": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_minor_subsys_ver": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_sizeof_image": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_sizeof_headers": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_checksum": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_subsystem": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "opt_dll_characteristics": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_sizeof_stack_reserve": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "opt_sizeof_stack_commit": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "opt_sizeof_heap_reserve": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "opt_sizeof_heap_commit": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_num_rva_and_sizes": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "opt_dllchar_DYNAMIC_BASE": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_dllchar_NX_COMPAT": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_dllchar_GUARD_CF": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_dllchar_HIGH_ENTROPY_VA": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_dllchar_NO_SEH": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "opt_dllchar_NO_BIND": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "opt_dllchar_APPCONTAINER": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "opt_dllchar_TERMINAL_SERVER_AWARE": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "opt_dllchar_FORCE_INTEGRITY": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "opt_dllchar_NO_ISOLATION": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "opt_dllchar_WDM_DRIVER": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "checksum_matches": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "num_sections": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec0_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec0_vsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec0_rsize": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec0_vr_ratio": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec0_characteristics": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec0_is_exec": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec0_is_write": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec0_has_code": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec1_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec1_vsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec1_rsize": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec1_vr_ratio": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec1_characteristics": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec1_is_exec": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec1_is_write": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec1_has_code": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec2_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec2_vsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec2_rsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec2_vr_ratio": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec2_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec2_is_exec": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec2_is_write": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec2_has_code": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec3_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec3_vsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec3_rsize": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec3_vr_ratio": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec3_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec3_is_exec": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec3_is_write": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec3_has_code": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec4_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec4_vsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec4_rsize": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec4_vr_ratio": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec4_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec4_is_exec": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec4_is_write": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec4_has_code": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec5_entropy": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec5_vsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec5_rsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec5_vr_ratio": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec5_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec5_is_exec": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec5_is_write": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec5_has_code": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec6_entropy": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec6_vsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec6_rsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec6_vr_ratio": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec6_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec6_is_exec": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec6_is_write": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec6_has_code": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec7_entropy": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec7_vsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec7_rsize": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec7_vr_ratio": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec7_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec7_is_exec": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec7_is_write": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec7_has_code": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec8_entropy": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec8_vsize": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec8_rsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec8_vr_ratio": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec8_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec8_is_exec": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec8_is_write": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec8_has_code": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec9_entropy": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec9_vsize": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec9_rsize": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec9_vr_ratio": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec9_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec9_is_exec": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec9_is_write": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec9_has_code": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_mean_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec_max_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec_min_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec_std_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec_total_raw_size": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec_total_virtual_size": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec_mean_vr_ratio": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "sec_name_hash_0": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_1": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_2": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_3": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_4": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_5": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_6": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_7": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_8": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_9": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_10": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_11": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec_name_hash_12": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_13": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_14": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_15": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_16": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_17": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_18": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_19": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_20": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_21": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_22": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec_name_hash_23": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_24": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec_name_hash_25": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_26": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_27": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_28": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "sec_name_hash_29": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "sec_name_hash_30": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "sec_name_hash_31": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "num_exec_sections": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "num_write_sections": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "num_rwx_sections": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "has_imports": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "num_import_dlls": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "num_import_functions": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "num_import_by_name": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "num_import_by_ordinal": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_0": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_1": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_2": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_3": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_4": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_5": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_6": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_7": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "imp_dll_hash_8": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_9": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_10": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "imp_dll_hash_11": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_12": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_13": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_14": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_15": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_16": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_17": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_18": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_19": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_20": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "imp_dll_hash_21": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_22": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_23": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_24": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_25": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_26": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_27": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_28": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_29": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_30": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_31": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_32": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_33": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_34": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_35": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_36": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_37": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_38": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_39": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_40": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_41": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_42": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_43": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_44": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_45": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_46": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "imp_dll_hash_47": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_48": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_49": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "imp_dll_hash_50": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_51": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_52": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_53": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_54": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_55": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_56": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_57": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_58": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_59": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "imp_dll_hash_60": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_dll_hash_61": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_62": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_dll_hash_63": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_0": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_1": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_2": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_3": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_4": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_5": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_6": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_7": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_8": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_9": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_10": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_11": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_12": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_13": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_14": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_15": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_16": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_17": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_18": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_19": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_20": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_21": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_22": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_23": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_24": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_25": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_26": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_27": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_28": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_29": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_30": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_31": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_32": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_33": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_34": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_35": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_36": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_37": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_38": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_39": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_40": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_41": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_42": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_43": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_44": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_45": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_46": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_47": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_48": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_49": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_50": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_51": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_52": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_53": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_54": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_55": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_56": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_57": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_58": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_59": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_60": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_61": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_62": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_63": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_64": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_65": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_66": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_67": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_68": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_69": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_70": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_71": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_72": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_73": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_74": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_75": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_76": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_77": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_78": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_79": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_80": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_81": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_82": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_83": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_84": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_85": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_86": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_87": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_88": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_89": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_90": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_91": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_92": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_93": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_94": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_95": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_96": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_97": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_98": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_99": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_100": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_101": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_102": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_103": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_104": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_105": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_106": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_107": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_108": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_109": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_110": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_111": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_112": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_113": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_114": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_115": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_116": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_117": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_118": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_119": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_120": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_121": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_122": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_123": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_124": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_125": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_126": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_127": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_128": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_129": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_130": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_131": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_132": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_133": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_134": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_135": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_136": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_137": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_138": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_139": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_140": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_141": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_142": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_143": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_144": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_145": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_146": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_147": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_148": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_149": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_150": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_151": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_152": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_153": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_154": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_155": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_156": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_157": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_158": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_159": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_160": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_161": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_162": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_163": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_164": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_165": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_166": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_167": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "imp_func_hash_168": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_169": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_170": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_171": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_172": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_173": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_174": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_175": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_176": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_177": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_178": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_179": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_180": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_181": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_182": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_183": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_184": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_185": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_186": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_187": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_188": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_189": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_190": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_191": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_192": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_193": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_194": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_195": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_196": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_197": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_198": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_199": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_200": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_201": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_202": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_203": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_204": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_205": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_206": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_207": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_208": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_209": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_210": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_211": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_212": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_213": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_214": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_215": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_216": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_217": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_218": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_219": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_220": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_221": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_222": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_223": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_224": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_225": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_226": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_227": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_228": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_229": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_230": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_231": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_232": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_233": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_234": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_235": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_236": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_237": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_238": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_239": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_240": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_241": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_242": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_243": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_244": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_245": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_246": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_247": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_248": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_249": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_250": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_251": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_252": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_253": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_254": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imp_func_hash_255": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "imphash": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "num_suspicious_imports": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "has_exports": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "num_exports": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "export_name_count": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "num_forwarded_exports": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "exp_hash_0": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_1": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_2": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_3": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_4": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_5": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_6": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_7": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_8": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_9": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_10": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_11": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_12": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_13": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_14": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_15": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_16": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_17": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_18": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_19": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_20": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_21": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_22": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_23": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_24": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_25": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_26": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_27": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_28": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_29": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_30": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "exp_hash_31": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "has_resources": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "rsrc_num_directories": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "rsrc_num_data_entries": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "rsrc_total_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "rsrc_size_ratio": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "rsrc_num_types": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "rsrc_has_manifest": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "rsrc_has_version": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "rsrc_has_icons": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "rsrc_has_dialogs": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "rsrc_has_string_table": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "rsrc_mean_entropy": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "rsrc_max_entropy": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "has_tls": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "tls_num_callbacks": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "tls_sizeof_zero_fill": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "tls_characteristics": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "tls_data_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "has_debug": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "num_debug_entries": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "has_codeview": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "has_pogo": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "has_repro": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "is_reproducible": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "has_pdb": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "has_signatures": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "num_signatures": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "num_certificates": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "sig_verified": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "has_relocations": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "num_relocation_blocks": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "num_relocation_entries": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "has_rich_header": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "rich_key": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "rich_num_entries": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "rich_mean_id": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "rich_max_build_id": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "rich_total_count": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "has_load_config": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "lc_size": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "lc_security_cookie": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "lc_seh_count": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "lc_guard_flags": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "lc_cf_function_count": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "has_overlay": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "overlay_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "overlay_ratio": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "overlay_entropy": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "dd_EXPORT_TABLE_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_EXPORT_TABLE_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_IMPORT_TABLE_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_IMPORT_TABLE_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_RESOURCE_TABLE_rva": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "dd_RESOURCE_TABLE_size": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "dd_EXCEPTION_TABLE_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_EXCEPTION_TABLE_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_CERTIFICATE_TABLE_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_CERTIFICATE_TABLE_size": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "dd_BASE_RELOCATION_TABLE_rva": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "dd_BASE_RELOCATION_TABLE_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_DEBUG_DIR_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_DEBUG_DIR_size": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "dd_ARCHITECTURE_rva": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "dd_ARCHITECTURE_size": {
+      "status": "removed",
+      "stage": "stability_filter"
+    },
+    "dd_GLOBAL_PTR_rva": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "dd_GLOBAL_PTR_size": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "dd_TLS_TABLE_rva": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "dd_TLS_TABLE_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_LOAD_CONFIG_TABLE_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_LOAD_CONFIG_TABLE_size": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "dd_BOUND_IMPORT_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_BOUND_IMPORT_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_IAT_rva": {
+      "status": "removed",
+      "stage": "correlation_prune"
+    },
+    "dd_IAT_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_DELAY_IMPORT_DESCRIPTOR_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_DELAY_IMPORT_DESCRIPTOR_size": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_CLR_RUNTIME_HEADER_rva": {
+      "status": "selected_log_transform",
+      "stage": "passed_all"
+    },
+    "dd_CLR_RUNTIME_HEADER_size": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "dd_RESERVED_rva": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "dd_RESERVED_size": {
+      "status": "removed",
+      "stage": "variance_filter"
+    },
+    "has_delay_imports": {
+      "status": "selected",
+      "stage": "passed_all"
+    },
+    "num_delay_imports": {
+      "status": "removed",
+      "stage": "stability_filter"
+    }
+  },
+  "group_mapping": {
+    "file_size": "file_metadata",
+    "dos_e_lfanew": "dos_header",
+    "coff_machine": "coff_header",
+    "coff_num_sections": "coff_header",
+    "coff_characteristics": "coff_header",
+    "coff_char_DLL": "coff_header",
+    "coff_char_LARGE_ADDRESS_AWARE": "coff_header",
+    "coff_char_RELOCS_STRIPPED": "coff_header",
+    "coff_char_DEBUG_STRIPPED": "coff_header",
+    "opt_major_linker": "optional_header",
+    "opt_minor_linker": "optional_header",
+    "opt_sizeof_init_data": "optional_header",
+    "opt_sizeof_uninit_data": "optional_header",
+    "opt_entrypoint": "optional_header",
+    "opt_imagebase": "optional_header",
+    "opt_section_alignment": "optional_header",
+    "opt_file_alignment": "optional_header",
+    "opt_major_os_ver": "optional_header",
+    "opt_minor_os_ver": "optional_header",
+    "opt_major_subsys_ver": "optional_header",
+    "opt_minor_subsys_ver": "optional_header",
+    "opt_sizeof_image": "optional_header",
+    "opt_sizeof_headers": "optional_header",
+    "opt_checksum": "optional_header",
+    "opt_subsystem": "optional_header",
+    "opt_dll_characteristics": "optional_header",
+    "opt_sizeof_heap_commit": "optional_header",
+    "opt_dllchar_DYNAMIC_BASE": "optional_header",
+    "opt_dllchar_NX_COMPAT": "optional_header",
+    "opt_dllchar_GUARD_CF": "optional_header",
+    "opt_dllchar_HIGH_ENTROPY_VA": "optional_header",
+    "opt_dllchar_NO_SEH": "optional_header",
+    "checksum_matches": "optional_header",
+    "sec0_entropy": "sections_per_slot",
+    "sec0_vsize": "sections_per_slot",
+    "sec0_vr_ratio": "sections_per_slot",
+    "sec0_is_exec": "sections_per_slot",
+    "sec0_is_write": "sections_per_slot",
+    "sec0_has_code": "sections_per_slot",
+    "sec1_entropy": "sections_per_slot",
+    "sec1_vsize": "sections_per_slot",
+    "sec1_is_exec": "sections_per_slot",
+    "sec1_has_code": "sections_per_slot",
+    "sec2_entropy": "sections_per_slot",
+    "sec2_vsize": "sections_per_slot",
+    "sec2_rsize": "sections_per_slot",
+    "sec2_characteristics": "sections_per_slot",
+    "sec2_is_exec": "sections_per_slot",
+    "sec3_entropy": "sections_per_slot",
+    "sec3_vsize": "sections_per_slot",
+    "sec3_characteristics": "sections_per_slot",
+    "sec3_is_write": "sections_per_slot",
+    "sec4_entropy": "sections_per_slot",
+    "sec4_vsize": "sections_per_slot",
+    "sec4_vr_ratio": "sections_per_slot",
+    "sec4_characteristics": "sections_per_slot",
+    "sec4_is_write": "sections_per_slot",
+    "sec5_entropy": "sections_per_slot",
+    "sec5_vsize": "sections_per_slot",
+    "sec5_rsize": "sections_per_slot",
+    "sec5_vr_ratio": "sections_per_slot",
+    "sec5_characteristics": "sections_per_slot",
+    "sec5_is_write": "sections_per_slot",
+    "sec6_entropy": "sections_per_slot",
+    "sec6_vsize": "sections_per_slot",
+    "sec6_rsize": "sections_per_slot",
+    "sec6_vr_ratio": "sections_per_slot",
+    "sec6_characteristics": "sections_per_slot",
+    "sec6_is_write": "sections_per_slot",
+    "sec7_entropy": "sections_per_slot",
+    "sec7_vsize": "sections_per_slot",
+    "sec7_vr_ratio": "sections_per_slot",
+    "sec7_characteristics": "sections_per_slot",
+    "sec7_is_write": "sections_per_slot",
+    "sec8_entropy": "sections_per_slot",
+    "sec8_rsize": "sections_per_slot",
+    "sec8_vr_ratio": "sections_per_slot",
+    "sec8_characteristics": "sections_per_slot",
+    "sec9_entropy": "sections_per_slot",
+    "sec9_rsize": "sections_per_slot",
+    "sec9_vr_ratio": "sections_per_slot",
+    "sec9_characteristics": "sections_per_slot",
+    "sec9_is_write": "sections_per_slot",
+    "sec_mean_entropy": "sections_aggregate",
+    "sec_max_entropy": "sections_aggregate",
+    "sec_min_entropy": "sections_aggregate",
+    "sec_std_entropy": "sections_aggregate",
+    "sec_name_hash_2": "sections_name_hash",
+    "sec_name_hash_3": "sections_name_hash",
+    "sec_name_hash_8": "sections_name_hash",
+    "sec_name_hash_15": "sections_name_hash",
+    "sec_name_hash_16": "sections_name_hash",
+    "sec_name_hash_17": "sections_name_hash",
+    "sec_name_hash_20": "sections_name_hash",
+    "sec_name_hash_23": "sections_name_hash",
+    "sec_name_hash_25": "sections_name_hash",
+    "sec_name_hash_26": "sections_name_hash",
+    "sec_name_hash_30": "sections_name_hash",
+    "sec_name_hash_31": "sections_name_hash",
+    "num_exec_sections": "sections_counts",
+    "num_write_sections": "sections_counts",
+    "has_imports": "imports_scalar",
+    "num_import_dlls": "imports_scalar",
+    "num_import_by_ordinal": "imports_scalar",
+    "imp_dll_hash_4": "imports_dll_hash",
+    "imp_dll_hash_5": "imports_dll_hash",
+    "imp_dll_hash_6": "imports_dll_hash",
+    "imp_dll_hash_8": "imports_dll_hash",
+    "imp_dll_hash_9": "imports_dll_hash",
+    "imp_dll_hash_17": "imports_dll_hash",
+    "imp_dll_hash_24": "imports_dll_hash",
+    "imp_dll_hash_26": "imports_dll_hash",
+    "imp_dll_hash_27": "imports_dll_hash",
+    "imp_dll_hash_28": "imports_dll_hash",
+    "imp_dll_hash_34": "imports_dll_hash",
+    "imp_dll_hash_37": "imports_dll_hash",
+    "imp_dll_hash_39": "imports_dll_hash",
+    "imp_dll_hash_40": "imports_dll_hash",
+    "imp_dll_hash_43": "imports_dll_hash",
+    "imp_dll_hash_48": "imports_dll_hash",
+    "imp_dll_hash_53": "imports_dll_hash",
+    "imp_dll_hash_54": "imports_dll_hash",
+    "imp_dll_hash_57": "imports_dll_hash",
+    "imp_dll_hash_61": "imports_dll_hash",
+    "imp_dll_hash_62": "imports_dll_hash",
+    "imp_dll_hash_63": "imports_dll_hash",
+    "imp_func_hash_0": "imports_func_hash",
+    "imp_func_hash_1": "imports_func_hash",
+    "imp_func_hash_2": "imports_func_hash",
+    "imp_func_hash_3": "imports_func_hash",
+    "imp_func_hash_4": "imports_func_hash",
+    "imp_func_hash_5": "imports_func_hash",
+    "imp_func_hash_6": "imports_func_hash",
+    "imp_func_hash_7": "imports_func_hash",
+    "imp_func_hash_8": "imports_func_hash",
+    "imp_func_hash_9": "imports_func_hash",
+    "imp_func_hash_10": "imports_func_hash",
+    "imp_func_hash_11": "imports_func_hash",
+    "imp_func_hash_12": "imports_func_hash",
+    "imp_func_hash_13": "imports_func_hash",
+    "imp_func_hash_14": "imports_func_hash",
+    "imp_func_hash_15": "imports_func_hash",
+    "imp_func_hash_16": "imports_func_hash",
+    "imp_func_hash_17": "imports_func_hash",
+    "imp_func_hash_18": "imports_func_hash",
+    "imp_func_hash_19": "imports_func_hash",
+    "imp_func_hash_20": "imports_func_hash",
+    "imp_func_hash_21": "imports_func_hash",
+    "imp_func_hash_22": "imports_func_hash",
+    "imp_func_hash_23": "imports_func_hash",
+    "imp_func_hash_24": "imports_func_hash",
+    "imp_func_hash_25": "imports_func_hash",
+    "imp_func_hash_26": "imports_func_hash",
+    "imp_func_hash_27": "imports_func_hash",
+    "imp_func_hash_28": "imports_func_hash",
+    "imp_func_hash_29": "imports_func_hash",
+    "imp_func_hash_30": "imports_func_hash",
+    "imp_func_hash_31": "imports_func_hash",
+    "imp_func_hash_32": "imports_func_hash",
+    "imp_func_hash_33": "imports_func_hash",
+    "imp_func_hash_34": "imports_func_hash",
+    "imp_func_hash_35": "imports_func_hash",
+    "imp_func_hash_36": "imports_func_hash",
+    "imp_func_hash_37": "imports_func_hash",
+    "imp_func_hash_38": "imports_func_hash",
+    "imp_func_hash_39": "imports_func_hash",
+    "imp_func_hash_40": "imports_func_hash",
+    "imp_func_hash_41": "imports_func_hash",
+    "imp_func_hash_42": "imports_func_hash",
+    "imp_func_hash_43": "imports_func_hash",
+    "imp_func_hash_44": "imports_func_hash",
+    "imp_func_hash_45": "imports_func_hash",
+    "imp_func_hash_46": "imports_func_hash",
+    "imp_func_hash_47": "imports_func_hash",
+    "imp_func_hash_48": "imports_func_hash",
+    "imp_func_hash_49": "imports_func_hash",
+    "imp_func_hash_50": "imports_func_hash",
+    "imp_func_hash_51": "imports_func_hash",
+    "imp_func_hash_52": "imports_func_hash",
+    "imp_func_hash_53": "imports_func_hash",
+    "imp_func_hash_54": "imports_func_hash",
+    "imp_func_hash_55": "imports_func_hash",
+    "imp_func_hash_56": "imports_func_hash",
+    "imp_func_hash_57": "imports_func_hash",
+    "imp_func_hash_58": "imports_func_hash",
+    "imp_func_hash_59": "imports_func_hash",
+    "imp_func_hash_60": "imports_func_hash",
+    "imp_func_hash_61": "imports_func_hash",
+    "imp_func_hash_62": "imports_func_hash",
+    "imp_func_hash_63": "imports_func_hash",
+    "imp_func_hash_64": "imports_func_hash",
+    "imp_func_hash_65": "imports_func_hash",
+    "imp_func_hash_66": "imports_func_hash",
+    "imp_func_hash_67": "imports_func_hash",
+    "imp_func_hash_68": "imports_func_hash",
+    "imp_func_hash_69": "imports_func_hash",
+    "imp_func_hash_70": "imports_func_hash",
+    "imp_func_hash_71": "imports_func_hash",
+    "imp_func_hash_72": "imports_func_hash",
+    "imp_func_hash_73": "imports_func_hash",
+    "imp_func_hash_74": "imports_func_hash",
+    "imp_func_hash_75": "imports_func_hash",
+    "imp_func_hash_76": "imports_func_hash",
+    "imp_func_hash_77": "imports_func_hash",
+    "imp_func_hash_78": "imports_func_hash",
+    "imp_func_hash_79": "imports_func_hash",
+    "imp_func_hash_80": "imports_func_hash",
+    "imp_func_hash_81": "imports_func_hash",
+    "imp_func_hash_82": "imports_func_hash",
+    "imp_func_hash_83": "imports_func_hash",
+    "imp_func_hash_84": "imports_func_hash",
+    "imp_func_hash_85": "imports_func_hash",
+    "imp_func_hash_86": "imports_func_hash",
+    "imp_func_hash_87": "imports_func_hash",
+    "imp_func_hash_88": "imports_func_hash",
+    "imp_func_hash_89": "imports_func_hash",
+    "imp_func_hash_90": "imports_func_hash",
+    "imp_func_hash_91": "imports_func_hash",
+    "imp_func_hash_92": "imports_func_hash",
+    "imp_func_hash_93": "imports_func_hash",
+    "imp_func_hash_94": "imports_func_hash",
+    "imp_func_hash_95": "imports_func_hash",
+    "imp_func_hash_96": "imports_func_hash",
+    "imp_func_hash_97": "imports_func_hash",
+    "imp_func_hash_98": "imports_func_hash",
+    "imp_func_hash_99": "imports_func_hash",
+    "imp_func_hash_100": "imports_func_hash",
+    "imp_func_hash_101": "imports_func_hash",
+    "imp_func_hash_102": "imports_func_hash",
+    "imp_func_hash_103": "imports_func_hash",
+    "imp_func_hash_104": "imports_func_hash",
+    "imp_func_hash_105": "imports_func_hash",
+    "imp_func_hash_106": "imports_func_hash",
+    "imp_func_hash_107": "imports_func_hash",
+    "imp_func_hash_108": "imports_func_hash",
+    "imp_func_hash_109": "imports_func_hash",
+    "imp_func_hash_110": "imports_func_hash",
+    "imp_func_hash_111": "imports_func_hash",
+    "imp_func_hash_112": "imports_func_hash",
+    "imp_func_hash_113": "imports_func_hash",
+    "imp_func_hash_114": "imports_func_hash",
+    "imp_func_hash_115": "imports_func_hash",
+    "imp_func_hash_116": "imports_func_hash",
+    "imp_func_hash_117": "imports_func_hash",
+    "imp_func_hash_118": "imports_func_hash",
+    "imp_func_hash_119": "imports_func_hash",
+    "imp_func_hash_120": "imports_func_hash",
+    "imp_func_hash_121": "imports_func_hash",
+    "imp_func_hash_122": "imports_func_hash",
+    "imp_func_hash_123": "imports_func_hash",
+    "imp_func_hash_124": "imports_func_hash",
+    "imp_func_hash_125": "imports_func_hash",
+    "imp_func_hash_126": "imports_func_hash",
+    "imp_func_hash_127": "imports_func_hash",
+    "imp_func_hash_128": "imports_func_hash",
+    "imp_func_hash_129": "imports_func_hash",
+    "imp_func_hash_130": "imports_func_hash",
+    "imp_func_hash_131": "imports_func_hash",
+    "imp_func_hash_132": "imports_func_hash",
+    "imp_func_hash_133": "imports_func_hash",
+    "imp_func_hash_134": "imports_func_hash",
+    "imp_func_hash_135": "imports_func_hash",
+    "imp_func_hash_136": "imports_func_hash",
+    "imp_func_hash_137": "imports_func_hash",
+    "imp_func_hash_138": "imports_func_hash",
+    "imp_func_hash_139": "imports_func_hash",
+    "imp_func_hash_140": "imports_func_hash",
+    "imp_func_hash_141": "imports_func_hash",
+    "imp_func_hash_142": "imports_func_hash",
+    "imp_func_hash_143": "imports_func_hash",
+    "imp_func_hash_144": "imports_func_hash",
+    "imp_func_hash_145": "imports_func_hash",
+    "imp_func_hash_146": "imports_func_hash",
+    "imp_func_hash_147": "imports_func_hash",
+    "imp_func_hash_148": "imports_func_hash",
+    "imp_func_hash_149": "imports_func_hash",
+    "imp_func_hash_150": "imports_func_hash",
+    "imp_func_hash_151": "imports_func_hash",
+    "imp_func_hash_152": "imports_func_hash",
+    "imp_func_hash_153": "imports_func_hash",
+    "imp_func_hash_154": "imports_func_hash",
+    "imp_func_hash_155": "imports_func_hash",
+    "imp_func_hash_156": "imports_func_hash",
+    "imp_func_hash_157": "imports_func_hash",
+    "imp_func_hash_158": "imports_func_hash",
+    "imp_func_hash_159": "imports_func_hash",
+    "imp_func_hash_160": "imports_func_hash",
+    "imp_func_hash_161": "imports_func_hash",
+    "imp_func_hash_162": "imports_func_hash",
+    "imp_func_hash_163": "imports_func_hash",
+    "imp_func_hash_164": "imports_func_hash",
+    "imp_func_hash_165": "imports_func_hash",
+    "imp_func_hash_166": "imports_func_hash",
+    "imp_func_hash_168": "imports_func_hash",
+    "imp_func_hash_169": "imports_func_hash",
+    "imp_func_hash_170": "imports_func_hash",
+    "imp_func_hash_171": "imports_func_hash",
+    "imp_func_hash_172": "imports_func_hash",
+    "imp_func_hash_173": "imports_func_hash",
+    "imp_func_hash_174": "imports_func_hash",
+    "imp_func_hash_175": "imports_func_hash",
+    "imp_func_hash_176": "imports_func_hash",
+    "imp_func_hash_177": "imports_func_hash",
+    "imp_func_hash_178": "imports_func_hash",
+    "imp_func_hash_179": "imports_func_hash",
+    "imp_func_hash_180": "imports_func_hash",
+    "imp_func_hash_181": "imports_func_hash",
+    "imp_func_hash_182": "imports_func_hash",
+    "imp_func_hash_183": "imports_func_hash",
+    "imp_func_hash_184": "imports_func_hash",
+    "imp_func_hash_185": "imports_func_hash",
+    "imp_func_hash_186": "imports_func_hash",
+    "imp_func_hash_187": "imports_func_hash",
+    "imp_func_hash_188": "imports_func_hash",
+    "imp_func_hash_189": "imports_func_hash",
+    "imp_func_hash_190": "imports_func_hash",
+    "imp_func_hash_191": "imports_func_hash",
+    "imp_func_hash_192": "imports_func_hash",
+    "imp_func_hash_193": "imports_func_hash",
+    "imp_func_hash_194": "imports_func_hash",
+    "imp_func_hash_195": "imports_func_hash",
+    "imp_func_hash_196": "imports_func_hash",
+    "imp_func_hash_197": "imports_func_hash",
+    "imp_func_hash_198": "imports_func_hash",
+    "imp_func_hash_199": "imports_func_hash",
+    "imp_func_hash_200": "imports_func_hash",
+    "imp_func_hash_201": "imports_func_hash",
+    "imp_func_hash_202": "imports_func_hash",
+    "imp_func_hash_203": "imports_func_hash",
+    "imp_func_hash_204": "imports_func_hash",
+    "imp_func_hash_205": "imports_func_hash",
+    "imp_func_hash_206": "imports_func_hash",
+    "imp_func_hash_207": "imports_func_hash",
+    "imp_func_hash_208": "imports_func_hash",
+    "imp_func_hash_209": "imports_func_hash",
+    "imp_func_hash_210": "imports_func_hash",
+    "imp_func_hash_211": "imports_func_hash",
+    "imp_func_hash_212": "imports_func_hash",
+    "imp_func_hash_213": "imports_func_hash",
+    "imp_func_hash_214": "imports_func_hash",
+    "imp_func_hash_215": "imports_func_hash",
+    "imp_func_hash_216": "imports_func_hash",
+    "imp_func_hash_217": "imports_func_hash",
+    "imp_func_hash_218": "imports_func_hash",
+    "imp_func_hash_219": "imports_func_hash",
+    "imp_func_hash_220": "imports_func_hash",
+    "imp_func_hash_221": "imports_func_hash",
+    "imp_func_hash_222": "imports_func_hash",
+    "imp_func_hash_223": "imports_func_hash",
+    "imp_func_hash_224": "imports_func_hash",
+    "imp_func_hash_225": "imports_func_hash",
+    "imp_func_hash_226": "imports_func_hash",
+    "imp_func_hash_227": "imports_func_hash",
+    "imp_func_hash_228": "imports_func_hash",
+    "imp_func_hash_229": "imports_func_hash",
+    "imp_func_hash_230": "imports_func_hash",
+    "imp_func_hash_231": "imports_func_hash",
+    "imp_func_hash_232": "imports_func_hash",
+    "imp_func_hash_233": "imports_func_hash",
+    "imp_func_hash_234": "imports_func_hash",
+    "imp_func_hash_235": "imports_func_hash",
+    "imp_func_hash_236": "imports_func_hash",
+    "imp_func_hash_237": "imports_func_hash",
+    "imp_func_hash_238": "imports_func_hash",
+    "imp_func_hash_239": "imports_func_hash",
+    "imp_func_hash_240": "imports_func_hash",
+    "imp_func_hash_241": "imports_func_hash",
+    "imp_func_hash_242": "imports_func_hash",
+    "imp_func_hash_243": "imports_func_hash",
+    "imp_func_hash_244": "imports_func_hash",
+    "imp_func_hash_245": "imports_func_hash",
+    "imp_func_hash_246": "imports_func_hash",
+    "imp_func_hash_247": "imports_func_hash",
+    "imp_func_hash_248": "imports_func_hash",
+    "imp_func_hash_249": "imports_func_hash",
+    "imp_func_hash_250": "imports_func_hash",
+    "imp_func_hash_251": "imports_func_hash",
+    "imp_func_hash_252": "imports_func_hash",
+    "imp_func_hash_253": "imports_func_hash",
+    "imp_func_hash_254": "imports_func_hash",
+    "imp_func_hash_255": "imports_func_hash",
+    "imphash": "imports_scalar",
+    "num_suspicious_imports": "imports_scalar",
+    "has_exports": "exports_scalar",
+    "num_exports": "exports_scalar",
+    "export_name_count": "exports_scalar",
+    "exp_hash_0": "exports_hash",
+    "exp_hash_1": "exports_hash",
+    "exp_hash_2": "exports_hash",
+    "exp_hash_3": "exports_hash",
+    "exp_hash_4": "exports_hash",
+    "exp_hash_5": "exports_hash",
+    "exp_hash_6": "exports_hash",
+    "exp_hash_7": "exports_hash",
+    "exp_hash_8": "exports_hash",
+    "exp_hash_9": "exports_hash",
+    "exp_hash_10": "exports_hash",
+    "exp_hash_11": "exports_hash",
+    "exp_hash_12": "exports_hash",
+    "exp_hash_13": "exports_hash",
+    "exp_hash_14": "exports_hash",
+    "exp_hash_15": "exports_hash",
+    "exp_hash_16": "exports_hash",
+    "exp_hash_17": "exports_hash",
+    "exp_hash_18": "exports_hash",
+    "exp_hash_19": "exports_hash",
+    "exp_hash_20": "exports_hash",
+    "exp_hash_21": "exports_hash",
+    "exp_hash_22": "exports_hash",
+    "exp_hash_23": "exports_hash",
+    "exp_hash_24": "exports_hash",
+    "exp_hash_25": "exports_hash",
+    "exp_hash_26": "exports_hash",
+    "exp_hash_27": "exports_hash",
+    "exp_hash_28": "exports_hash",
+    "exp_hash_29": "exports_hash",
+    "exp_hash_30": "exports_hash",
+    "exp_hash_31": "exports_hash",
+    "has_resources": "resources",
+    "rsrc_num_directories": "resources",
+    "rsrc_num_data_entries": "resources",
+    "rsrc_total_size": "resources",
+    "rsrc_size_ratio": "resources",
+    "rsrc_num_types": "resources",
+    "rsrc_has_manifest": "resources",
+    "rsrc_has_version": "resources",
+    "rsrc_has_icons": "resources",
+    "rsrc_has_dialogs": "resources",
+    "rsrc_has_string_table": "resources",
+    "rsrc_mean_entropy": "resources",
+    "rsrc_max_entropy": "resources",
+    "tls_num_callbacks": "tls",
+    "tls_characteristics": "tls",
+    "tls_data_size": "tls",
+    "has_debug": "debug",
+    "has_pogo": "debug",
+    "has_repro": "debug",
+    "has_pdb": "debug",
+    "num_certificates": "signatures",
+    "sig_verified": "signatures",
+    "has_relocations": "relocations",
+    "num_relocation_blocks": "relocations",
+    "rich_key": "rich_header",
+    "rich_mean_id": "rich_header",
+    "rich_max_build_id": "rich_header",
+    "rich_total_count": "rich_header",
+    "has_load_config": "load_config",
+    "lc_size": "load_config",
+    "lc_security_cookie": "load_config",
+    "lc_seh_count": "load_config",
+    "lc_guard_flags": "load_config",
+    "has_overlay": "overlay",
+    "overlay_size": "overlay",
+    "overlay_ratio": "overlay",
+    "overlay_entropy": "overlay",
+    "dd_EXPORT_TABLE_rva": "data_directories",
+    "dd_EXPORT_TABLE_size": "data_directories",
+    "dd_IMPORT_TABLE_rva": "data_directories",
+    "dd_IMPORT_TABLE_size": "data_directories",
+    "dd_EXCEPTION_TABLE_rva": "data_directories",
+    "dd_EXCEPTION_TABLE_size": "data_directories",
+    "dd_CERTIFICATE_TABLE_rva": "data_directories",
+    "dd_CERTIFICATE_TABLE_size": "data_directories",
+    "dd_BASE_RELOCATION_TABLE_size": "data_directories",
+    "dd_DEBUG_DIR_rva": "data_directories",
+    "dd_DEBUG_DIR_size": "data_directories",
+    "dd_TLS_TABLE_size": "data_directories",
+    "dd_LOAD_CONFIG_TABLE_rva": "data_directories",
+    "dd_BOUND_IMPORT_rva": "data_directories",
+    "dd_BOUND_IMPORT_size": "data_directories",
+    "dd_IAT_size": "data_directories",
+    "dd_DELAY_IMPORT_DESCRIPTOR_rva": "data_directories",
+    "dd_DELAY_IMPORT_DESCRIPTOR_size": "data_directories",
+    "dd_CLR_RUNTIME_HEADER_rva": "data_directories",
+    "dd_CLR_RUNTIME_HEADER_size": "data_directories",
+    "has_delay_imports": "delay_imports"
+  }
+}

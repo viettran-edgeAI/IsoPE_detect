@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "workers": 4,
+  "corr_threshold": 0.95,
+  "norm_var_threshold": 1e-7,
+  "parse_timeout": 60,
+  "max_sections": 10,
+  "hash_sizes": {
+    "imp_func": 256,
+    "imp_dll": 64,
+    "exp_name": 32,
+    "sec_name": 32
+  },
+  "dataset_dirs": {
+    "benign_train": "../../datasets/BENIGN_TRAIN_DATASET",
+    "benign_val": "../../datasets/BENIGN_VALIDATION_DATASET",
+    "benign_test": "../../datasets/BENIGN_TEST_DATASET",
+    "malware_val": "../../datasets/MALWARE_VALIDATION_DATASET",
+    "malware_test": "../../datasets/MALWARE_TEST_DATASET"
+  }
+}

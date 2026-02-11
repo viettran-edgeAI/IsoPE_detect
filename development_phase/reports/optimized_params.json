@@ -1,0 +1,12 @@
+{
+  "n_features": 25,
+  "n_estimators": 200,
+  "max_samples": 0.4,
+  "max_features": 1.0,
+  "bootstrap": true,
+  "contamination": 0.005,
+  "threshold_strategy": "tpr",
+  "f_beta": 1.0,
+  "fpr_threshold": 0.05,
+  "val_fpr_target": 0.05
+}
