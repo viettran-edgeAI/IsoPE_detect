@@ -1,21 +1,21 @@
 # Feature Selection Report
 
-**Date**: 2026-02-11 11:05
+**Date**: 2026-02-13 13:53
 
 ## Summary
 
-- Raw features extracted: **623**
-- After variance filtering: **571** (removed 52)
-- After correlation pruning: **534** (removed 37)
-- After stability filtering: **476** (removed 58)
+- Raw features loaded: **623**
+- After variance filtering: **570** (removed 53)
+- After correlation pruning: **533** (removed 37)
+- After stability filtering: **475** (removed 58)
 - Log-transformed features: **380**
-- **Final selected: 476 features in 23 groups**
+- **Final selected: 475 features in 23 groups**
 
 ## Per-Group Summary
 
 | Group | Raw | After Var | After Corr | After Stab |
 |-------|-----|-----------|------------|------------|
-| coff_header | 11 | 9 | 8 | 7 |
+| coff_header | 11 | 8 | 7 | 6 |
 | data_directories | 32 | 28 | 22 | 20 |
 | debug | 7 | 7 | 4 | 4 |
 | delay_imports | 2 | 2 | 2 | 1 |
@@ -39,15 +39,14 @@
 | signatures | 4 | 4 | 2 | 2 |
 | tls | 5 | 4 | 3 | 3 |
 
-## Selected Features (476 total)
+## Selected Features (475 total)
 
-### coff_header (7 features)
+### coff_header (6 features)
 - `coff_machine`
 - `coff_num_sections`
 - `coff_characteristics` [log1p]
 - `coff_char_DLL`
 - `coff_char_LARGE_ADDRESS_AWARE`
-- `coff_char_RELOCS_STRIPPED`
 - `coff_char_DEBUG_STRIPPED`
 
 ### data_directories (20 features)
@@ -562,3 +561,14 @@
 - `tls_num_callbacks` [log1p]
 - `tls_characteristics` [log1p]
 - `tls_data_size` [log1p]
+
+## Malware Validation/Test Separation
+
+- Validation size before control: **2998**
+- Validation size after control: **400**
+- Exact duplicates removed: **0**
+- Near-duplicates removed (hash_vector_cosine): **2598**
+- Shared imphash removed: **1488**
+- Downsample removed: **2598**
+- Target range (5-8% benign test): **[250, 400]**
+- Actual validation ratio to benign test: **0.0801**

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Stage 1+2: Data Preprocessing and Feature Selection
-====================================================
-Extract raw PE features with LIEF, build consistent raw datasets,
-then apply feature filtering to create cleaned datasets.
+Stage 1: Raw PE Feature Extraction
+==================================
+Extract raw PE features with LIEF and build consistent raw datasets.
+This stage is heavy and is intended to run once per dataset snapshot.
 
 Usage:
-    python feature_extraction.py [--config PATH] [--workers N] [--corr-threshold X]
+    python feature_extraction.py [--config PATH] [--workers N]
 
 Outputs:
     ../data/raw/benign_train_raw.parquet
@@ -14,15 +14,8 @@ Outputs:
     ../data/raw/benign_test_raw.parquet
     ../data/raw/malware_val_raw.parquet
     ../data/raw/malware_test_raw.parquet
-    ../data/cleaned/benign_train_clean.parquet
-    ../data/cleaned/benign_val_clean.parquet
-    ../data/cleaned/benign_test_clean.parquet
-    ../data/cleaned/malware_val_clean.parquet
-    ../data/cleaned/malware_test_clean.parquet
     ../schemas/feature_group_mapping.json
     ../schemas/feature_schema.json
-    ../schemas/feature_schema_selected.json
-    ../reports/feature_selection_report.md
 """
 
 import argparse
@@ -589,8 +582,8 @@ def build_group_mapping(columns: list) -> dict:
 # ═══════════════════════════════════════════════════════════════
 
 def scan_pe_files(directory: Path) -> list:
-    """Find all PE files in a directory (any extension)."""
-    files = sorted(directory.glob("*"))
+    """Find all candidate PE files recursively under a directory."""
+    files = sorted(directory.rglob("*"))
     return [str(f) for f in files if f.is_file()]
 
 
@@ -905,15 +898,11 @@ def main():
     default_config_path = script_dir / "feature_extraction_config.json"
     default_workers = max(1, (os.cpu_count() or 1) - 1)
 
-    parser = argparse.ArgumentParser(description="Stage 1+2: Data Preprocessing and Feature Selection")
+    parser = argparse.ArgumentParser(description="Stage 1: Raw PE Feature Extraction")
     parser.add_argument("--config", type=str, default=None,
                         help=f"Path to JSON config file (defaults to {default_config_path})")
     parser.add_argument("--workers", type=int, default=None,
                         help="Number of parallel workers (overrides config)")
-    parser.add_argument("--corr-threshold", type=float, default=None,
-                        help="Correlation pruning threshold (overrides config)")
-    parser.add_argument("--norm-var-threshold", type=float, default=None,
-                        help="Normalized variance threshold for continuous features (overrides config)")
     args = parser.parse_args()
 
     config_path = Path(args.config) if args.config else default_config_path
@@ -945,9 +934,6 @@ def main():
 
     # Merge CLI args with config (CLI overrides config)
     workers = args.workers if args.workers is not None else config.get("workers", default_workers)
-    corr_threshold = args.corr_threshold if args.corr_threshold is not None else config.get("corr_threshold", 0.95)
-    norm_var_threshold = args.norm_var_threshold if args.norm_var_threshold is not None else config.get("norm_var_threshold", 1e-7)
-
     # Override module-level constants if specified in config
     global PARSE_TIMEOUT, MAX_SECTIONS, HASH_SIZES
     PARSE_TIMEOUT = int(config.get("parse_timeout", PARSE_TIMEOUT))
@@ -955,13 +941,11 @@ def main():
     if "hash_sizes" in config and isinstance(config["hash_sizes"], dict):
         HASH_SIZES.update(config["hash_sizes"])
 
-    print(f"Configuration: workers={workers}, corr_threshold={corr_threshold}, norm_var_threshold={norm_var_threshold}, parse_timeout={PARSE_TIMEOUT}, max_sections={MAX_SECTIONS}")
+    print(f"Configuration: workers={workers}, parse_timeout={PARSE_TIMEOUT}, max_sections={MAX_SECTIONS}")
 
     data_raw_dir = script_dir.parent / "data" / "raw"
-    data_clean_dir = script_dir.parent / "data" / "cleaned"
     schema_dir = script_dir.parent / "schemas"
-    report_dir = script_dir.parent / "reports"
-    for d in [data_raw_dir, data_clean_dir, schema_dir, report_dir]:
+    for d in [data_raw_dir, schema_dir]:
         d.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
@@ -1024,125 +1008,8 @@ def main():
             if failed:
                 print(f"  {name}: {len(failed)} failures")
 
-    print("\n" + "=" * 70)
-    print("STAGE 2: PRE-TRAINING FEATURE SELECTION")
-    print("=" * 70)
-
-    df_train = dfs_raw["benign_train"]
-    all_raw_cols = list(df_train.columns)
-    print(f"\nTotal raw features: {len(all_raw_cols)}")
-
-    print("\n--- Variance Filtering ---")
-    kept_after_var, var_removed = variance_filter(
-        df_train,
-        group_mapping,
-        norm_var_threshold=norm_var_threshold,
-    )
-    print(f"  {len(all_raw_cols)} -> {len(kept_after_var)} features (removed {len(var_removed)})")
-
-    if var_removed:
-        var_df = pd.DataFrame(var_removed)
-        print("  Removals by group:")
-        for grp, cnt in var_df.groupby("group")["name"].count().sort_values(ascending=False).items():
-            print(f"    {grp}: {cnt}")
-
-    print("\n--- Correlation Pruning ---")
-    df_var_filtered = df_train[kept_after_var]
-    kept_after_corr, corr_removed = correlation_pruning(
-        df_var_filtered,
-        threshold=corr_threshold,
-        group_mapping=group_mapping,
-    )
-    print(f"  {len(kept_after_var)} -> {len(kept_after_corr)} features (removed {len(corr_removed)})")
-
-    if corr_removed:
-        corr_df = pd.DataFrame(corr_removed)
-        print("  Removals by group:")
-        for grp, cnt in corr_df.groupby("dropped_group")["dropped"].count().sort_values(ascending=False).items():
-            print(f"    {grp}: {cnt}")
-
-    print("\n--- Stability Filtering ---")
-    df_corr_filtered = df_train[kept_after_corr]
-    kept_after_stab, log_transform_cols, stab_removed = stability_filter(
-        df_corr_filtered,
-        group_mapping,
-    )
-    print(f"  {len(kept_after_corr)} -> {len(kept_after_stab)} features (removed {len(stab_removed)})")
-    print(f"  Log-transform rescued: {len(log_transform_cols)}")
-
-    if stab_removed:
-        stab_df = pd.DataFrame(stab_removed)
-        print("  Removals by group:")
-        for grp, cnt in stab_df.groupby("group")["name"].count().sort_values(ascending=False).items():
-            print(f"    {grp}: {cnt}")
-
-    selected_features = kept_after_stab
-
-    print(f"\n--- Saving cleaned datasets ({len(selected_features)} features) ---")
-    for name, df in dfs_raw.items():
-        df_clean = apply_transforms(df, selected_features, log_transform_cols)
-        out_path = data_clean_dir / f"{name}_clean.parquet"
-        df_clean.to_parquet(out_path, engine="pyarrow", compression="snappy")
-        print(f"  Saved {name}: {df_clean.shape} -> {out_path}")
-
-    feature_status = {}
-    for col in all_raw_cols:
-        feature_status[col] = {"status": "removed", "stage": "initial"}
-
-    var_removed_names = {r["name"] for r in var_removed}
-    for col in all_raw_cols:
-        if col in var_removed_names:
-            feature_status[col] = {"status": "removed", "stage": "variance_filter"}
-
-    corr_removed_names = {r["dropped"] for r in corr_removed}
-    for col in kept_after_var:
-        if col in corr_removed_names:
-            feature_status[col] = {"status": "removed", "stage": "correlation_prune"}
-
-    stab_removed_names = {r["name"] for r in stab_removed}
-    for col in kept_after_corr:
-        if col in stab_removed_names:
-            feature_status[col] = {"status": "removed", "stage": "stability_filter"}
-
-    for col in selected_features:
-        if col in log_transform_cols:
-            feature_status[col] = {"status": "selected_log_transform", "stage": "passed_all"}
-        else:
-            feature_status[col] = {"status": "selected", "stage": "passed_all"}
-
-    schema = {
-        "schema_version": "1.0",
-        "created_date": time.strftime("%Y-%m-%d"),
-        "total_raw_features": len(all_raw_cols),
-        "selected_features": len(selected_features),
-        "feature_order": selected_features,
-        "log_transform_features": log_transform_cols,
-        "feature_status": feature_status,
-        "group_mapping": {c: group_mapping.get(c, "?") for c in selected_features},
-    }
-    schema_path = schema_dir / "feature_schema_selected.json"
-    with open(schema_path, "w") as fh:
-        json.dump(schema, fh, indent=2)
-    print(f"\n  Feature schema saved to {schema_path}")
-
-    report = generate_report(
-        all_raw_cols, kept_after_var, var_removed,
-        kept_after_corr, corr_removed,
-        kept_after_stab, stab_removed,
-        log_transform_cols, group_mapping,
-    )
-    report_path = report_dir / "feature_selection_report.md"
-    report_path.write_text(report)
-    print(f"  Report saved to {report_path}")
-
-    selected_groups = Counter(group_mapping.get(c, "?") for c in selected_features)
-    print(f"\n{'=' * 70}")
-    print("FEATURE SELECTION COMPLETE")
-    print(f"{'=' * 70}")
-    print(f"  Raw:      {len(all_raw_cols)} features")
-    print(f"  Selected: {len(selected_features)} features in {len(selected_groups)} groups")
-    print(f"  Log-transformed: {len(log_transform_cols)}")
-    print(f"{'=' * 70}")
+    print("\nStage 1 complete. Raw datasets and schema are ready.")
+    print("Run feature_selection.py to generate cleaned datasets.")
 
 
 if __name__ == "__main__":

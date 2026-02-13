@@ -1,9 +1,9 @@
 {
-  "n_features": 25,
+  "n_features": 40,
   "n_estimators": 200,
-  "max_samples": 0.4,
-  "max_features": 1.0,
-  "bootstrap": true,
+  "max_samples": 0.7,
+  "max_features": 0.6,
+  "bootstrap": false,
   "contamination": 0.005,
   "threshold_strategy": "tpr",
   "f_beta": 1.0,

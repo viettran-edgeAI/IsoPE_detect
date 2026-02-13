@@ -18,8 +18,7 @@ Outputs:
     ../reports/optimized_params.json
     ../reports/optimized_features.csv
     ../reports/roc_curve.svg
-    ../reports/malware_val_test_umap.png
-    ../reports/malware_val_test_tsne.png
+    ../reports/malware_val_test_embedding.png
     ../reports/malware_val_test_embedding.csv
     ../reports/malware_val_test_cluster_report.md
     ../reports/score_distribution.svg
@@ -36,7 +35,6 @@ from typing import Literal, Union, Any, cast
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
-from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import average_precision_score, precision_recall_curve, roc_auc_score, roc_curve
 from sklearn.preprocessing import StandardScaler
 
@@ -128,9 +126,12 @@ def _select_threshold_with_malware(scores_benign, scores_malware, max_fpr, strat
 def _select_top_features(X_train, X_malware, feature_names, top_k):
     mean_benign = X_train.mean(axis=0)
     mean_malware = X_malware.mean(axis=0)
-    std_benign = X_train.std(axis=0) + 1e-10
+    std_benign = X_train.std(axis=0)
+    std_malware = X_malware.std(axis=0)
+    pooled_std = np.sqrt(0.5 * (std_benign * std_benign + std_malware * std_malware)) + 1e-10
 
-    cohens_d = np.abs(mean_benign - mean_malware) / std_benign
+    cohens_d = np.abs(mean_benign - mean_malware) / pooled_std
+    top_k = min(int(top_k), int(len(feature_names)))
     top_indices = np.argsort(cohens_d)[-top_k:]
 
     return top_indices, feature_names[top_indices], cohens_d[top_indices]
@@ -213,9 +214,15 @@ def _run_malware_split_analysis(
     val_data_path: Path | None,
     test_data_path: Path | None,
 ) -> None:
-    import matplotlib
+    try:
+        import matplotlib
+    except ModuleNotFoundError:
+        print("Skipping malware split analysis: matplotlib is not installed.")
+        print("Install with: pip install matplotlib umap-learn")
+        return
 
     matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
     from sklearn.decomposition import PCA
     from sklearn.manifold import TSNE
     from sklearn.metrics import silhouette_score
@@ -259,10 +266,31 @@ def _run_malware_split_analysis(
     sil_umap = float(silhouette_score(umap_embedding, labels))
     sil_tsne = float(silhouette_score(tsne_embedding, labels))
 
-    umap_png = report_dir / "malware_val_test_umap.png"
-    tsne_png = report_dir / "malware_val_test_tsne.png"
-    _plot_embedding(umap_embedding, labels, "UMAP: Malware Validation vs Test", umap_png)
-    _plot_embedding(tsne_embedding, labels, "t-SNE: Malware Validation vs Test", tsne_png)
+    combined_png = report_dir / "malware_val_test_embedding.png"
+    colors = {"val": "#1f77b4", "test": "#ff7f0e"}
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    for ax, embed, title in [
+        (axes[0], umap_embedding, "UMAP: Malware Validation vs Test"),
+        (axes[1], tsne_embedding, "t-SNE: Malware Validation vs Test"),
+    ]:
+        for split in ["val", "test"]:
+            mask = labels == split
+            ax.scatter(
+                embed[mask, 0],
+                embed[mask, 1],
+                s=18,
+                alpha=0.7,
+                c=colors[split],
+                label=f"{split} (n={mask.sum()})",
+                linewidths=0,
+            )
+        ax.set_title(title)
+        ax.set_xlabel("dim-1")
+        ax.set_ylabel("dim-2")
+    axes[0].legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(combined_png, dpi=200)
+    plt.close(fig)
 
     embedding_csv = report_dir / "malware_val_test_embedding.csv"
     embed_df = pd.DataFrame(
@@ -304,8 +332,7 @@ def _run_malware_split_analysis(
             f.write(f"- Imphash not available ({reason})\n")
 
     print("Cluster analysis complete")
-    print(f"  UMAP plot: {umap_png}")
-    print(f"  t-SNE plot: {tsne_png}")
+    print(f"  Combined plot: {combined_png}")
     print(f"  Embeddings: {embedding_csv}")
     print(f"  Report: {report_path}")
 
@@ -597,7 +624,6 @@ def main():
     val_m_path = _resolve_path(config_path, val_m_raw) if val_m_raw else None
 
     feature_cfg = cfg["feature_selection"]
-    variance_threshold = float(feature_cfg.get("variance_threshold", 0.01))
     top_k_list = [int(x) for x in _as_list(feature_cfg["top_k_list"])]
 
     model_cfg = cfg["model"]
@@ -671,10 +697,8 @@ def main():
 
     print(f"  Samples: {len(df_train)}/{len(df_val)}/{len(df_test_b)}/{len(df_test_m)}")
 
-    print("Filtering features...")
-    selector = VarianceThreshold(threshold=variance_threshold)
-    selector.fit(df_train.values.astype(np.float32))
-    selected_cols = np.array(df_train.columns[selector.get_support()].tolist())
+    print("Preparing features...")
+    selected_cols = np.array(df_train.columns.tolist())
 
     X_train_var = df_train[selected_cols].values.astype(np.float32)
     X_val_var = df_val[selected_cols].values.astype(np.float32)
@@ -685,7 +709,7 @@ def main():
     X_val_m_fs_var = X_val_m_var
     X_val_m_thr_var = X_val_m_var
 
-    print(f"  Features: {len(df_train.columns)} -> {len(selected_cols)}")
+    print(f"  Features: {len(selected_cols)}")
 
     # Load group mapping for artifact export
     schema_dir = _resolve_path(config_path, "../schemas")
@@ -819,9 +843,12 @@ def main():
     if len(valid_results) == 0:
         raise RuntimeError("No configuration met the configured FPR threshold")
 
+    valid_results = valid_results.copy()
+    valid_results["fpr_gap"] = (valid_results["fpr_val"] - val_fpr_target).abs()
+
     best = valid_results.sort_values(
-        by=["tpr_test", "tpr_val", "auc_val", "fpr_val"],
-        ascending=[False, False, False, True],
+        by=["tpr_val", "auc_val", "fpr_gap", "time_s"],
+        ascending=[False, False, True, True],
     ).iloc[0]
 
     print("\n" + "=" * 70)
@@ -833,6 +860,13 @@ def main():
     print(f"  max_features:    {best['max_features'].item()}")
     print(f"  bootstrap:       {bool(best['bootstrap'].item())}")
     print(f"  contamination:   {best['contamination'].item()}")
+    print(f"  top_k_list:      {top_k_list}")
+    print(f"  threshold_strat: {threshold_strategy}")
+    print(f"  fpr_threshold:   {fpr_threshold}")
+    print(f"  val_fpr_target:  {val_fpr_target}")
+    print(f"  f_beta:          {f_beta}")
+    print(f"  random_state:    {random_state}")
+    print(f"  n_jobs:          {n_jobs}")
 
     # threshold details
     
@@ -1000,7 +1034,9 @@ def main():
         df_optimized = pd.DataFrame(data, columns=top_names)
         out_path = optimized_data_dir / f"{name}_optimized.parquet"
         df_optimized.to_parquet(out_path, engine="pyarrow", compression="snappy")
-        print(f"  Saved {name}: {df_optimized.shape} -> {out_path}")
+        csv_path = optimized_data_dir / f"{name}_optimized.csv"
+        df_optimized.to_csv(csv_path, index=False)
+        print(f"  Saved {name}: {df_optimized.shape} -> {out_path} | {csv_path}")
 
     print(f"\n{'=' * 70}")
     print("MALWARE SPLIT ANALYSIS")

@@ -2,6 +2,13 @@
 
 All notable changes to the EDR Agent model and optimization pipeline will be documented in this file. This project follows absolute metric tracking for model effectiveness.
 
+## [1.4.0] - 2026-02-12
+
+- **EIF test and Early ROC Diagnosis**: Monitor `tpr_test_at_fpr_1e-4`, `tpr_test_at_fpr_1e-3`, and `tpr_test_at_fpr_1e-2` to quantify low FPR behavior. Add EIF (Extended Isolation Forest) to the pipeline and run the test.
+
+- **Results**: No improvement
+- **Decision**: Cancel
+
 ## [1.3.0] - 2026-02-11
 
 ### Added

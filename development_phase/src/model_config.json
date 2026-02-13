@@ -7,12 +7,11 @@
     "val_malware_path": "../data/cleaned/malware_val_clean.parquet"
   },
   "feature_selection": {
-    "variance_threshold": 0.008,
-    "top_k_list": [15, 20, 25]
+    "top_k_list": [20, 25, 40]
   },
   "model": {
-    "n_estimators": [200,500, 1000],
-    "max_samples": [512, 0.4],
+    "n_estimators": [200,500],
+    "max_samples": [512, 0.4, 0.7],
     "contamination": [0.005],
     "max_features": [0.6, 0.8, 1.0],
     "bootstrap": [false, true],

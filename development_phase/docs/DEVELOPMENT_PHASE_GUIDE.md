@@ -1,12 +1,13 @@
 # Development Phase Guide: PE Malware Detection
 
-Version: 2.1
-Date: 2026-02-11
+Version: 2.2
+Date: 2026-02-13
 
 ## Overview
-The development phase produces the final feature set and optimized Isolation Forest model for static PE anomaly detection. The pipeline uses two programs in development_phase/src:
-- feature_extraction.py: extract raw PE features and filter them into cleaned datasets.
-- model_optimization.py: select the best feature subset, tune the model, export artifacts, and analyze malware val/test separation.
+The development phase produces the final feature set and optimized Isolation Forest model for static PE anomaly detection. The pipeline now uses three programs in development_phase/src:
+- feature_extraction.py: heavy one-time extraction of raw PE features.
+- feature_selection.py: filtering/selection from raw datasets to cleaned datasets (including variance_threshold).
+- model_optimization.py: model tuning, feature ranking (top-k), final artifact export, and malware val/test separation analysis.
 
 All datasets at each stage (raw, cleaned, optimized) share the same feature order and columns.
 
@@ -23,6 +24,9 @@ These directories must exist at the workspace root:
 development_phase/
   src/
     feature_extraction.py
+    feature_selection.py
+    feature_selection_config.json
+    feature_extraction_config.json
     model_optimization.py
     model_config.json
   data/
@@ -43,7 +47,7 @@ Install dependencies:
 pip install lief scikit-learn pandas numpy pyarrow scipy matplotlib umap-learn
 ```
 
-## Stage 1+2: Preprocessing (Raw + Cleaned)
+## Stage 1: Raw Feature Extraction
 Script: development_phase/src/feature_extraction.py
 
 Run:
@@ -54,13 +58,31 @@ python feature_extraction.py
 
 CLI parameters:
 - --workers: number of parallel workers (default: cpu_count - 1).
-- --corr-threshold: correlation pruning threshold (default: 0.95).
-- --norm-var-threshold: normalized variance threshold for continuous features (default: 1e-7).
+
+Config: development_phase/src/feature_extraction_config.json
 
 Outputs:
 - Raw datasets: development_phase/data/raw/*_raw.parquet
-- Cleaned datasets: development_phase/data/cleaned/*_clean.parquet
 - Feature schema: development_phase/schemas/feature_schema.json
+
+## Stage 2: Filtering and Selection (Raw -> Cleaned)
+Script: development_phase/src/feature_selection.py
+
+Run:
+```
+cd /home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src
+python feature_selection.py --config feature_selection_config.json
+```
+
+Config: development_phase/src/feature_selection_config.json
+
+Key filtering parameters:
+- variance_threshold: base variance gate for low-information features.
+- corr_threshold: correlation pruning threshold.
+- norm_var_threshold: normalized variance gate for continuous features.
+
+Outputs:
+- Cleaned datasets: development_phase/data/cleaned/*_clean.parquet
 - Selected schema: development_phase/schemas/feature_schema_selected.json
 - Report: development_phase/reports/feature_selection_report.md
 
@@ -87,7 +109,6 @@ Paths to cleaned datasets used for training and evaluation.
 
 #### feature_selection
 Controls feature selection before model training.
-- variance_threshold: variance threshold applied with sklearn VarianceThreshold.
 - top_k_list: list of top-k values to evaluate using Cohen's d ranking.
 
 #### model
@@ -133,12 +154,17 @@ Where artifacts and reports are written.
   - development_phase/reports/malware_val_test_cluster_report.md
 
 ## Pipeline Run Order
-1) Preprocessing:
+1) Raw extraction:
 ```
 python feature_extraction.py
 ```
 
-2) Optimization:
+2) Filtering/selection:
+```
+python feature_selection.py --config feature_selection_config.json
+```
+
+3) Optimization:
 ```
 python model_optimization.py --config model_config.json
 ```

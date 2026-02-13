@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "created_date": "2026-02-11",
+  "created_date": "2026-02-13",
   "total_raw_features": 623,
-  "selected_features": 476,
+  "selected_features": 475,
   "feature_order": [
     "file_size",
     "dos_e_lfanew",
@@ -11,7 +11,6 @@
     "coff_characteristics",
     "coff_char_DLL",
     "coff_char_LARGE_ADDRESS_AWARE",
-    "coff_char_RELOCS_STRIPPED",
     "coff_char_DEBUG_STRIPPED",
     "opt_major_linker",
     "opt_minor_linker",
@@ -917,8 +916,8 @@
       "stage": "passed_all"
     },
     "coff_char_RELOCS_STRIPPED": {
-      "status": "selected",
-      "stage": "passed_all"
+      "status": "removed",
+      "stage": "variance_filter"
     },
     "coff_char_DEBUG_STRIPPED": {
       "status": "selected",
@@ -3365,7 +3364,6 @@
     "coff_characteristics": "coff_header",
     "coff_char_DLL": "coff_header",
     "coff_char_LARGE_ADDRESS_AWARE": "coff_header",
-    "coff_char_RELOCS_STRIPPED": "coff_header",
     "coff_char_DEBUG_STRIPPED": "coff_header",
     "opt_major_linker": "optional_header",
     "opt_minor_linker": "optional_header",
@@ -3834,5 +3832,10 @@
     "dd_CLR_RUNTIME_HEADER_rva": "data_directories",
     "dd_CLR_RUNTIME_HEADER_size": "data_directories",
     "has_delay_imports": "delay_imports"
+  },
+  "filtering_parameters": {
+    "variance_threshold": 0.008,
+    "norm_var_threshold": 1e-07,
+    "corr_threshold": 0.95
   }
 }

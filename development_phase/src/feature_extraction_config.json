@@ -1,8 +1,6 @@
 {
   "version": "1.0",
   "workers": 4,
-  "corr_threshold": 0.95,
-  "norm_var_threshold": 1e-7,
   "parse_timeout": 60,
   "max_sections": 10,
   "hash_sizes": {
