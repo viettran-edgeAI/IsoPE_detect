@@ -11,12 +11,12 @@
     "norm_var_threshold": 1e-7,
     "corr_threshold": 0.95
   },
-  "separation_control": {
-    "enabled": true,
-    "min_val_ratio_to_benign_test": 0.05,
-    "max_val_ratio_to_benign_test": 0.08,
-    "near_dup_cosine_threshold": 0.995,
-    "random_seed": 42
+  "separation": {
+    "malware_val_ratio_to_benign_val": 0.2,
+    "malware_val_ratio_seed": 42,
+    "malware_val_min_samples": 500,
+    "enforce_imphash_disjoint": true,
+    "max_cross_similarity": 0.999
   },
   "outputs": {
     "cleaned_data_dir": "../data/cleaned",

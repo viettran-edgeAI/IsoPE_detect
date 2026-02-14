@@ -26,6 +26,7 @@ Outputs:
 """
 
 import argparse
+import hashlib
 import json
 import time
 from itertools import product
@@ -37,6 +38,24 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import average_precision_score, precision_recall_curve, roc_auc_score, roc_curve
 from sklearn.preprocessing import StandardScaler
+
+
+def _compute_dataset_fingerprint(df: pd.DataFrame, name: str) -> str:
+    """Compute SHA256 fingerprint of a dataset for audit trail."""
+    df_hash = pd.util.hash_pandas_object(df, index=False)
+    combined = hashlib.sha256()
+    combined.update(np.asarray(df_hash.values).tobytes())
+    fingerprint = combined.hexdigest()[:16]
+    return fingerprint
+
+
+def _count_cross_split_overlap(source_df: pd.DataFrame, target_df: pd.DataFrame) -> int:
+    """Count exact duplicate rows in target_df that also exist in source_df."""
+    if len(source_df) == 0 or len(target_df) == 0:
+        return 0
+    source_hashes = set(pd.util.hash_pandas_object(source_df, index=False).tolist())
+    target_hashes = pd.util.hash_pandas_object(target_df, index=False)
+    return int(target_hashes.isin(source_hashes).sum())
 
 
 def _as_list(value):
@@ -124,6 +143,7 @@ def _select_threshold_with_malware(scores_benign, scores_malware, max_fpr, strat
 
 
 def _select_top_features(X_train, X_malware, feature_names, top_k):
+    """Rank features with Cohen's d between benign training and malware validation."""
     mean_benign = X_train.mean(axis=0)
     mean_malware = X_malware.mean(axis=0)
     std_benign = X_train.std(axis=0)
@@ -224,7 +244,6 @@ def _run_malware_split_analysis(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from sklearn.decomposition import PCA
-    from sklearn.manifold import TSNE
     from sklearn.metrics import silhouette_score
     import umap
 
@@ -250,44 +269,46 @@ def _run_malware_split_analysis(
         n_epochs=200,
         low_memory=True,
         random_state=42,
+        n_components=2,
     )
     umap_embedding = np.asarray(umap_model.fit_transform(X_pca))
 
-    tsne_model = TSNE(
-        n_components=2,
-        perplexity=30,
-        init="pca",
-        learning_rate="auto",
-        max_iter=750,
+    umap_15_model = umap.UMAP(
+        n_neighbors=10,
+        min_dist=0.1,
+        metric="euclidean",
+        n_epochs=200,
+        low_memory=True,
         random_state=42,
+        n_components=15,
     )
-    tsne_embedding = np.asarray(tsne_model.fit_transform(X_pca))
+    umap_15_embedding = np.asarray(umap_15_model.fit_transform(X_pca))
 
-    sil_umap = float(silhouette_score(umap_embedding, labels))
-    sil_tsne = float(silhouette_score(tsne_embedding, labels))
+    sil_umap_2d = float(silhouette_score(umap_embedding, labels))
+    sil_umap_15d = float(silhouette_score(umap_15_embedding, labels))
 
     combined_png = report_dir / "malware_val_test_embedding.png"
     colors = {"val": "#1f77b4", "test": "#ff7f0e"}
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    for ax, embed, title in [
-        (axes[0], umap_embedding, "UMAP: Malware Validation vs Test"),
-        (axes[1], tsne_embedding, "t-SNE: Malware Validation vs Test"),
-    ]:
+    fig, axes = plt.subplots(5, 3, figsize=(15, 20))
+    axes_flat = axes.ravel()
+    for idx, ax in enumerate(axes_flat):
+        x_idx = idx
+        y_idx = (idx + 1) % 15
         for split in ["val", "test"]:
             mask = labels == split
             ax.scatter(
-                embed[mask, 0],
-                embed[mask, 1],
+                umap_15_embedding[mask, x_idx],
+                umap_15_embedding[mask, y_idx],
                 s=18,
                 alpha=0.7,
                 c=colors[split],
                 label=f"{split} (n={mask.sum()})",
                 linewidths=0,
             )
-        ax.set_title(title)
-        ax.set_xlabel("dim-1")
-        ax.set_ylabel("dim-2")
-    axes[0].legend(frameon=False)
+        ax.set_title(f"UMAP d{x_idx + 1} vs d{y_idx + 1}")
+        ax.set_xlabel(f"d{x_idx + 1}")
+        ax.set_ylabel(f"d{y_idx + 1}")
+    axes_flat[0].legend(frameon=False)
     fig.tight_layout()
     fig.savefig(combined_png, dpi=200)
     plt.close(fig)
@@ -296,10 +317,9 @@ def _run_malware_split_analysis(
     embed_df = pd.DataFrame(
         {
             "split": labels,
-            "umap_1": umap_embedding[:, 0],
-            "umap_2": umap_embedding[:, 1],
-            "tsne_1": tsne_embedding[:, 0],
-            "tsne_2": tsne_embedding[:, 1],
+            "umap2_1": umap_embedding[:, 0],
+            "umap2_2": umap_embedding[:, 1],
+            **{f"umap15_{i + 1}": umap_15_embedding[:, i] for i in range(15)},
         }
     )
     embed_df.to_csv(embedding_csv, index=False)
@@ -318,8 +338,9 @@ def _run_malware_split_analysis(
         f.write(f"Samples (val/test): {len(df_val_opt)} / {len(df_test_opt)}\n\n")
         f.write("## Embedding Separation\n\n")
         f.write(f"- PCA pre-reduction: {pca_components} dims\n")
-        f.write(f"- Silhouette (UMAP): {sil_umap:.4f}\n")
-        f.write(f"- Silhouette (t-SNE): {sil_tsne:.4f}\n\n")
+        f.write(f"- Silhouette (UMAP 2D): {sil_umap_2d:.4f}\n")
+        f.write(f"- Silhouette (UMAP 15D): {sil_umap_15d:.4f}\n")
+        f.write("- Visualization: UMAP 15D projected as a 5x3 subplot frame\n\n")
         f.write("## Family Proxy (Imphash)\n\n")
         if proxy_metrics and proxy_metrics.get("available"):
             f.write(f"- Nonzero imphash (val/test): {proxy_metrics['val_nonzero']} / {proxy_metrics['test_nonzero']}\n")
@@ -623,6 +644,11 @@ def main():
     val_m_raw = data_cfg.get("val_malware_path")
     val_m_path = _resolve_path(config_path, val_m_raw) if val_m_raw else None
 
+    if val_path.resolve() == test_b_path.resolve():
+        raise ValueError("val_benign_path and test_benign_path must be different (sealed test requirement)")
+    if val_m_path and val_m_path.resolve() == test_m_path.resolve():
+        raise ValueError("val_malware_path and test_malware_path must be different (sealed test requirement)")
+
     feature_cfg = cfg["feature_selection"]
     top_k_list = [int(x) for x in _as_list(feature_cfg["top_k_list"])]
 
@@ -651,6 +677,18 @@ def main():
     fpr_threshold = float(threshold_cfg["fpr_threshold"])
     threshold_strategy = threshold_cfg.get("strategy", "fpr")
     f_beta = float(threshold_cfg.get("f_beta", 1.0))
+    expose_test_during_search = bool(threshold_cfg.get("expose_test_during_search", False))
+    
+    # CRITICAL: Guard against test data leakage during grid search
+    if expose_test_during_search:
+        raise ValueError(
+            "CONFIGURATION ERROR: 'expose_test_during_search' is set to true, which violates "
+            "the sealed test set principle. Test data must NOT be used during hyperparameter "
+            "optimization as this compromises model evaluation integrity. Set to false for "
+            "valid model training. This parameter exists for debugging only and must never "
+            "be enabled in production or for any results reporting."
+        )
+    
     val_fpr_target = threshold_cfg.get("val_fpr_target")
     if val_fpr_target is None:
         val_fpr_delta = float(threshold_cfg.get("val_fpr_delta", 0.005))
@@ -679,11 +717,9 @@ def main():
     print("STAGE 3: MODEL TRAINING & OPTIMIZATION")
     print("=" * 70)
 
-    print("\nLoading data...")
+    print("\nLoading training and validation data...")
     df_train = pd.read_parquet(train_path)
     df_val = pd.read_parquet(val_path)
-    df_test_b = pd.read_parquet(test_b_path)
-    df_test_m = pd.read_parquet(test_m_path)
 
     if val_m_path:
         if not val_m_path.exists():
@@ -695,21 +731,33 @@ def main():
             "data.val_malware_path is required to avoid test leakage during feature selection."
         )
 
-    print(f"  Samples: {len(df_train)}/{len(df_val)}/{len(df_test_b)}/{len(df_test_m)}")
+    print(f"  Training samples: {len(df_train)}")
+    print(f"  Validation benign samples: {len(df_val)}")
+    print(f"  Validation malware samples: {len(df_val_m)}")
+    print("  Test data will be loaded after model selection (sealed until final evaluation)")
+    
+    # Dataset fingerprinting for audit trail
+    print("\n--- Dataset Fingerprinting (Audit Trail) ---")
+    train_fp = _compute_dataset_fingerprint(df_train, "train")
+    val_fp = _compute_dataset_fingerprint(df_val, "val_benign")
+    val_m_fp = _compute_dataset_fingerprint(df_val_m, "val_malware")
+    print(f"  Training (benign):      {train_fp}")
+    print(f"  Validation (benign):    {val_fp}")
+    print(f"  Validation (malware):   {val_m_fp}")
+    
+    print("\n--- Split Independence Focus ---")
+    print("  Primary independence check in Stage 3: malware_val vs malware_test")
 
-    print("Preparing features...")
+    print("\nPreparing features...")
     selected_cols = np.array(df_train.columns.tolist())
 
     X_train_var = df_train[selected_cols].values.astype(np.float32)
     X_val_var = df_val[selected_cols].values.astype(np.float32)
-    X_test_b_var = df_test_b[selected_cols].values.astype(np.float32)
-    X_test_m_var = df_test_m[selected_cols].values.astype(np.float32)
     X_val_m_var = df_val_m[selected_cols].values.astype(np.float32)
-
-    X_val_m_fs_var = X_val_m_var
-    X_val_m_thr_var = X_val_m_var
-
+    
     print(f"  Features: {len(selected_cols)}")
+    print("  Feature ranking source: benign_train vs malware_val (Cohen's d)")
+    print(f"  Validation malware used for ranking/thresholding: {len(X_val_m_var)} samples")
 
     # Load group mapping for artifact export
     schema_dir = _resolve_path(config_path, "../schemas")
@@ -735,20 +783,16 @@ def main():
     config_num = 0
     for n_feat in top_k_list:
         top_indices, top_names, top_d = _select_top_features(
-            X_train_var, X_val_m_fs_var, selected_cols, top_k=n_feat
+            X_train_var, X_val_m_var, selected_cols, top_k=n_feat
         )
 
         X_train_sel = X_train_var[:, top_indices]
         X_val_sel = X_val_var[:, top_indices]
-        X_test_b_sel = X_test_b_var[:, top_indices]
-        X_test_m_sel = X_test_m_var[:, top_indices]
-        X_val_m_thr_sel = X_val_m_thr_var[:, top_indices]
+        X_val_m_thr_sel = X_val_m_var[:, top_indices]
 
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train_sel)
         X_val_scaled = scaler.transform(X_val_sel)
-        X_test_b_scaled = scaler.transform(X_test_b_sel)
-        X_test_m_scaled = scaler.transform(X_test_m_sel)
         X_val_m_thr_scaled = scaler.transform(X_val_m_thr_sel)
 
         for n_trees, max_samp, contam, max_feat, boot in product(
@@ -769,8 +813,6 @@ def main():
             model.fit(X_train_scaled)
 
             scores_val = model.decision_function(X_val_scaled)
-            scores_tb = model.decision_function(X_test_b_scaled)
-            scores_tm = model.decision_function(X_test_m_scaled)
             scores_vm = model.decision_function(X_val_m_thr_scaled)
 
             if threshold_strategy == "fpr":
@@ -797,12 +839,10 @@ def main():
             y_scores_val = np.concatenate([-scores_val, -scores_vm])
             auc_val = roc_auc_score(y_true_val, y_scores_val)
 
-            fpr_test = (scores_tb < threshold).mean()
-            tpr_test = (scores_tm < threshold).mean()
-
-            y_true = np.concatenate([np.zeros(len(scores_tb)), np.ones(len(scores_tm))])
-            y_scores = np.concatenate([-scores_tb, -scores_tm])
-            auc = roc_auc_score(y_true, y_scores)
+            # Test data is sealed - not loaded or evaluated during grid search
+            fpr_test = np.nan
+            tpr_test = np.nan
+            auc = np.nan
 
             elapsed = time.time() - t0
 
@@ -831,8 +871,7 @@ def main():
                 print(
                     f"[{config_num:3d}/{total_configs}] feat={n_feat:3d}, trees={n_trees:3d}, "
                     f"samp={samp_str}, cont={cont_str}, maxf={max_feat:.1f}, boot={int(boot)}: "
-                    f"TPRv={tpr_val * 100:5.2f}%, FPRv={fpr_val * 100:5.2f}%, "
-                    f"TPRt={tpr_test * 100:5.2f}%, FPRt={fpr_test * 100:5.2f}%, AUC={auc:.4f} "
+                    f"TPRv={tpr_val * 100:5.2f}%, FPRv={fpr_val * 100:5.2f}% "
                     f"[{elapsed:.1f}s] {status}"
                 )
 
@@ -860,26 +899,13 @@ def main():
     print(f"  max_features:    {best['max_features'].item()}")
     print(f"  bootstrap:       {bool(best['bootstrap'].item())}")
     print(f"  contamination:   {best['contamination'].item()}")
-    print(f"  top_k_list:      {top_k_list}")
     print(f"  threshold_strat: {threshold_strategy}")
     print(f"  fpr_threshold:   {fpr_threshold}")
     print(f"  val_fpr_target:  {val_fpr_target}")
     print(f"  f_beta:          {f_beta}")
     print(f"  random_state:    {random_state}")
-    print(f"  n_jobs:          {n_jobs}")
 
-    # threshold details
-    
-    print("\nPERFORMANCE:")
-    print(f"  Threshold strategy: {threshold_strategy}")
-    print(f"  TPR (val):  {best['tpr_val'] * 100:.2f}%")
-    print(f"  FPR (val):  {best['fpr_val'] * 100:.2f}%")
-    if threshold_strategy != "fpr":
-        print(f"  {threshold_strategy.upper()} (val): {best['metric_val']:.4f}")
-    print(f"  TPR (test): {best['tpr_test'] * 100:.2f}%")
-    print(f"  FPR (test): {best['fpr_test'] * 100:.2f}%")
-    print(f"  AUC:  {best['auc']:.4f}")
-    print(f"  Time: {best['time_s']:.1f}s")
+    print("\n  Generating final holdout evaluation report...")
 
     best_n_features = int(best["n_features"].item())
     best_n_estimators = int(best["n_estimators"].item())
@@ -894,7 +920,7 @@ def main():
             best_max_samples = int(best_max_samples)
 
     top_indices, top_names, top_d = _select_top_features(
-        X_train_var, X_val_m_fs_var, selected_cols, top_k=best_n_features
+        X_train_var, X_val_m_var, selected_cols, top_k=best_n_features
     )
 
     best_features = pd.DataFrame(
@@ -916,12 +942,41 @@ def main():
     }
     params_json.write_text(json.dumps(params_payload, indent=2), encoding="utf-8")
 
+    # ── Load test data NOW (after model selection) ──
+    print(f"\n{'=' * 70}")
+    print("LOADING TEST DATA (Sealed Until Now)")
+    print(f"{'=' * 70}")
+    df_test_b = pd.read_parquet(test_b_path)
+    df_test_m = pd.read_parquet(test_m_path)
+    overlap_malware_val_test = _count_cross_split_overlap(df_val_m, df_test_m)
+
+    print(f"  Test benign samples:  {len(df_test_b)}")
+    print(f"  Test malware samples: {len(df_test_m)}")
+    
+    # Test data fingerprinting
+    test_b_fp = _compute_dataset_fingerprint(df_test_b, "test_benign")
+    test_m_fp = _compute_dataset_fingerprint(df_test_m, "test_malware")
+    print(f"  Test (benign) fingerprint:  {test_b_fp}")
+    print(f"  Test (malware) fingerprint: {test_m_fp}")
+
+    print("\n--- Malware Val/Test Independence Verification ---")
+    if overlap_malware_val_test == 0:
+        print("  ✓ malware_val and malware_test are independent (exact overlap = 0)")
+    else:
+        print(
+            "  ⚠ malware_val overlaps malware_test by "
+            f"{overlap_malware_val_test} samples"
+        )
+
     # ── Retrain best model and generate visualizations ──
+    X_test_b_var = df_test_b[selected_cols].values.astype(np.float32)
+    X_test_m_var = df_test_m[selected_cols].values.astype(np.float32)
+    
     X_train = X_train_var[:, top_indices]
     X_val = X_val_var[:, top_indices]
     X_test_b = X_test_b_var[:, top_indices]
     X_test_m = X_test_m_var[:, top_indices]
-    X_val_m_thr = X_val_m_thr_var[:, top_indices]
+    X_val_m_thr = X_val_m_var[:, top_indices]
     X_val_m_full = X_val_m_var[:, top_indices]
 
     scaler = StandardScaler()
@@ -975,6 +1030,15 @@ def main():
     auc_value = roc_auc_score(y_true, y_scores)
     precision_arr, recall_arr, _ = precision_recall_curve(y_true, y_scores)
     ap_value = average_precision_score(y_true, y_scores)
+
+    print("\n" + "=" * 70)
+    print("FINAL HOLDOUT TEST RESULTS")
+    print("=" * 70)
+    print(f"  Threshold: {float(final_threshold):.6f}")
+    print(f"  Test TPR:  {final_tpr * 100:.2f}%")
+    print(f"  Test FPR:  {final_fpr * 100:.2f}%")
+    print(f"  Test ROC-AUC: {auc_value:.4f}")
+    print(f"  Test PR-AUC:  {ap_value:.4f}")
 
     _write_roc_svg(fpr_arr, tpr_arr, auc_value, roc_svg, fpr_threshold)
     _write_pr_svg(precision_arr, recall_arr, ap_value, pr_svg)
@@ -1036,30 +1100,7 @@ def main():
         df_optimized.to_parquet(out_path, engine="pyarrow", compression="snappy")
         csv_path = optimized_data_dir / f"{name}_optimized.csv"
         df_optimized.to_csv(csv_path, index=False)
-        print(f"  Saved {name}: {df_optimized.shape} -> {out_path} | {csv_path}")
-
-    print(f"\n{'=' * 70}")
-    print("MALWARE SPLIT ANALYSIS")
-    print(f"{'=' * 70}")
-    _run_malware_split_analysis(
-        optimized_data_dir=optimized_data_dir,
-        report_dir=report_dir,
-        val_data_path=val_m_path,
-        test_data_path=test_m_path,
-    )
-
-    print(f"\n{'=' * 70}")
-    print(f"OPTIMIZATION COMPLETE")
-    print(f"{'=' * 70}")
-    print(f"  Results:            {results_csv}")
-    print(f"  Optimized params:   {params_json}")
-    print(f"  Optimized features: {features_csv}")
-    print(f"  ROC curve:          {roc_svg}")
-    print(f"  PR curve:           {pr_svg}")
-    print(f"  Score distribution: {score_svg}")
-    print(f"  Model parameters:   {results_dir}")
-    print(f"  Optimized datasets: {optimized_data_dir}")
-    print(f"{'=' * 70}")
+        # print(f"  Saved {name}: {df_optimized.shape} -> {out_path} | {csv_path}")
 
 
 if __name__ == "__main__":

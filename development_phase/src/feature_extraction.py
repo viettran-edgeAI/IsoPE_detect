@@ -634,9 +634,19 @@ def _build_canonical_feature_order(dfs_raw: dict) -> list:
     if base_df is None:
         base_df = next(iter(dfs_raw.values()))
     base_cols = list(base_df.columns)
+
+    # Keep test splits fully sealed: derive schema only from non-test splits.
+    schema_source_keys = [
+        key for key in ("benign_train", "benign_val", "malware_val")
+        if key in dfs_raw
+    ]
+    if not schema_source_keys:
+        schema_source_keys = list(dfs_raw.keys())
+
     all_cols = set()
-    for df in dfs_raw.values():
-        all_cols.update(df.columns)
+    for key in schema_source_keys:
+        all_cols.update(dfs_raw[key].columns)
+
     extra_cols = sorted(all_cols - set(base_cols))
     return base_cols + extra_cols
 

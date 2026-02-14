@@ -7,13 +7,13 @@
     "val_malware_path": "../data/cleaned/malware_val_clean.parquet"
   },
   "feature_selection": {
-    "top_k_list": [20, 25, 40]
+    "top_k_list": [20, 25, 40, 100]
   },
   "model": {
-    "n_estimators": [200,500],
-    "max_samples": [512, 0.4, 0.7],
+    "n_estimators": [200],
+    "max_samples": [0.4, 0.7, 1.0],
     "contamination": [0.005],
-    "max_features": [0.6, 0.8, 1.0],
+    "max_features": [0.6, 1.0],
     "bootstrap": [false, true],
     "random_state": 42,
     "n_jobs": -1
@@ -22,7 +22,8 @@
     "fpr_threshold": 0.05,
     "val_fpr_delta": 0.0,
     "strategy": "tpr",
-    "f_beta": 1.0
+    "f_beta": 1.0,
+    "expose_test_during_search": false
   },
   "outputs": {
     "report_dir": "../reports",

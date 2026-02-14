@@ -19,6 +19,7 @@ Outputs:
 """
 
 import argparse
+import hashlib
 import json
 import time
 from collections import Counter
@@ -27,6 +28,41 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.stats import kurtosis as sp_kurtosis
+
+
+def _compute_dataset_fingerprint(df: pd.DataFrame, name: str) -> str:
+    """Compute SHA256 fingerprint of a dataset for audit trail."""
+    df_hash = pd.util.hash_pandas_object(df, index=False)
+    combined = hashlib.sha256()
+    combined.update(np.asarray(df_hash.values).tobytes())
+    fingerprint = combined.hexdigest()[:16]
+    return fingerprint
+
+
+def _drop_internal_duplicates(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Drop duplicated rows inside a single dataset."""
+    before = len(df)
+    cleaned = df.drop_duplicates().reset_index(drop=True)
+    removed = before - len(cleaned)
+    return cleaned, int(removed)
+
+
+def _drop_cross_split_duplicates(
+    source_df: pd.DataFrame,
+    target_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, int]:
+    """Drop rows in target_df that exactly match any row in source_df."""
+    if len(source_df) == 0 or len(target_df) == 0:
+        return target_df, 0
+
+    source_hashes = set(pd.util.hash_pandas_object(source_df, index=False).tolist())
+    target_hashes = pd.util.hash_pandas_object(target_df, index=False)
+    overlap_mask = target_hashes.isin(source_hashes)
+    removed = int(overlap_mask.sum())
+    if removed == 0:
+        return target_df, 0
+    cleaned = target_df.loc[~overlap_mask].reset_index(drop=True)
+    return cleaned, removed
 
 
 def _extract_numeric_matrix(df: pd.DataFrame, cols: list[str]) -> np.ndarray:
@@ -81,7 +117,7 @@ def _pick_malware_validation_subset(df: pd.DataFrame, target_size: int, seed: in
     if len(nonzero_df) > 0:
         grouped = nonzero_df.groupby(nonzero_hash, sort=False)
         reps = grouped.head(1)
-        rep_indices = reps.index.to_numpy()
+        rep_indices = np.array(reps.index.to_numpy(), copy=True)
         rng.shuffle(rep_indices)
         selected_indices.extend(rep_indices.tolist())
 
@@ -104,149 +140,149 @@ def enforce_malware_split_separation(
     benign_test_count: int,
     separation_cfg: dict,
 ) -> tuple[pd.DataFrame, dict]:
-    cfg = separation_cfg or {}
-    if not cfg.get("enabled", True):
-        return malware_val_df, {"enabled": False, "reason": "disabled_by_config", "val_before": int(len(malware_val_df)), "val_after": int(len(malware_val_df))}
-
-    min_ratio = float(cfg.get("min_val_ratio_to_benign_test", 0.05))
-    max_ratio = float(cfg.get("max_val_ratio_to_benign_test", 0.08))
-    near_dup_cosine_threshold = float(cfg.get("near_dup_cosine_threshold", 0.995))
-    random_seed = int(cfg.get("random_seed", 42))
-
     val_work = malware_val_df.copy()
     test_work = malware_test_df.copy()
 
+    enforce_imphash_disjoint = bool(separation_cfg.get("enforce_imphash_disjoint", True))
+    max_cross_similarity_raw = separation_cfg.get("max_cross_similarity", None)
+    max_cross_similarity = (
+        float(max_cross_similarity_raw) if max_cross_similarity_raw is not None else None
+    )
+
     stats = {
-        "enabled": True,
         "val_before": int(len(val_work)),
+        "val_after": int(len(val_work)),
         "test_count": int(len(test_work)),
-        "exact_removed": 0,
-        "imphash_removed": 0,
-        "near_removed": 0,
-        "downsample_removed": 0,
-        "near_method": "none",
-        "near_threshold": near_dup_cosine_threshold,
+        "exact_overlap": 0,
+        "exact_overlap_removed": 0,
+        "exact_overlap_after": 0,
+        "shared_imphash_unique": 0,
+        "shared_imphash_removed_rows": 0,
+        "imphash_jaccard": 0.0,
+        "val_shared_rate": 0.0,
+        "test_shared_rate": 0.0,
+        "enforce_imphash_disjoint": enforce_imphash_disjoint,
+        "similarity_threshold": max_cross_similarity,
+        "similarity_removed_rows": 0,
+        "max_similarity_before": 0.0,
+        "max_similarity_after": 0.0,
+        "sealed_pass": True,
     }
 
-    # 1) Exact cross-split duplicate removal (target: 0 overlap)
-    val_sig = pd.util.hash_pandas_object(val_work, index=False)
-    test_sig_set = set(pd.util.hash_pandas_object(test_work, index=False).astype(np.uint64).tolist())
-    exact_mask = ~val_sig.astype(np.uint64).isin(test_sig_set)
-    stats["exact_removed"] = int((~exact_mask).sum())
-    val_work = val_work.loc[exact_mask].copy()
-
-    # 2) Near-duplicate control signal (prefer ssdeep/tlsh if available; fallback to hash-vector cosine)
-    near_score = pd.Series(np.zeros(len(val_work), dtype=np.float32), index=val_work.index)
-    near_flag = pd.Series(np.zeros(len(val_work), dtype=bool), index=val_work.index)
-    ssdeep_col = "ssdeep" if "ssdeep" in val_work.columns and "ssdeep" in test_work.columns else None
-    tlsh_col = "tlsh" if "tlsh" in val_work.columns and "tlsh" in test_work.columns else None
-
-    if ssdeep_col is not None:
-        try:
-            import ssdeep  # type: ignore
-
-            test_sigs = [str(x) for x in test_work[ssdeep_col].dropna().astype(str).tolist() if x]
-            if test_sigs:
-                for idx, sig in val_work[ssdeep_col].dropna().astype(str).items():
-                    max_score = max(ssdeep.compare(sig, ts) for ts in test_sigs)
-                    near_score.at[idx] = max_score / 100.0
-                    if max_score >= 90:
-                        near_flag.at[idx] = True
-                stats["near_method"] = "ssdeep"
-        except Exception:
-            pass
-
-    if tlsh_col is not None and stats["near_method"] == "none":
-        try:
-            import tlsh  # type: ignore
-
-            test_hashes = [str(x) for x in test_work[tlsh_col].dropna().astype(str).tolist() if x and x != "TNULL"]
-            if test_hashes:
-                for idx, sig in val_work[tlsh_col].dropna().astype(str).items():
-                    if not sig or sig == "TNULL":
-                        continue
-                    min_dist = min(tlsh.diff(sig, t) for t in test_hashes)
-                    near_score.at[idx] = 1.0 / (1.0 + float(min_dist))
-                    if min_dist <= 20:
-                        near_flag.at[idx] = True
-                stats["near_method"] = "tlsh"
-        except Exception:
-            pass
-
-    if stats["near_method"] == "none":
-        near_cols = [
-            c
-            for c in val_work.columns
-            if c == "imphash"
-            or c.startswith("imp_dll_hash_")
-            or c.startswith("imp_func_hash_")
-            or c.startswith("exp_func_hash_")
-            or c.startswith("sec_name_hash_")
-        ]
-        near_cols = [c for c in near_cols if c in test_work.columns]
-        if near_cols:
-            val_mat = _normalize_rows_l2(_extract_numeric_matrix(val_work, near_cols))
-            test_mat = _normalize_rows_l2(_extract_numeric_matrix(test_work, near_cols))
-            max_sim = _max_cosine_to_reference(val_mat, test_mat)
-            near_score = pd.Series(max_sim, index=val_work.index)
-            near_flag = near_score >= near_dup_cosine_threshold
-            stats["near_method"] = "hash_vector_cosine"
-
-    # 3) Family overlap signal (imphash proxy)
-    imphash_shared_flag = pd.Series(np.zeros(len(val_work), dtype=bool), index=val_work.index)
-    if "imphash" in val_work.columns and "imphash" in test_work.columns:
-        val_imphash = pd.to_numeric(val_work["imphash"], errors="coerce").fillna(0).astype(np.int64)
-        test_imphash = pd.to_numeric(test_work["imphash"], errors="coerce").fillna(0).astype(np.int64)
-        shared = set(val_imphash[val_imphash != 0].tolist()) & set(test_imphash[test_imphash != 0].tolist())
-        imphash_shared_flag = val_imphash.isin(shared)
-
-    # 4) Risk-aware selection to keep val size in configured budget while minimizing overlap
-    min_target = max(1, int(round(min_ratio * benign_test_count)))
-    max_target = max(min_target, int(round(max_ratio * benign_test_count)))
-
-    before_select = len(val_work)
-    target_size = min(before_select, max_target)
-    if target_size > 0 and before_select > target_size:
-        risk = near_score.astype(np.float64) + imphash_shared_flag.astype(np.float64) * 1.5
-        tie_breaker = np.random.default_rng(random_seed).uniform(0.0, 1e-6, size=before_select)
-        rank_df = pd.DataFrame(
-            {
-                "idx": val_work.index.to_numpy(),
-                "risk": risk.to_numpy(),
-                "near_score": near_score.to_numpy(),
-                "shared_imphash": imphash_shared_flag.astype(np.int8).to_numpy(),
-                "tie": tie_breaker,
-            }
-        ).sort_values(["risk", "near_score", "shared_imphash", "tie"], ascending=[True, True, True, True])
-
-        keep_idx = rank_df.head(target_size)["idx"].to_numpy()
-        removed_idx = set(val_work.index.to_numpy()) - set(keep_idx.tolist())
-        val_work = val_work.loc[keep_idx].copy()
-
-        removed_mask = rank_df["idx"].isin(list(removed_idx))
-        stats["near_removed"] = int(((rank_df.loc[removed_mask, "near_score"] >= near_dup_cosine_threshold)).sum())
-        stats["imphash_removed"] = int((rank_df.loc[removed_mask, "shared_imphash"] > 0).sum())
-        stats["downsample_removed"] = int(before_select - len(val_work))
-    else:
-        stats["near_removed"] = int(near_flag.sum())
-        stats["imphash_removed"] = int(imphash_shared_flag.sum())
-        stats["downsample_removed"] = 0
-
-    stats["val_after"] = int(len(val_work))
-    stats["target_min"] = int(min_target)
-    stats["target_max"] = int(max_target)
-    stats["actual_ratio_to_benign_test"] = float(len(val_work) / max(1, benign_test_count))
+    if len(val_work) > 0 and len(test_work) > 0:
+        val_sig = pd.util.hash_pandas_object(val_work, index=False).astype(np.uint64)
+        test_sig = pd.util.hash_pandas_object(test_work, index=False).astype(np.uint64)
+        test_sig_set = set(test_sig.tolist())
+        overlap_mask = val_sig.isin(test_sig_set)
+        stats["exact_overlap"] = int(overlap_mask.sum())
+        if stats["exact_overlap"] > 0:
+            val_work = val_work.loc[~overlap_mask].reset_index(drop=True)
+            stats["exact_overlap_removed"] = int(stats["exact_overlap"])
+            stats["val_after"] = int(len(val_work))
 
     if "imphash" in val_work.columns and "imphash" in test_work.columns:
         val_imphash = pd.to_numeric(val_work["imphash"], errors="coerce").fillna(0).astype(np.int64)
         test_imphash = pd.to_numeric(test_work["imphash"], errors="coerce").fillna(0).astype(np.int64)
-        val_nonzero = set(val_imphash[val_imphash != 0].tolist())
-        test_nonzero = set(test_imphash[test_imphash != 0].tolist())
-        shared = val_nonzero & test_nonzero
-        stats["imphash_shared_unique_after"] = int(len(shared))
-        stats["imphash_jaccard_after"] = float(len(shared) / len(val_nonzero | test_nonzero)) if (val_nonzero or test_nonzero) else 0.0
 
+        test_nonzero_set = set(test_imphash[test_imphash != 0].tolist())
+
+        if enforce_imphash_disjoint and len(test_nonzero_set) > 0:
+            family_overlap_mask = (val_imphash != 0) & val_imphash.isin(test_nonzero_set)
+            removed_family_rows = int(family_overlap_mask.sum())
+            if removed_family_rows > 0:
+                val_work = val_work.loc[~family_overlap_mask].reset_index(drop=True)
+                stats["shared_imphash_removed_rows"] = removed_family_rows
+                stats["val_after"] = int(len(val_work))
+
+    if max_cross_similarity is not None and len(val_work) > 0 and len(test_work) > 0:
+        common_cols = [c for c in val_work.columns if c in test_work.columns]
+        val_mat = _extract_numeric_matrix(val_work, common_cols)
+        test_mat = _extract_numeric_matrix(test_work, common_cols)
+        val_norm = _normalize_rows_l2(val_mat)
+        test_norm = _normalize_rows_l2(test_mat)
+
+        max_sim_before = _max_cosine_to_reference(val_norm, test_norm)
+        stats["max_similarity_before"] = float(max_sim_before.max()) if len(max_sim_before) else 0.0
+
+        similarity_mask = max_sim_before >= float(max_cross_similarity)
+        sim_removed = int(similarity_mask.sum())
+        if sim_removed > 0:
+            val_work = val_work.loc[~similarity_mask].reset_index(drop=True)
+            stats["similarity_removed_rows"] = sim_removed
+            stats["val_after"] = int(len(val_work))
+
+        if len(val_work) > 0:
+            val_mat_after = _extract_numeric_matrix(val_work, common_cols)
+            val_norm_after = _normalize_rows_l2(val_mat_after)
+            max_sim_after = _max_cosine_to_reference(val_norm_after, test_norm)
+            stats["max_similarity_after"] = float(max_sim_after.max()) if len(max_sim_after) else 0.0
+        else:
+            stats["max_similarity_after"] = 0.0
+
+    if len(val_work) > 0 and len(test_work) > 0:
+        val_sig_after = pd.util.hash_pandas_object(val_work, index=False).astype(np.uint64)
+        test_sig_after = pd.util.hash_pandas_object(test_work, index=False).astype(np.uint64)
+        stats["exact_overlap_after"] = int(val_sig_after.isin(set(test_sig_after.tolist())).sum())
+
+    if "imphash" in val_work.columns and "imphash" in test_work.columns:
+        val_imphash_final = pd.to_numeric(val_work["imphash"], errors="coerce").fillna(0).astype(np.int64)
+        test_imphash_final = pd.to_numeric(test_work["imphash"], errors="coerce").fillna(0).astype(np.int64)
+
+        val_nonzero = val_imphash_final[val_imphash_final != 0]
+        test_nonzero = test_imphash_final[test_imphash_final != 0]
+        val_set = set(val_nonzero.tolist())
+        test_set = set(test_nonzero.tolist())
+        shared = val_set & test_set
+        union = val_set | test_set
+
+        stats["shared_imphash_unique"] = int(len(shared))
+        stats["imphash_jaccard"] = float(len(shared) / len(union)) if union else 0.0
+        stats["val_shared_rate"] = float(val_nonzero.isin(shared).mean()) if len(val_nonzero) else 0.0
+        stats["test_shared_rate"] = float(test_nonzero.isin(shared).mean()) if len(test_nonzero) else 0.0
+
+    exact_ok = stats["exact_overlap_after"] == 0
+    family_ok = (not enforce_imphash_disjoint) or (stats["shared_imphash_unique"] == 0)
+    similarity_ok = (
+        max_cross_similarity is None
+        or stats["max_similarity_after"] < float(max_cross_similarity)
+    )
+    stats["sealed_pass"] = bool(exact_ok and family_ok and similarity_ok)
     return val_work, stats
+
+
+def _downsample_malware_val_relative_to_benign_val(
+    malware_val_df: pd.DataFrame,
+    benign_val_count: int,
+    ratio: float,
+    seed: int,
+    min_samples: int,
+) -> tuple[pd.DataFrame, dict]:
+    """Downsample malware validation set to a ratio of benign validation size."""
+    ratio = max(0.0, min(float(ratio), 1.0))
+    before = int(len(malware_val_df))
+
+    if before == 0 or benign_val_count <= 0 or ratio <= 0.0:
+        target_size = 0
+    else:
+        target_size = max(1, int(round(benign_val_count * ratio)))
+
+    min_samples = max(0, int(min_samples))
+    if before > 0 and min_samples > 0:
+        target_size = max(target_size, min_samples)
+
+    target_size = min(target_size, before)
+    sampled_df = _pick_malware_validation_subset(malware_val_df, target_size=target_size, seed=seed)
+
+    stats = {
+        "ratio": float(ratio),
+        "min_samples": int(min_samples),
+        "benign_val_count": int(benign_val_count),
+        "before": before,
+        "target": int(target_size),
+        "after": int(len(sampled_df)),
+        "removed": int(before - len(sampled_df)),
+    }
+    return sampled_df, stats
 
 def _to_float(value) -> float:
     try:
@@ -489,6 +525,7 @@ def generate_report(
     log_transform_cols,
     group_mapping,
     split_separation_stats=None,
+    malware_val_ratio_stats=None,
 ) -> str:
     selected_features = kept_after_stab
     grp_before = Counter(group_mapping.get(c, "?") for c in all_raw_cols if c in group_mapping)
@@ -528,15 +565,35 @@ def generate_report(
     if split_separation_stats is not None:
         lines.extend(
             [
-                "## Malware Validation/Test Separation\n",
+                "## Malware Validation/Test Independence Audit\n",
                 f"- Validation size before control: **{split_separation_stats.get('val_before', 0)}**",
-                f"- Validation size after control: **{split_separation_stats.get('val_after', 0)}**",
-                f"- Exact duplicates removed: **{split_separation_stats.get('exact_removed', 0)}**",
-                f"- Near-duplicates removed ({split_separation_stats.get('near_method', 'none')}): **{split_separation_stats.get('near_removed', 0)}**",
-                f"- Shared imphash removed: **{split_separation_stats.get('imphash_removed', 0)}**",
-                f"- Downsample removed: **{split_separation_stats.get('downsample_removed', 0)}**",
-                f"- Target range (5-8% benign test): **[{split_separation_stats.get('target_min', 0)}, {split_separation_stats.get('target_max', 0)}]**",
-                f"- Actual validation ratio to benign test: **{split_separation_stats.get('actual_ratio_to_benign_test', 0.0):.4f}**",
+                f"- Validation size after audit: **{split_separation_stats.get('val_after', 0)}**",
+                f"- Exact duplicate overlap: **{split_separation_stats.get('exact_overlap', 0)}**",
+                f"- Exact duplicate removed: **{split_separation_stats.get('exact_overlap_removed', 0)}**",
+                f"- Exact duplicate after cleanup: **{split_separation_stats.get('exact_overlap_after', 0)}**",
+                f"- Enforce imphash disjoint: **{split_separation_stats.get('enforce_imphash_disjoint', False)}**",
+                f"- Rows removed by family disjoint: **{split_separation_stats.get('shared_imphash_removed_rows', 0)}**",
+                f"- Shared unique imphash: **{split_separation_stats.get('shared_imphash_unique', 0)}**",
+                f"- Imphash Jaccard (unique): **{split_separation_stats.get('imphash_jaccard', 0.0):.4f}**",
+                f"- Shared-rate (val/test): **{split_separation_stats.get('val_shared_rate', 0.0):.4f} / {split_separation_stats.get('test_shared_rate', 0.0):.4f}**",
+                f"- Similarity threshold: **{split_separation_stats.get('similarity_threshold', None)}**",
+                f"- Rows removed by similarity: **{split_separation_stats.get('similarity_removed_rows', 0)}**",
+                f"- Max cosine similarity (before/after): **{split_separation_stats.get('max_similarity_before', 0.0):.4f} / {split_separation_stats.get('max_similarity_after', 0.0):.4f}**",
+                f"- Sealed-test check (exact overlap == 0): **{split_separation_stats.get('sealed_pass', False)}**",
+            ]
+        )
+
+    if malware_val_ratio_stats is not None:
+        lines.extend(
+            [
+                "\n## Malware Validation Size Control\n",
+                f"- Ratio to benign_val: **{malware_val_ratio_stats.get('ratio', 0.0):.4f}**",
+                f"- Min malware_val floor: **{malware_val_ratio_stats.get('min_samples', 0)}**",
+                f"- benign_val samples: **{malware_val_ratio_stats.get('benign_val_count', 0)}**",
+                f"- malware_val before: **{malware_val_ratio_stats.get('before', 0)}**",
+                f"- malware_val target: **{malware_val_ratio_stats.get('target', 0)}**",
+                f"- malware_val after: **{malware_val_ratio_stats.get('after', 0)}**",
+                f"- removed by ratio cap: **{malware_val_ratio_stats.get('removed', 0)}**",
             ]
         )
 
@@ -574,7 +631,11 @@ def main():
     cleaned_dir = _resolve_path(config_path, outputs_cfg.get("cleaned_data_dir", "../data/cleaned"))
     schema_dir = _resolve_path(config_path, outputs_cfg.get("schema_dir", "../schemas"))
     report_dir = _resolve_path(config_path, outputs_cfg.get("report_dir", "../reports"))
-    separation_cfg = cfg.get("separation_control", {})
+
+    separation_cfg = cfg.get("separation", {})
+    malware_val_ratio = float(separation_cfg.get("malware_val_ratio_to_benign_val", 0.03))
+    malware_val_ratio_seed = int(separation_cfg.get("malware_val_ratio_seed", 42))
+    malware_val_min_samples = int(separation_cfg.get("malware_val_min_samples", 500))
 
     cleaned_dir.mkdir(parents=True, exist_ok=True)
     schema_dir.mkdir(parents=True, exist_ok=True)
@@ -597,22 +658,65 @@ def main():
         f"corr_threshold={corr_threshold}, norm_var_threshold={norm_var_threshold}"
     )
 
-    print("\nLoading raw datasets...")
-    dfs_raw = {
+    print("\nLoading training and validation datasets...")
+    # Load only train/val data initially - test data loaded after feature selection
+    dfs_train_val = {
         "benign_train": pd.read_parquet(train_path),
         "benign_val": pd.read_parquet(val_path),
-        "benign_test": pd.read_parquet(test_b_path),
         "malware_val": pd.read_parquet(val_m_path),
-        "malware_test": pd.read_parquet(test_m_path),
     }
 
+    print("\n--- Automatic Duplicate Cleanup (Train/Validation) ---")
+    for split_name in ["benign_train", "benign_val", "malware_val"]:
+        cleaned_df, removed = _drop_internal_duplicates(dfs_train_val[split_name])
+        dfs_train_val[split_name] = cleaned_df
+        if removed > 0:
+            print(f"  Removed {removed} in-split duplicates from {split_name}")
+
+    removed_val_vs_train = 0
+    dfs_train_val["benign_val"], removed_val_vs_train = _drop_cross_split_duplicates(
+        dfs_train_val["benign_train"],
+        dfs_train_val["benign_val"],
+    )
+    if removed_val_vs_train > 0:
+        print(
+            f"  Removed {removed_val_vs_train} cross-split duplicates from benign_val "
+            f"that overlapped with benign_train"
+        )
+    if len(dfs_train_val["benign_val"]) == 0:
+        raise ValueError("benign_val became empty after duplicate cleanup against benign_train")
+    
+    print(f"  Training (benign):      {len(dfs_train_val['benign_train'])} samples")
+    print(f"  Validation (benign):    {len(dfs_train_val['benign_val'])} samples")
+    print(f"  Validation (malware):   {len(dfs_train_val['malware_val'])} samples")
+    print("  Test data will be loaded after feature selection (sealed until needed)")
+    
+    # Dataset fingerprinting for audit trail
+    print("\n--- Dataset Fingerprinting (Audit Trail) ---")
+    train_fp = _compute_dataset_fingerprint(dfs_train_val["benign_train"], "train")
+    val_fp = _compute_dataset_fingerprint(dfs_train_val["benign_val"], "val_benign")
+    val_m_fp = _compute_dataset_fingerprint(dfs_train_val["malware_val"], "val_malware")
+    print(f"  Training (benign):      {train_fp}")
+    print(f"  Validation (benign):    {val_fp}")
+    print(f"  Validation (malware):   {val_m_fp}")
+    
+    print("\n--- Benign Split Independence Verification ---")
+    print(
+        "  ✓ Applied automatic deduplication between benign_train and benign_val "
+        f"(removed {removed_val_vs_train} rows)"
+    )
+
     # Use benign_train columns as canonical raw order
-    all_raw_cols = list(dfs_raw["benign_train"].columns)
-    print(f"  Raw features: {len(all_raw_cols)}")
+    all_raw_cols = list(dfs_train_val["benign_train"].columns)
+    print(f"\n  Raw features: {len(all_raw_cols)}")
 
     print("\n--- Variance Filtering ---")
+    # Feature selection uses ONLY benign training data because:
+    # 1. Anomaly detection learns "normal" behavior from benign samples
+    # 2. Test data must remain sealed to prevent leakage
+    # 3. Validation data is excluded to avoid look-ahead bias
     kept_after_var, var_removed = variance_filter(
-        dfs_raw["benign_train"],
+        dfs_train_val["benign_train"],
         group_mapping,
         variance_threshold=variance_threshold,
         norm_var_threshold=norm_var_threshold,
@@ -620,7 +724,7 @@ def main():
     print(f"  {len(all_raw_cols)} -> {len(kept_after_var)} features (removed {len(var_removed)})")
 
     print("\n--- Correlation Pruning ---")
-    df_var_filtered = dfs_raw["benign_train"][kept_after_var]
+    df_var_filtered = dfs_train_val["benign_train"][kept_after_var]
     kept_after_corr, corr_removed = correlation_pruning(
         df_var_filtered,
         threshold=corr_threshold,
@@ -629,35 +733,122 @@ def main():
     print(f"  {len(kept_after_var)} -> {len(kept_after_corr)} features (removed {len(corr_removed)})")
 
     print("\n--- Stability Filtering ---")
-    df_corr_filtered = dfs_raw["benign_train"][kept_after_corr]
+    df_corr_filtered = dfs_train_val["benign_train"][kept_after_corr]
     kept_after_stab, log_transform_cols, stab_removed = stability_filter(df_corr_filtered, group_mapping)
     print(f"  {len(kept_after_corr)} -> {len(kept_after_stab)} features (removed {len(stab_removed)})")
     print(f"  Log-transform rescued: {len(log_transform_cols)}")
 
     selected_features = kept_after_stab
 
-    malware_val_cleaned_raw, split_separation_stats = enforce_malware_split_separation(
-        malware_val_df=dfs_raw["malware_val"],
-        malware_test_df=dfs_raw["malware_test"],
-        benign_test_count=len(dfs_raw["benign_test"]),
-        separation_cfg=separation_cfg,
-    )
-    dfs_raw["malware_val"] = malware_val_cleaned_raw
+    # ── Malware Validation/Test Independence Verification ──
+    print("\n--- Loading Test Data (After Feature Selection) ---")
+    dfs_test = {
+        "benign_test": pd.read_parquet(test_b_path),
+        "malware_test": pd.read_parquet(test_m_path),
+    }
 
-    print("\n--- Malware Split Separation Control ---")
+    print("\n--- Automatic Duplicate Cleanup (Test Splits) ---")
+    for split_name in ["benign_test", "malware_test"]:
+        cleaned_df, removed = _drop_internal_duplicates(dfs_test[split_name])
+        dfs_test[split_name] = cleaned_df
+        if removed > 0:
+            print(f"  Removed {removed} in-split duplicates from {split_name}")
+
+    removed_test_vs_train = 0
+    removed_test_vs_val = 0
+    dfs_test["benign_test"], removed_test_vs_train = _drop_cross_split_duplicates(
+        dfs_train_val["benign_train"],
+        dfs_test["benign_test"],
+    )
+    dfs_test["benign_test"], removed_test_vs_val = _drop_cross_split_duplicates(
+        dfs_train_val["benign_val"],
+        dfs_test["benign_test"],
+    )
+    if removed_test_vs_train > 0 or removed_test_vs_val > 0:
+        print(
+            f"  Removed {removed_test_vs_train} benign_test rows overlapping benign_train and "
+            f"{removed_test_vs_val} rows overlapping benign_val"
+        )
+    if len(dfs_test["benign_test"]) == 0:
+        raise ValueError("benign_test became empty after duplicate cleanup")
+    print(f"  Test (benign):  {len(dfs_test['benign_test'])} samples")
+    print(f"  Test (malware): {len(dfs_test['malware_test'])} samples")
+    
+    # Test data fingerprinting
+    test_b_fp = _compute_dataset_fingerprint(dfs_test["benign_test"], "test_benign")
+    test_m_fp = _compute_dataset_fingerprint(dfs_test["malware_test"], "test_malware")
+    print(f"  Test (benign) fingerprint:  {test_b_fp}")
+    print(f"  Test (malware) fingerprint: {test_m_fp}")
+    
+    # Verify benign test/validation independence
+    print("\n--- Benign Test/Validation Independence Verification ---")
     print(
-        "  malware_val: "
-        f"{split_separation_stats.get('val_before', len(malware_val_cleaned_raw))} -> "
-        f"{split_separation_stats.get('val_after', len(malware_val_cleaned_raw))} "
-        f"(exact={split_separation_stats.get('exact_removed', 0)}, "
-        f"near={split_separation_stats.get('near_removed', 0)}, "
-        f"imphash={split_separation_stats.get('imphash_removed', 0)}, "
-        f"downsample={split_separation_stats.get('downsample_removed', 0)})"
+        "  ✓ Applied automatic deduplication for benign_test vs benign_val "
+        f"(removed {removed_test_vs_val} rows)"
+    )
+    
+    # Verify malware validation/test independence
+    print("\n--- Malware Validation/Test Independence Verification ---")
+    malware_val_checked, split_separation_stats = enforce_malware_split_separation(
+        dfs_train_val["malware_val"],
+        dfs_test["malware_test"],
+        len(dfs_test["benign_test"]),
+        separation_cfg
+    )
+    
+    print(f"  Exact sample overlap:        {split_separation_stats['exact_overlap']}")
+    print(f"  Exact overlap removed:       {split_separation_stats['exact_overlap_removed']}")
+    print(f"  Exact overlap after cleanup: {split_separation_stats['exact_overlap_after']}")
+    print(f"  Enforce imphash disjoint:    {split_separation_stats['enforce_imphash_disjoint']}")
+    print(f"  Family-overlap rows removed: {split_separation_stats['shared_imphash_removed_rows']}")
+    print(f"  Shared imphash families:     {split_separation_stats['shared_imphash_unique']}")
+    print(f"  Imphash Jaccard similarity:  {split_separation_stats['imphash_jaccard']:.4f}")
+    print(f"  Val shared rate:             {split_separation_stats['val_shared_rate']:.4f}")
+    print(f"  Test shared rate:            {split_separation_stats['test_shared_rate']:.4f}")
+    if split_separation_stats['similarity_threshold'] is not None:
+        print(f"  Similarity threshold:        {split_separation_stats['similarity_threshold']:.4f}")
+        print(f"  Similarity rows removed:     {split_separation_stats['similarity_removed_rows']}")
+        print(
+            f"  Max similarity (before/after): "
+            f"{split_separation_stats['max_similarity_before']:.4f} / "
+            f"{split_separation_stats['max_similarity_after']:.4f}"
+        )
+    
+    if not split_separation_stats.get("sealed_pass", False):
+        raise RuntimeError(
+            "TEST SET CONTAMINATION DETECTED! "
+            f"Exact overlap after cleanup={split_separation_stats['exact_overlap_after']}, "
+            f"shared imphash families={split_separation_stats['shared_imphash_unique']}, "
+            f"max similarity after={split_separation_stats['max_similarity_after']:.4f}."
+        )
+    print("  ✓ Malware validation/test sets are independent (sealed test set verified)")
+    
+    # Update malware_val if cleaned by verification
+    dfs_train_val["malware_val"] = malware_val_checked
+
+    # Final step: cap malware_val to a small percentage of benign_val
+    print("\n--- Final Step: Malware Validation Size Control ---")
+    malware_val_ratio_stats = None
+    dfs_train_val["malware_val"], malware_val_ratio_stats = _downsample_malware_val_relative_to_benign_val(
+        dfs_train_val["malware_val"],
+        benign_val_count=len(dfs_train_val["benign_val"]),
+        ratio=malware_val_ratio,
+        seed=malware_val_ratio_seed,
+        min_samples=malware_val_min_samples,
     )
     print(
-        f"  ratio_to_benign_test={split_separation_stats.get('actual_ratio_to_benign_test', 0.0):.4f} "
-        f"(target {split_separation_stats.get('target_min', 0)}-{split_separation_stats.get('target_max', 0)} samples)"
+        f"  Ratio target (malware_val / benign_val): {malware_val_ratio_stats['ratio']:.4f} "
+        f"(seed={malware_val_ratio_seed}, min_samples={malware_val_min_samples})"
     )
+    print(
+        f"  malware_val: {malware_val_ratio_stats['before']} -> {malware_val_ratio_stats['after']} "
+        f"(target={malware_val_ratio_stats['target']}, removed={malware_val_ratio_stats['removed']})"
+    )
+    if len(dfs_train_val["malware_val"]) == 0:
+        raise ValueError("malware_val became empty after ratio downsampling; increase malware_val_ratio_to_benign_val")
+    
+    # Combine all datasets for transformation
+    dfs_raw = {**dfs_train_val, **dfs_test}
 
     print(f"\n--- Saving cleaned datasets ({len(selected_features)} features) ---")
     for name, df in dfs_raw.items():
@@ -720,6 +911,7 @@ def main():
         log_transform_cols,
         group_mapping,
         split_separation_stats,
+        malware_val_ratio_stats,
     )
     report_path = report_dir / "feature_selection_report.md"
     report_path.write_text(report, encoding="utf-8")
