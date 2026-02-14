@@ -1,6 +1,6 @@
 # Feature Selection Report
 
-**Date**: 2026-02-13 13:53
+**Date**: 2026-02-14 09:12
 
 ## Summary
 
@@ -562,13 +562,29 @@
 - `tls_characteristics` [log1p]
 - `tls_data_size` [log1p]
 
-## Malware Validation/Test Separation
+## Malware Validation/Test Independence Audit
 
-- Validation size before control: **2998**
-- Validation size after control: **400**
-- Exact duplicates removed: **0**
-- Near-duplicates removed (hash_vector_cosine): **2598**
-- Shared imphash removed: **1488**
-- Downsample removed: **2598**
-- Target range (5-8% benign test): **[250, 400]**
-- Actual validation ratio to benign test: **0.0801**
+- Validation size before control: **2169**
+- Validation size after audit: **876**
+- Exact duplicate overlap: **0**
+- Exact duplicate removed: **0**
+- Exact duplicate after cleanup: **0**
+- Enforce imphash disjoint: **True**
+- Rows removed by family disjoint: **1029**
+- Shared unique imphash: **0**
+- Imphash Jaccard (unique): **0.0000**
+- Shared-rate (val/test): **0.0000 / 0.0000**
+- Similarity threshold: **0.999**
+- Rows removed by similarity: **264**
+- Max cosine similarity (before/after): **1.0000 / 0.9990**
+- Sealed-test check (exact overlap == 0): **True**
+
+## Malware Validation Size Control
+
+- Ratio to benign_val: **0.2000**
+- Min malware_val floor: **500**
+- benign_val samples: **4967**
+- malware_val before: **876**
+- malware_val target: **876**
+- malware_val after: **876**
+- removed by ratio cap: **0**

@@ -1,6 +1,6 @@
 # Development Phase Guide: PE Malware Detection
 
-Version: 2.2
+Version: 2.3
 Date: 2026-02-13
 
 ## Overview
@@ -10,6 +10,12 @@ The development phase produces the final feature set and optimized Isolation For
 - model_optimization.py: model tuning, feature ranking (top-k), final artifact export, and malware val/test separation analysis.
 
 All datasets at each stage (raw, cleaned, optimized) share the same feature order and columns.
+
+## Sealed-Test Policy
+- Test splits (`benign_test`, `malware_test`) are holdout-only for final evaluation.
+- Stage 1 schema building is derived from non-test splits only.
+- Stage 2 feature filtering/selection is derived from `benign_train` only.
+- Stage 3 grid search/model ranking is validation-driven. Test exposure during search is disabled by default (`thresholding.expose_test_during_search=false`).
 
 ## Required Dataset Layout
 These directories must exist at the workspace root:
@@ -64,6 +70,7 @@ Config: development_phase/src/feature_extraction_config.json
 Outputs:
 - Raw datasets: development_phase/data/raw/*_raw.parquet
 - Feature schema: development_phase/schemas/feature_schema.json
+- Note: canonical schema is derived from non-test splits to avoid test leakage.
 
 ## Stage 2: Filtering and Selection (Raw -> Cleaned)
 Script: development_phase/src/feature_selection.py
@@ -85,6 +92,7 @@ Outputs:
 - Cleaned datasets: development_phase/data/cleaned/*_clean.parquet
 - Selected schema: development_phase/schemas/feature_schema_selected.json
 - Report: development_phase/reports/feature_selection_report.md
+- Note: feature filtering/selection runs on benign train only; test splits are transform-only outputs.
 
 ## Stage 3: Optimization + Malware Split Analysis
 Script: development_phase/src/model_optimization.py
@@ -128,6 +136,7 @@ Controls how decision thresholds are selected.
 - f_beta: beta for F-score when strategy is f1.
 - val_fpr_target: optional explicit FPR target on validation.
 - val_fpr_delta: if val_fpr_target is not set, uses fpr_threshold - val_fpr_delta.
+- expose_test_during_search: if false (default), test metrics are not computed or shown during grid search.
 
 #### outputs
 Where artifacts and reports are written.
@@ -173,3 +182,4 @@ python model_optimization.py --config model_config.json
 - If extraction fails on many files, verify LIEF can parse your PE samples.
 - If malware split plots fail, ensure matplotlib and umap-learn are installed.
 - If no configuration meets the FPR constraint, relax thresholding.fpr_threshold or expand the grid in model_config.json.
+- If sealed-test checks fail at startup in Stage 3, verify `val_*` and `test_*` paths point to different files.

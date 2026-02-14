@@ -2,7 +2,7 @@
   "n_features": 40,
   "n_estimators": 200,
   "max_samples": 0.7,
-  "max_features": 0.6,
+  "max_features": 1.0,
   "bootstrap": false,
   "contamination": 0.005,
   "threshold_strategy": "tpr",

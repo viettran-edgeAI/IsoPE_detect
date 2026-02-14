@@ -2,6 +2,31 @@
 
 All notable changes to the EDR Agent model and optimization pipeline will be documented in this file. This project follows absolute metric tracking for model effectiveness.
 
+## [1.6.1] - 2026-02-14
+
+### Changed
+- `model_optimization.py`: Removed Stage 3 automatic deduplication; Stage 3 now expects pre-cleaned splits and raises on train/val/test overlap.
+- `model_optimization.py`: Simplified tail of "BEST CONFIGURATION" output to a single "generating report" line.
+- `model_optimization.py`: Added explicit final holdout test metrics printout (`TPR`, `FPR`, `ROC-AUC`, `PR-AUC`).
+- Malware split visualization now uses UMAP only, with a 5x3 frame from 15-dimensional UMAP output (t-SNE removed).
+- Added transparent malware val/test independence controls in Stage 2 (exact overlap removal, family disjointness, high-similarity pruning) with before/after audit reporting.
+- Consolidated config documentation into a single 3-program guide and removed redundant experiment config files.
+
+## [1.6.0] - 2026-02-14
+
+### Changed
+- Sealed-test hardening: test data is not used during grid search; final test evaluation is holdout-only.
+- Stage 2 adds split-audit/fingerprinting and cleaning support for overlap handling before Stage 3.
+- Schema derivation tightened to avoid test-driven feature-space changes.
+
+## [1.5.0] - 2026-02-13
+
+### Changed
+- **Sealed-test hardening in Stage 3**: Added explicit split-path guards (`val_*` must differ from `test_*`) and disabled per-config test scoring during grid search by default (`thresholding.expose_test_during_search=false`). Test metrics are now treated as holdout evaluation outputs.
+- **Stage 2 leakage control**: Removed runtime test-informed validation-mutation flow from `feature_selection.py`; feature filtering/selection remains train-driven, with test splits used as transform-only outputs.
+- **Stage 1 schema isolation**: Canonical raw feature schema generation now excludes test splits as schema sources, preventing test-driven feature-space expansion.
+- **Docs refresh**: Updated `development_phase/docs` to document the sealed-test policy and the new thresholding control.
+
 ## [1.4.0] - 2026-02-12
 
 - **EIF test and Early ROC Diagnosis**: Monitor `tpr_test_at_fpr_1e-4`, `tpr_test_at_fpr_1e-3`, and `tpr_test_at_fpr_1e-2` to quantify low FPR behavior. Add EIF (Extended Isolation Forest) to the pipeline and run the test.

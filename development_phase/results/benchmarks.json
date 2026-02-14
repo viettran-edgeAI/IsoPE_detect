@@ -3,21 +3,21 @@
   "hyperparameters": {
     "n_estimators": 200,
     "max_samples": 0.7,
-    "max_features": 0.6,
+    "max_features": 1.0,
     "bootstrap": false,
     "contamination": 0.005,
     "random_state": 42
   },
   "n_features": 40,
   "n_trees": 200,
-  "threshold": 0.08064517267234028,
-  "offset": -0.6099653265790149,
+  "threshold": 0.08601411674511084,
+  "offset": -0.6119936831465175,
   "metrics": {
-    "roc_auc": 0.9882408076399087,
-    "fpr_benign_test": 0.048848848848848846,
-    "tpr_malware_test": 0.9439318665720369,
-    "fpr_benign_val": 0.040889957907396274,
-    "tpr_malware_val": 0.96
+    "roc_auc": 0.9879725781412335,
+    "fpr_benign_test": 0.05921584478577203,
+    "tpr_malware_test": 0.958273724368145,
+    "fpr_benign_val": 0.04972820616066036,
+    "tpr_malware_val": 0.9383561643835616
   },
   "note": "Model not saved - C++ version will be built from these parameters"
 }
