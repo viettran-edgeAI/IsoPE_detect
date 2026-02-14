@@ -25,6 +25,20 @@
     "f_beta": 1.0,
     "expose_test_during_search": false
   },
+  "independence_audit": {
+    "stage2_manifest_path": "../reports/malware_val_test_independence_manifest_stage2.json",
+    "max_cross_similarity": 0.995,
+    "similarity_profile_thresholds": [0.99, 0.995, 0.999],
+    "knn_k_list": [1, 5, 10],
+    "knn_sample_size_per_split": 2000,
+    "knn_seed": 42,
+    "split_auc_cv_folds": 5,
+    "mmd_permutations": 300,
+    "mmd_sample_size_per_split": 1500,
+    "require_min_malware_val_samples": 200,
+    "independence_metrics_json": "../reports/malware_val_test_independence_metrics_stage3.json",
+    "independence_assessment_md": "../docs/malware_val_test_independence_assessment.md"
+  },
   "outputs": {
     "report_dir": "../reports",
     "results_dir": "../results",

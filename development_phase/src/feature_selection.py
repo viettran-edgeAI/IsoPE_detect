@@ -24,10 +24,12 @@ import json
 import time
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy.stats import kurtosis as sp_kurtosis
+from sklearn.preprocessing import StandardScaler
 
 
 def _compute_dataset_fingerprint(df: pd.DataFrame, name: str) -> str:
@@ -37,6 +39,11 @@ def _compute_dataset_fingerprint(df: pd.DataFrame, name: str) -> str:
     combined.update(np.asarray(df_hash.values).tobytes())
     fingerprint = combined.hexdigest()[:16]
     return fingerprint
+
+
+def _stable_json_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def _drop_internal_duplicates(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
@@ -96,6 +103,318 @@ def _max_cosine_to_reference(query: np.ndarray, ref: np.ndarray, chunk_size: int
     return out
 
 
+def _compute_cross_similarity_profile(
+    val_norm: np.ndarray,
+    test_norm: np.ndarray,
+    thresholds: list[float],
+) -> dict[str, Any]:
+    profile: dict[str, Any] = {
+        "val_to_test": {},
+        "test_to_val": {},
+        "threshold_counts": {},
+    }
+    if val_norm.size == 0 or test_norm.size == 0:
+        return profile
+
+    val_to_test = _max_cosine_to_reference(val_norm, test_norm)
+    test_to_val = _max_cosine_to_reference(test_norm, val_norm)
+
+    profile["val_to_test"] = {
+        "q50": float(np.quantile(val_to_test, 0.50)),
+        "q90": float(np.quantile(val_to_test, 0.90)),
+        "q99": float(np.quantile(val_to_test, 0.99)),
+        "max": float(np.max(val_to_test)),
+    }
+    profile["test_to_val"] = {
+        "q50": float(np.quantile(test_to_val, 0.50)),
+        "q90": float(np.quantile(test_to_val, 0.90)),
+        "q99": float(np.quantile(test_to_val, 0.99)),
+        "max": float(np.max(test_to_val)),
+    }
+
+    for thr in thresholds:
+        key = f">={thr:.4f}"
+        profile["threshold_counts"][key] = {
+            "val_to_test": int((val_to_test >= thr).sum()),
+            "test_to_val": int((test_to_val >= thr).sum()),
+        }
+    return profile
+
+
+def _compute_knn_cross_split_metrics(
+    val_norm: np.ndarray,
+    test_norm: np.ndarray,
+    k_list: list[int],
+    sample_size_per_split: int,
+    seed: int,
+) -> dict[str, Any]:
+    from sklearn.neighbors import NearestNeighbors
+
+    if val_norm.size == 0 or test_norm.size == 0:
+        return {
+            "available": False,
+            "reason": "empty split",
+        }
+
+    rng = np.random.default_rng(seed)
+    val = val_norm
+    test = test_norm
+    if sample_size_per_split > 0 and len(val) > sample_size_per_split:
+        idx = rng.choice(len(val), size=sample_size_per_split, replace=False)
+        val = val[idx]
+    if sample_size_per_split > 0 and len(test) > sample_size_per_split:
+        idx = rng.choice(len(test), size=sample_size_per_split, replace=False)
+        test = test[idx]
+
+    X = np.vstack([val, test])
+    y = np.concatenate([np.zeros(len(val), dtype=np.int8), np.ones(len(test), dtype=np.int8)])
+
+    k_list = sorted({int(k) for k in k_list if int(k) > 0})
+    if not k_list:
+        k_list = [1, 5]
+    max_k = min(max(k_list), len(X) - 1)
+    if max_k <= 0:
+        return {
+            "available": False,
+            "reason": "insufficient samples",
+        }
+
+    nn = NearestNeighbors(n_neighbors=max_k + 1, metric="cosine")
+    nn.fit(X)
+    _, idx = nn.kneighbors(X)
+    neighbors = idx[:, 1 : max_k + 1]
+    neighbor_labels = y[neighbors]
+
+    out: dict[str, Any] = {
+        "available": True,
+        "sampled_val": int(len(val)),
+        "sampled_test": int(len(test)),
+        "k": {},
+    }
+    for k in k_list:
+        if k > max_k:
+            continue
+        frac_other = (neighbor_labels[:, :k] != y[:, None]).mean(axis=1)
+        val_mask = y == 0
+        test_mask = y == 1
+        out["k"][str(k)] = {
+            "val_to_test_cross_rate": float(frac_other[val_mask].mean()) if val_mask.any() else 0.0,
+            "test_to_val_cross_rate": float(frac_other[test_mask].mean()) if test_mask.any() else 0.0,
+            "global_cross_rate": float(frac_other.mean()),
+        }
+    return out
+
+
+def _select_top_features_cohens_d(
+    X_train: np.ndarray,
+    X_malware: np.ndarray,
+    feature_names: np.ndarray,
+    top_k: int,
+) -> np.ndarray:
+    mean_benign = X_train.mean(axis=0)
+    mean_malware = X_malware.mean(axis=0)
+    std_benign = X_train.std(axis=0)
+    std_malware = X_malware.std(axis=0)
+    pooled_std = np.sqrt(0.5 * (std_benign * std_benign + std_malware * std_malware)) + 1e-10
+    cohens_d = np.abs(mean_benign - mean_malware) / pooled_std
+
+    top_k = min(int(top_k), int(len(feature_names)))
+    return np.argsort(cohens_d)[-top_k:]
+
+
+def _iterative_projected_similarity_pruning(
+    benign_train_clean: pd.DataFrame,
+    malware_val_clean: pd.DataFrame,
+    malware_test_clean: pd.DataFrame,
+    top_k_list: list[int],
+    similarity_threshold: float,
+    max_iterations: int,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    stats: dict[str, Any] = {
+        "enabled": True,
+        "similarity_threshold": float(similarity_threshold),
+        "top_k_list": [int(x) for x in top_k_list],
+        "before": int(len(malware_val_clean)),
+        "after": int(len(malware_val_clean)),
+        "removed": 0,
+        "iterations": 0,
+        "per_iteration": [],
+        "final_topk_max_similarity": {},
+        "all_topk_pass": False,
+    }
+
+    if len(malware_val_clean) == 0 or len(malware_test_clean) == 0:
+        stats["all_topk_pass"] = False
+        return malware_val_clean, stats
+
+    top_k_list = sorted({int(x) for x in top_k_list if int(x) > 0})
+    if not top_k_list:
+        stats["all_topk_pass"] = True
+        return malware_val_clean, stats
+
+    train_values = benign_train_clean.to_numpy(dtype=np.float32, copy=False)
+    test_values = malware_test_clean.to_numpy(dtype=np.float32, copy=False)
+    feature_names = np.array(malware_val_clean.columns.tolist())
+
+    work = malware_val_clean.copy().reset_index(drop=True)
+    total_removed = 0
+
+    for iteration in range(1, max(1, int(max_iterations)) + 1):
+        if len(work) == 0:
+            break
+
+        val_values = work.to_numpy(dtype=np.float32, copy=False)
+        offending = np.zeros(len(work), dtype=bool)
+        iter_topk: dict[str, Any] = {}
+
+        for top_k in top_k_list:
+            top_idx = _select_top_features_cohens_d(
+                train_values,
+                val_values,
+                feature_names,
+                top_k=top_k,
+            )
+            X_train_sel = train_values[:, top_idx]
+            X_val_sel = val_values[:, top_idx]
+            X_test_sel = test_values[:, top_idx]
+
+            scaler = StandardScaler()
+            scaler.fit(X_train_sel)
+
+            X_val_scaled = scaler.transform(X_val_sel)
+            X_test_scaled = scaler.transform(X_test_sel)
+
+            val_norm = _normalize_rows_l2(X_val_scaled.astype(np.float32, copy=False))
+            test_norm = _normalize_rows_l2(X_test_scaled.astype(np.float32, copy=False))
+            max_sim = _max_cosine_to_reference(val_norm, test_norm)
+
+            viol = max_sim >= float(similarity_threshold)
+            offending |= viol
+
+            iter_topk[str(top_k)] = {
+                "max_similarity": float(max_sim.max()) if len(max_sim) else 0.0,
+                "violating_rows": int(viol.sum()),
+            }
+
+        removed_now = int(offending.sum())
+        stats["per_iteration"].append(
+            {
+                "iteration": int(iteration),
+                "val_count_before": int(len(work)),
+                "removed_rows": removed_now,
+                "top_k": iter_topk,
+            }
+        )
+
+        if removed_now == 0:
+            break
+
+        work = work.loc[~offending].reset_index(drop=True)
+        total_removed += removed_now
+
+    stats["iterations"] = int(len(stats["per_iteration"]))
+    stats["removed"] = int(total_removed)
+    stats["after"] = int(len(work))
+
+    final_pass = True
+    final_topk_max: dict[str, float] = {}
+    if len(work) == 0:
+        final_pass = False
+    else:
+        val_values = work.to_numpy(dtype=np.float32, copy=False)
+        for top_k in top_k_list:
+            top_idx = _select_top_features_cohens_d(
+                train_values,
+                val_values,
+                feature_names,
+                top_k=top_k,
+            )
+            X_train_sel = train_values[:, top_idx]
+            X_val_sel = val_values[:, top_idx]
+            X_test_sel = test_values[:, top_idx]
+
+            scaler = StandardScaler()
+            scaler.fit(X_train_sel)
+
+            X_val_scaled = scaler.transform(X_val_sel)
+            X_test_scaled = scaler.transform(X_test_sel)
+
+            val_norm = _normalize_rows_l2(X_val_scaled.astype(np.float32, copy=False))
+            test_norm = _normalize_rows_l2(X_test_scaled.astype(np.float32, copy=False))
+            max_sim = _max_cosine_to_reference(val_norm, test_norm)
+            max_value = float(max_sim.max()) if len(max_sim) else 0.0
+            final_topk_max[str(top_k)] = max_value
+            if max_value >= float(similarity_threshold):
+                final_pass = False
+
+    stats["final_topk_max_similarity"] = final_topk_max
+    stats["all_topk_pass"] = bool(final_pass)
+    return work, stats
+
+
+def _build_stage2_independence_manifest(
+    config_path: Path,
+    audit_cfg: dict[str, Any],
+    split_separation_stats: dict[str, Any],
+    malware_val_ratio_stats: dict[str, Any],
+    malware_val_clean: pd.DataFrame,
+    malware_test_clean: pd.DataFrame,
+    knn_metrics: dict[str, Any],
+    similarity_profile: dict[str, Any],
+    projected_similarity_stats: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    config_hash = _stable_json_hash(_load_config(config_path))
+    fp_val = _compute_dataset_fingerprint(malware_val_clean, "malware_val_clean")
+    fp_test = _compute_dataset_fingerprint(malware_test_clean, "malware_test_clean")
+
+    run_basis = {
+        "config_hash": config_hash,
+        "fp_val": fp_val,
+        "fp_test": fp_test,
+        "audit_mode": "enforce",
+    }
+    run_id = _stable_json_hash(run_basis)
+
+    min_required = int(audit_cfg.get("require_min_malware_val_after_audit", 300))
+    min_samples_pass = int(len(malware_val_clean)) >= min_required
+    projected_pass = True
+    if projected_similarity_stats is not None:
+        projected_pass = bool(projected_similarity_stats.get("all_topk_pass", False))
+
+    all_pass = bool(split_separation_stats.get("sealed_pass", False) and min_samples_pass and projected_pass)
+
+    return {
+        "schema_version": "2.0",
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "run_id": run_id,
+        "config_path": str(config_path),
+        "config_hash": config_hash,
+        "audit_mode": "enforce",
+        "fingerprints": {
+            "malware_val_clean": fp_val,
+            "malware_test_clean": fp_test,
+        },
+        "counts": {
+            "malware_val_clean": int(len(malware_val_clean)),
+            "malware_test_clean": int(len(malware_test_clean)),
+        },
+        "separation": split_separation_stats,
+        "malware_val_size_control": malware_val_ratio_stats,
+        "quantitative_checks": {
+            "knn_cross_split": knn_metrics,
+            "cross_similarity_profile": similarity_profile,
+            "projected_topk_similarity": projected_similarity_stats,
+        },
+        "gates": {
+            "require_min_malware_val_after_audit": min_required,
+            "min_samples_pass": bool(min_samples_pass),
+            "sealed_pass": bool(split_separation_stats.get("sealed_pass", False)),
+            "projected_topk_similarity_pass": bool(projected_pass),
+            "all_pass": bool(all_pass),
+        },
+    }
+
+
 def _pick_malware_validation_subset(df: pd.DataFrame, target_size: int, seed: int) -> pd.DataFrame:
     if len(df) <= target_size:
         return df
@@ -143,7 +462,7 @@ def enforce_malware_split_separation(
     val_work = malware_val_df.copy()
     test_work = malware_test_df.copy()
 
-    enforce_imphash_disjoint = bool(separation_cfg.get("enforce_imphash_disjoint", True))
+    enforce_imphash_disjoint = True
     max_cross_similarity_raw = separation_cfg.get("max_cross_similarity", None)
     max_cross_similarity = (
         float(max_cross_similarity_raw) if max_cross_similarity_raw is not None else None
@@ -241,7 +560,7 @@ def enforce_malware_split_separation(
         stats["test_shared_rate"] = float(test_nonzero.isin(shared).mean()) if len(test_nonzero) else 0.0
 
     exact_ok = stats["exact_overlap_after"] == 0
-    family_ok = (not enforce_imphash_disjoint) or (stats["shared_imphash_unique"] == 0)
+    family_ok = stats["shared_imphash_unique"] == 0
     similarity_ok = (
         max_cross_similarity is None
         or stats["max_similarity_after"] < float(max_cross_similarity)
@@ -526,6 +845,8 @@ def generate_report(
     group_mapping,
     split_separation_stats=None,
     malware_val_ratio_stats=None,
+    independence_manifest=None,
+    projected_similarity_stats=None,
 ) -> str:
     selected_features = kept_after_stab
     grp_before = Counter(group_mapping.get(c, "?") for c in all_raw_cols if c in group_mapping)
@@ -566,20 +887,32 @@ def generate_report(
         lines.extend(
             [
                 "## Malware Validation/Test Independence Audit\n",
-                f"- Validation size before control: **{split_separation_stats.get('val_before', 0)}**",
-                f"- Validation size after audit: **{split_separation_stats.get('val_after', 0)}**",
-                f"- Exact duplicate overlap: **{split_separation_stats.get('exact_overlap', 0)}**",
-                f"- Exact duplicate removed: **{split_separation_stats.get('exact_overlap_removed', 0)}**",
-                f"- Exact duplicate after cleanup: **{split_separation_stats.get('exact_overlap_after', 0)}**",
-                f"- Enforce imphash disjoint: **{split_separation_stats.get('enforce_imphash_disjoint', False)}**",
-                f"- Rows removed by family disjoint: **{split_separation_stats.get('shared_imphash_removed_rows', 0)}**",
-                f"- Shared unique imphash: **{split_separation_stats.get('shared_imphash_unique', 0)}**",
-                f"- Imphash Jaccard (unique): **{split_separation_stats.get('imphash_jaccard', 0.0):.4f}**",
-                f"- Shared-rate (val/test): **{split_separation_stats.get('val_shared_rate', 0.0):.4f} / {split_separation_stats.get('test_shared_rate', 0.0):.4f}**",
-                f"- Similarity threshold: **{split_separation_stats.get('similarity_threshold', None)}**",
-                f"- Rows removed by similarity: **{split_separation_stats.get('similarity_removed_rows', 0)}**",
-                f"- Max cosine similarity (before/after): **{split_separation_stats.get('max_similarity_before', 0.0):.4f} / {split_separation_stats.get('max_similarity_after', 0.0):.4f}**",
-                f"- Sealed-test check (exact overlap == 0): **{split_separation_stats.get('sealed_pass', False)}**",
+                f"- Sealed-test check: **{split_separation_stats.get('sealed_pass', False)}**",
+                f"- Exact overlap after cleanup: **{split_separation_stats.get('exact_overlap_after', 0)}**",
+                f"- Shared unique imphash after cleanup: **{split_separation_stats.get('shared_imphash_unique', 0)}**",
+                f"- Max cosine similarity after cleanup: **{split_separation_stats.get('max_similarity_after', 0.0):.4f}**",
+            ]
+        )
+
+    if independence_manifest is not None:
+        lines.extend(
+            [
+                "\n## Independence Manifest\n",
+                f"- Run ID: **{independence_manifest.get('run_id', 'n/a')}**",
+                f"- Manifest path: **{independence_manifest.get('manifest_path', 'n/a')}**",
+                f"- Hard gates passed: **{independence_manifest.get('all_pass', False)}**",
+            ]
+        )
+
+    if projected_similarity_stats is not None:
+        lines.extend(
+            [
+                "\n## Projected Similarity Pruning\n",
+                f"- Enabled: **{projected_similarity_stats.get('enabled', False)}**",
+                f"- Threshold: **{projected_similarity_stats.get('similarity_threshold', 0.0):.4f}**",
+                f"- malware_val before/after: **{projected_similarity_stats.get('before', 0)} / {projected_similarity_stats.get('after', 0)}**",
+                f"- Removed by projected pruning: **{projected_similarity_stats.get('removed', 0)}**",
+                f"- All top-k constraints pass: **{projected_similarity_stats.get('all_topk_pass', False)}**",
             ]
         )
 
@@ -636,6 +969,32 @@ def main():
     malware_val_ratio = float(separation_cfg.get("malware_val_ratio_to_benign_val", 0.03))
     malware_val_ratio_seed = int(separation_cfg.get("malware_val_ratio_seed", 42))
     malware_val_min_samples = int(separation_cfg.get("malware_val_min_samples", 500))
+    audit_cfg = cfg.get("independence_audit", {})
+    audit_mode = "enforce"
+    manifest_out_path = _resolve_path(
+        config_path,
+        audit_cfg.get("manifest_path", "../reports/malware_val_test_independence_manifest_stage2.json"),
+    )
+    knn_k_list = [int(x) for x in audit_cfg.get("knn_k_list", [1, 5, 10])]
+    knn_sample_size = int(audit_cfg.get("knn_sample_size_per_split", 2000))
+    knn_seed = int(audit_cfg.get("knn_seed", 42))
+    similarity_thresholds = [float(x) for x in audit_cfg.get("similarity_profile_thresholds", [0.99, 0.995, 0.999])]
+    min_malware_val_after_audit = int(audit_cfg.get("require_min_malware_val_after_audit", 300))
+    projected_pruning_enabled = True
+    projected_similarity_threshold = float(audit_cfg.get("projected_similarity_threshold", separation_cfg.get("max_cross_similarity", 0.995)))
+    projected_max_iterations = int(audit_cfg.get("projected_max_iterations", 8))
+
+    projected_top_k_raw = audit_cfg.get("projected_top_k_list")
+    if projected_top_k_raw is None:
+        model_cfg_path = _resolve_path(config_path, audit_cfg.get("model_config_path", "model_config.json"))
+        projected_top_k_raw = [20, 25, 40, 100]
+        if model_cfg_path.exists():
+            try:
+                model_cfg = _load_config(model_cfg_path)
+                projected_top_k_raw = model_cfg.get("feature_selection", {}).get("top_k_list", projected_top_k_raw)
+            except Exception:
+                projected_top_k_raw = [20, 25, 40, 100]
+    projected_top_k_list = [int(x) for x in projected_top_k_raw]
 
     cleaned_dir.mkdir(parents=True, exist_ok=True)
     schema_dir.mkdir(parents=True, exist_ok=True)
@@ -846,16 +1205,104 @@ def main():
     )
     if len(dfs_train_val["malware_val"]) == 0:
         raise ValueError("malware_val became empty after ratio downsampling; increase malware_val_ratio_to_benign_val")
+    if len(dfs_train_val["malware_val"]) < min_malware_val_after_audit:
+        raise RuntimeError(
+            "malware_val is too small after Stage 2 audit "
+            f"({len(dfs_train_val['malware_val'])} < {min_malware_val_after_audit})."
+        )
     
     # Combine all datasets for transformation
     dfs_raw = {**dfs_train_val, **dfs_test}
 
     print(f"\n--- Saving cleaned datasets ({len(selected_features)} features) ---")
+    cleaned_outputs: dict[str, pd.DataFrame] = {}
     for name, df in dfs_raw.items():
         df_clean = apply_transforms(df, selected_features, log_transform_cols)
+        cleaned_outputs[name] = df_clean
         out_path = cleaned_dir / f"{name}_clean.parquet"
         df_clean.to_parquet(out_path, engine="pyarrow", compression="snappy")
         print(f"  Saved {name}: {df_clean.shape} -> {out_path}")
+
+    projected_similarity_stats = {
+        "enabled": False,
+        "similarity_threshold": float(projected_similarity_threshold),
+        "before": int(len(cleaned_outputs["malware_val"])),
+        "after": int(len(cleaned_outputs["malware_val"])),
+        "removed": 0,
+        "all_topk_pass": True,
+    }
+
+    if projected_pruning_enabled:
+        print("\n--- Projected Similarity Pruning (Stage-3 Feature Regime) ---")
+        print(
+            "  Applying split-hygiene pruning against malware_test before model training; "
+            "this does not modify benign training data."
+        )
+
+        malware_val_pruned, projected_similarity_stats = _iterative_projected_similarity_pruning(
+            benign_train_clean=cleaned_outputs["benign_train"],
+            malware_val_clean=cleaned_outputs["malware_val"],
+            malware_test_clean=cleaned_outputs["malware_test"],
+            top_k_list=projected_top_k_list,
+            similarity_threshold=projected_similarity_threshold,
+            max_iterations=projected_max_iterations,
+        )
+        cleaned_outputs["malware_val"] = malware_val_pruned
+
+        malware_val_out_path = cleaned_dir / "malware_val_clean.parquet"
+        malware_val_pruned.to_parquet(malware_val_out_path, engine="pyarrow", compression="snappy")
+
+        print(f"  top-k list: {projected_top_k_list}")
+        print(
+            f"  malware_val projected pruning: {projected_similarity_stats.get('before', 0)} -> "
+            f"{projected_similarity_stats.get('after', 0)} "
+            f"(removed={projected_similarity_stats.get('removed', 0)})"
+        )
+        print(f"  all top-k constraints pass: {projected_similarity_stats.get('all_topk_pass', False)}")
+
+    malware_val_clean = cleaned_outputs["malware_val"]
+    if len(malware_val_clean) < min_malware_val_after_audit:
+        raise RuntimeError(
+            "malware_val is too small after projected similarity pruning "
+            f"({len(malware_val_clean)} < {min_malware_val_after_audit})."
+        )
+
+    malware_test_clean = cleaned_outputs["malware_test"]
+    val_norm = _normalize_rows_l2(malware_val_clean.to_numpy(dtype=np.float32, copy=False))
+    test_norm = _normalize_rows_l2(malware_test_clean.to_numpy(dtype=np.float32, copy=False))
+    similarity_profile = _compute_cross_similarity_profile(
+        val_norm,
+        test_norm,
+        thresholds=similarity_thresholds,
+    )
+    knn_metrics = _compute_knn_cross_split_metrics(
+        val_norm,
+        test_norm,
+        k_list=knn_k_list,
+        sample_size_per_split=knn_sample_size,
+        seed=knn_seed,
+    )
+
+    stage2_manifest = _build_stage2_independence_manifest(
+        config_path=config_path,
+        audit_cfg=audit_cfg,
+        split_separation_stats=split_separation_stats,
+        malware_val_ratio_stats=malware_val_ratio_stats,
+        malware_val_clean=malware_val_clean,
+        malware_test_clean=malware_test_clean,
+        knn_metrics=knn_metrics,
+        similarity_profile=similarity_profile,
+        projected_similarity_stats=projected_similarity_stats,
+    )
+    manifest_out_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_out_path.write_text(json.dumps(stage2_manifest, indent=2), encoding="utf-8")
+    print(f"\n  Stage-2 independence manifest: {manifest_out_path}")
+
+    if audit_mode == "enforce" and not stage2_manifest["gates"]["all_pass"]:
+        raise RuntimeError(
+            "Stage-2 independence manifest failed hard gates. "
+            f"Run ID={stage2_manifest['run_id']}"
+        )
 
     feature_status = {col: {"status": "removed", "stage": "initial"} for col in all_raw_cols}
 
@@ -912,6 +1359,12 @@ def main():
         group_mapping,
         split_separation_stats,
         malware_val_ratio_stats,
+        {
+            "run_id": stage2_manifest.get("run_id"),
+            "manifest_path": str(manifest_out_path),
+            "all_pass": stage2_manifest.get("gates", {}).get("all_pass", False),
+        },
+        projected_similarity_stats,
     )
     report_path = report_dir / "feature_selection_report.md"
     report_path.write_text(report, encoding="utf-8")

@@ -18,10 +18,9 @@ Outputs:
     ../reports/optimized_params.json
     ../reports/optimized_features.csv
     ../reports/roc_curve.svg
-    ../reports/malware_val_test_embedding.png
-    ../reports/malware_val_test_embedding.csv
-    ../reports/malware_val_test_cluster_report.md
+    ../reports/malware_val_test_independence_metrics_stage3.json
     ../reports/score_distribution.svg
+    ../docs/malware_val_test_independence_assessment.md
     ../results  (model parameters & benchmarks for C++ embedding)
 """
 
@@ -36,7 +35,11 @@ from typing import Literal, Union, Any, cast
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, precision_recall_curve, roc_auc_score, roc_curve
+from sklearn.metrics.pairwise import rbf_kernel
+from sklearn.model_selection import StratifiedKFold
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 
@@ -49,6 +52,11 @@ def _compute_dataset_fingerprint(df: pd.DataFrame, name: str) -> str:
     return fingerprint
 
 
+def _stable_json_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
 def _count_cross_split_overlap(source_df: pd.DataFrame, target_df: pd.DataFrame) -> int:
     """Count exact duplicate rows in target_df that also exist in source_df."""
     if len(source_df) == 0 or len(target_df) == 0:
@@ -56,6 +64,323 @@ def _count_cross_split_overlap(source_df: pd.DataFrame, target_df: pd.DataFrame)
     source_hashes = set(pd.util.hash_pandas_object(source_df, index=False).tolist())
     target_hashes = pd.util.hash_pandas_object(target_df, index=False)
     return int(target_hashes.isin(source_hashes).sum())
+
+
+def _normalize_rows_l2(mat: np.ndarray) -> np.ndarray:
+    if mat.size == 0:
+        return mat
+    norms = np.linalg.norm(mat, axis=1, keepdims=True)
+    norms[norms == 0.0] = 1.0
+    return mat / norms
+
+
+def _max_cosine_to_reference(query: np.ndarray, ref: np.ndarray, chunk_size: int = 256) -> np.ndarray:
+    if query.size == 0 or ref.size == 0:
+        return np.zeros(query.shape[0], dtype=np.float32)
+    ref_t = ref.T
+    out = np.empty(query.shape[0], dtype=np.float32)
+    for start in range(0, query.shape[0], chunk_size):
+        end = min(start + chunk_size, query.shape[0])
+        sims = query[start:end] @ ref_t
+        out[start:end] = sims.max(axis=1)
+    return out
+
+
+def _load_stage2_independence_manifest(manifest_path: Path) -> dict[str, Any]:
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"Stage-2 independence manifest not found: {manifest_path}. "
+            "Run feature_selection.py first."
+        )
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _assert_manifest_consistency(
+    stage2_manifest: dict[str, Any],
+    df_val_m: pd.DataFrame,
+    df_test_m: pd.DataFrame,
+) -> dict[str, Any]:
+    fp_live_val = _compute_dataset_fingerprint(df_val_m, "val_malware_live")
+    fp_live_test = _compute_dataset_fingerprint(df_test_m, "test_malware_live")
+    expected = stage2_manifest.get("fingerprints", {})
+
+    mismatches = []
+    if expected.get("malware_val_clean") != fp_live_val:
+        mismatches.append("malware_val fingerprint mismatch")
+    if expected.get("malware_test_clean") != fp_live_test:
+        mismatches.append("malware_test fingerprint mismatch")
+
+    return {
+        "available": True,
+        "match": len(mismatches) == 0,
+        "run_id": stage2_manifest.get("run_id"),
+        "expected": {
+            "malware_val_clean": expected.get("malware_val_clean"),
+            "malware_test_clean": expected.get("malware_test_clean"),
+        },
+        "actual": {
+            "malware_val_clean": fp_live_val,
+            "malware_test_clean": fp_live_test,
+        },
+        "mismatches": mismatches,
+    }
+
+
+def _compute_cross_similarity_profile(
+    val_norm: np.ndarray,
+    test_norm: np.ndarray,
+    thresholds: list[float],
+) -> dict[str, Any]:
+    if val_norm.size == 0 or test_norm.size == 0:
+        return {"available": False, "reason": "empty split"}
+
+    val_to_test = _max_cosine_to_reference(val_norm, test_norm)
+    test_to_val = _max_cosine_to_reference(test_norm, val_norm)
+
+    out = {
+        "available": True,
+        "val_to_test": {
+            "q50": float(np.quantile(val_to_test, 0.50)),
+            "q90": float(np.quantile(val_to_test, 0.90)),
+            "q99": float(np.quantile(val_to_test, 0.99)),
+            "max": float(np.max(val_to_test)),
+        },
+        "test_to_val": {
+            "q50": float(np.quantile(test_to_val, 0.50)),
+            "q90": float(np.quantile(test_to_val, 0.90)),
+            "q99": float(np.quantile(test_to_val, 0.99)),
+            "max": float(np.max(test_to_val)),
+        },
+        "threshold_counts": {},
+    }
+
+    for thr in thresholds:
+        key = f">={thr:.4f}"
+        out["threshold_counts"][key] = {
+            "val_to_test": int(np.greater_equal(val_to_test, float(thr)).sum()),
+            "test_to_val": int(np.greater_equal(test_to_val, float(thr)).sum()),
+        }
+    return out
+
+
+def _compute_knn_cross_split_metrics(
+    val_norm: np.ndarray,
+    test_norm: np.ndarray,
+    k_list: list[int],
+    sample_size_per_split: int,
+    seed: int,
+) -> dict[str, Any]:
+    if val_norm.size == 0 or test_norm.size == 0:
+        return {"available": False, "reason": "empty split"}
+
+    rng = np.random.default_rng(seed)
+    val = val_norm
+    test = test_norm
+    if sample_size_per_split > 0 and len(val) > sample_size_per_split:
+        val = val[rng.choice(len(val), size=sample_size_per_split, replace=False)]
+    if sample_size_per_split > 0 and len(test) > sample_size_per_split:
+        test = test[rng.choice(len(test), size=sample_size_per_split, replace=False)]
+
+    X = np.vstack([val, test])
+    y = np.concatenate([np.zeros(len(val), dtype=np.int8), np.ones(len(test), dtype=np.int8)])
+
+    k_list = sorted({int(k) for k in k_list if int(k) > 0})
+    if not k_list:
+        k_list = [1, 5]
+    max_k = min(max(k_list), len(X) - 1)
+    if max_k <= 0:
+        return {"available": False, "reason": "insufficient samples"}
+
+    nn = NearestNeighbors(n_neighbors=max_k + 1, metric="cosine")
+    nn.fit(X)
+    _, idx = nn.kneighbors(X)
+    neigh = idx[:, 1 : max_k + 1]
+    neigh_labels = y[neigh]
+
+    out: dict[str, Any] = {
+        "available": True,
+        "sampled_val": int(len(val)),
+        "sampled_test": int(len(test)),
+        "k": {},
+    }
+    for k in k_list:
+        if k > max_k:
+            continue
+        frac_other = (neigh_labels[:, :k] != y[:, None]).mean(axis=1)
+        val_mask = y == 0
+        test_mask = y == 1
+        out["k"][str(k)] = {
+            "val_to_test_cross_rate": float(frac_other[val_mask].mean()) if val_mask.any() else 0.0,
+            "test_to_val_cross_rate": float(frac_other[test_mask].mean()) if test_mask.any() else 0.0,
+            "global_cross_rate": float(frac_other.mean()),
+        }
+    return out
+
+
+def _compute_split_predictability_auc(
+    val_norm: np.ndarray,
+    test_norm: np.ndarray,
+    seed: int,
+    n_splits: int,
+) -> dict[str, Any]:
+    if val_norm.size == 0 or test_norm.size == 0:
+        return {"available": False, "reason": "empty split"}
+
+    X = np.vstack([val_norm, test_norm])
+    y = np.concatenate([np.zeros(len(val_norm), dtype=np.int8), np.ones(len(test_norm), dtype=np.int8)])
+    if len(np.unique(y)) < 2:
+        return {"available": False, "reason": "single class"}
+
+    cv = StratifiedKFold(n_splits=max(2, int(n_splits)), shuffle=True, random_state=seed)
+    aucs = []
+    for train_idx, test_idx in cv.split(X, y):
+        clf = LogisticRegression(max_iter=1000, class_weight="balanced", random_state=seed)
+        clf.fit(X[train_idx], y[train_idx])
+        proba = clf.predict_proba(X[test_idx])[:, 1]
+        aucs.append(roc_auc_score(y[test_idx], proba))
+
+    return {
+        "available": True,
+        "cv_folds": int(n_splits),
+        "auc_mean": float(np.mean(aucs)),
+        "auc_std": float(np.std(aucs)),
+        "auc_values": [float(x) for x in aucs],
+    }
+
+
+def _compute_mmd_rbf_permutation(
+    val_norm: np.ndarray,
+    test_norm: np.ndarray,
+    permutations: int,
+    seed: int,
+    sample_size_per_split: int,
+) -> dict[str, Any]:
+    if val_norm.size == 0 or test_norm.size == 0:
+        return {"available": False, "reason": "empty split"}
+
+    rng = np.random.default_rng(seed)
+    X = val_norm
+    Y = test_norm
+    if sample_size_per_split > 0 and len(X) > sample_size_per_split:
+        X = X[rng.choice(len(X), size=sample_size_per_split, replace=False)]
+    if sample_size_per_split > 0 and len(Y) > sample_size_per_split:
+        Y = Y[rng.choice(len(Y), size=sample_size_per_split, replace=False)]
+
+    combined = np.vstack([X, Y])
+    n_x = len(X)
+    if n_x == 0 or len(Y) == 0:
+        return {"available": False, "reason": "empty sampled split"}
+
+    dists = np.sum((combined[:, None, :] - combined[None, :, :]) ** 2, axis=2)
+    tri = dists[np.triu_indices_from(dists, k=1)]
+    median_sq = float(np.median(tri)) if len(tri) else 1.0
+    gamma = 1.0 / max(median_sq, 1e-12)
+
+    K = rbf_kernel(combined, gamma=gamma)
+
+    def mmd2_for_indices(ix: np.ndarray, iy: np.ndarray) -> float:
+        Kxx = K[np.ix_(ix, ix)]
+        Kyy = K[np.ix_(iy, iy)]
+        Kxy = K[np.ix_(ix, iy)]
+        return float(Kxx.mean() + Kyy.mean() - 2.0 * Kxy.mean())
+
+    base_ix = np.arange(n_x)
+    base_iy = np.arange(n_x, n_x + len(Y))
+    observed = mmd2_for_indices(base_ix, base_iy)
+
+    perm_values = np.empty(int(permutations), dtype=np.float64)
+    all_idx = np.arange(len(combined))
+    for i in range(int(permutations)):
+        rng.shuffle(all_idx)
+        ix = all_idx[:n_x]
+        iy = all_idx[n_x : n_x + len(Y)]
+        perm_values[i] = mmd2_for_indices(ix, iy)
+
+    p_value = float((1.0 + np.greater_equal(perm_values, observed).sum()) / (1.0 + len(perm_values)))
+    return {
+        "available": True,
+        "sampled_val": int(n_x),
+        "sampled_test": int(len(Y)),
+        "gamma": float(gamma),
+        "mmd2_observed": float(observed),
+        "permutations": int(permutations),
+        "p_value": p_value,
+    }
+
+
+def _write_independence_assessment_md(
+    out_path: Path,
+    stage2_manifest_path: Path,
+    stage2_manifest: dict[str, Any] | None,
+    manifest_consistency: dict[str, Any],
+    stage3_metrics: dict[str, Any],
+    hard_violations: list[str],
+) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    run_id = None
+    if stage2_manifest is not None:
+        run_id = stage2_manifest.get("run_id")
+
+    lines = [
+        "# Malware Validation vs Test Independence Assessment",
+        "",
+        "## Abstract",
+        "This report evaluates whether `malware_val` and `malware_test` remain independent under a sealed-test protocol. "
+        "It combines hard leakage gates (exact overlap, family proxy overlap, and near-duplicate similarity constraints) "
+        "with quantitative distribution diagnostics (kNN cross-split mixing, split-predictability AUC, and permutation MMD).",
+        "",
+        "## Research Question",
+        "Can the evaluation claim for malware detection be considered leakage-resistant when validation malware and holdout test malware are constrained by explicit independence controls and reproducible audit evidence?",
+        "",
+        "## Null / Alternative Framing",
+        "- **H0 (acceptable for sealed-test evaluation):** configured hard leakage constraints are satisfied for this run.",
+        "- **H1 (reject sealed-test evaluation):** one or more hard leakage constraints are violated.",
+        "",
+        "## Provenance",
+        f"- Stage-2 manifest path: `{stage2_manifest_path}`",
+        f"- Stage-2 run id: `{run_id}`",
+        f"- Stage-3 timestamp: `{time.strftime('%Y-%m-%d %H:%M:%S')}`",
+        "",
+        "## Methods",
+        "1. **Stage-2 hard controls**: exact duplicate removal, imphash-family disjoint enforcement, and cosine-similarity pruning.",
+        "2. **Stage-3 provenance gate**: fingerprints of `malware_val_clean` and `malware_test_clean` must exactly match Stage-2 manifest fingerprints.",
+        "3. **Non-UMAP quantitative diagnostics**: cross-split cosine profile, kNN cross-split mixing rates, split predictability AUC (cross-validated), and permutation MMD.",
+        "",
+        "## Hard Decision Rule",
+        "The run is marked **PASS** only if all hard constraints are simultaneously satisfied; otherwise it is **FAIL** and final claims should not be treated as sealed-test evidence.",
+        "",
+        "## Results",
+        f"- Manifest consistency match: **{manifest_consistency.get('match', False)}**",
+        f"- Exact overlap (stage3): **{stage3_metrics.get('exact_overlap', 0)}**",
+        f"- Shared imphash unique: **{stage3_metrics.get('imphash_shared_unique', 0)}**",
+        f"- Max cosine val→test: **{stage3_metrics.get('max_cosine_val_to_test', 0.0):.6f}** (threshold: {stage3_metrics.get('similarity_threshold', 0.0):.6f})",
+        f"- Max cosine test→val: **{stage3_metrics.get('max_cosine_test_to_val', 0.0):.6f}**",
+        f"- Split predictability AUC (mean): **{stage3_metrics.get('split_auc_mean', 0.0):.4f}**",
+        f"- MMD p-value: **{stage3_metrics.get('mmd_p_value', 0.0):.6f}**",
+        "",
+        "## Hard-Gate Decision",
+        f"- Violations: **{len(hard_violations)}**",
+    ]
+
+    if hard_violations:
+        for item in hard_violations:
+            lines.append(f"- {item}")
+        lines.append("- Final status: **FAIL (sealed-test independence not demonstrated)**")
+    else:
+        lines.append("- Final status: **PASS (configured sealed-test independence gates satisfied)**")
+
+    lines.extend(
+        [
+            "",
+            "## Claim Boundaries",
+            "- This report supports **configured leakage-control compliance for this run**.",
+            "- It does **not** prove guaranteed zero-day detection on all future malware families.",
+        ]
+    )
+
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _as_list(value):
@@ -696,6 +1021,33 @@ def main():
     else:
         val_fpr_target = float(val_fpr_target)
 
+    independence_cfg = cfg.get("independence_audit", {})
+    audit_mode = "enforce"
+    stage2_manifest_path = _resolve_path(
+        config_path,
+        independence_cfg.get("stage2_manifest_path", "../reports/malware_val_test_independence_manifest_stage2.json"),
+    )
+    audit_similarity_threshold = float(independence_cfg.get("max_cross_similarity", 0.995))
+    audit_similarity_profile_thresholds = [
+        float(x) for x in independence_cfg.get("similarity_profile_thresholds", [0.99, 0.995, 0.999])
+    ]
+    audit_knn_k_list = [int(x) for x in independence_cfg.get("knn_k_list", [1, 5, 10])]
+    audit_knn_sample_size = int(independence_cfg.get("knn_sample_size_per_split", 2000))
+    audit_knn_seed = int(independence_cfg.get("knn_seed", random_state))
+    audit_split_auc_folds = int(independence_cfg.get("split_auc_cv_folds", 5))
+    audit_mmd_permutations = int(independence_cfg.get("mmd_permutations", 300))
+    audit_mmd_sample_size = int(independence_cfg.get("mmd_sample_size_per_split", 1500))
+    audit_min_malware_val = int(independence_cfg.get("require_min_malware_val_samples", 300))
+    audit_require_imphash_disjoint = True
+    independence_metrics_json_path = _resolve_path(
+        config_path,
+        independence_cfg.get("independence_metrics_json", "../reports/malware_val_test_independence_metrics_stage3.json"),
+    )
+    independence_assessment_md_path = _resolve_path(
+        config_path,
+        independence_cfg.get("independence_assessment_md", "../docs/malware_val_test_independence_assessment.md"),
+    )
+
     outputs_cfg = cfg["outputs"]
     report_dir = _resolve_path(config_path, outputs_cfg.get("report_dir", "../reports"))
     results_dir = _resolve_path(config_path, outputs_cfg.get("results_dir", "../results/final"))
@@ -712,6 +1064,14 @@ def main():
     report_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
     optimized_data_dir.mkdir(parents=True, exist_ok=True)
+
+    stage2_manifest = _load_stage2_independence_manifest(stage2_manifest_path)
+    stage2_all_pass = bool(stage2_manifest.get("gates", {}).get("all_pass", False))
+    print(f"  Stage-2 independence manifest: {stage2_manifest_path}")
+    print(f"  Stage-2 run id: {stage2_manifest.get('run_id', 'n/a')}")
+    print(f"  Stage-2 hard gates: {stage2_all_pass}")
+    if audit_mode == "enforce" and not stage2_all_pass:
+        raise RuntimeError("Stage-2 independence manifest indicates failed hard gates.")
 
     print("=" * 70)
     print("STAGE 3: MODEL TRAINING & OPTIMIZATION")
@@ -968,6 +1328,19 @@ def main():
             f"{overlap_malware_val_test} samples"
         )
 
+    manifest_consistency = _assert_manifest_consistency(stage2_manifest, df_val_m, df_test_m)
+    if manifest_consistency.get("match"):
+        print("  ✓ Stage-3 inputs match Stage-2 manifest fingerprints")
+    else:
+        print("  ⚠ Stage-2/Stage-3 fingerprint mismatch detected")
+        for reason in manifest_consistency.get("mismatches", []):
+            print(f"    - {reason}")
+        if audit_mode == "enforce":
+            raise RuntimeError("Stage-3 manifest consistency failed.")
+
+    imphash_overlap_proxy = _compute_imphash_overlap(df_val_m, df_test_m)
+    stage2_shared_imphash_unique = int(stage2_manifest.get("separation", {}).get("shared_imphash_unique", 0))
+
     # ── Retrain best model and generate visualizations ──
     X_test_b_var = df_test_b[selected_cols].values.astype(np.float32)
     X_test_m_var = df_test_m[selected_cols].values.astype(np.float32)
@@ -1017,6 +1390,10 @@ def main():
             beta=f_beta,
         )
 
+    y_true_val_final = np.concatenate([np.zeros(len(scores_val_final)), np.ones(len(scores_vm_final))])
+    y_scores_val_final = np.concatenate([-scores_val_final, -scores_vm_final])
+    val_auc_final = roc_auc_score(y_true_val_final, y_scores_val_final)
+
     scores_b = model.decision_function(X_test_b_scaled)
     scores_m = model.decision_function(X_test_m_scaled)
 
@@ -1030,6 +1407,126 @@ def main():
     auc_value = roc_auc_score(y_true, y_scores)
     precision_arr, recall_arr, _ = precision_recall_curve(y_true, y_scores)
     ap_value = average_precision_score(y_true, y_scores)
+
+    val_norm = _normalize_rows_l2(X_val_m_full_scaled.astype(np.float32, copy=False))
+    test_norm = _normalize_rows_l2(X_test_m_scaled.astype(np.float32, copy=False))
+    similarity_profile = _compute_cross_similarity_profile(
+        val_norm,
+        test_norm,
+        thresholds=audit_similarity_profile_thresholds,
+    )
+    knn_metrics = _compute_knn_cross_split_metrics(
+        val_norm,
+        test_norm,
+        k_list=audit_knn_k_list,
+        sample_size_per_split=audit_knn_sample_size,
+        seed=audit_knn_seed,
+    )
+    split_auc = _compute_split_predictability_auc(
+        val_norm,
+        test_norm,
+        seed=random_state,
+        n_splits=audit_split_auc_folds,
+    )
+    mmd_stats = _compute_mmd_rbf_permutation(
+        val_norm,
+        test_norm,
+        permutations=audit_mmd_permutations,
+        seed=random_state,
+        sample_size_per_split=audit_mmd_sample_size,
+    )
+
+    hard_violations: list[str] = []
+    if overlap_malware_val_test > 0:
+        hard_violations.append(f"exact overlap > 0 ({overlap_malware_val_test})")
+
+    if audit_require_imphash_disjoint and stage2_shared_imphash_unique > 0:
+        hard_violations.append(
+            f"stage2 shared imphash families > 0 ({stage2_shared_imphash_unique})"
+        )
+
+    if similarity_profile.get("available"):
+        max_val_to_test = float(similarity_profile["val_to_test"]["max"])
+        if max_val_to_test >= audit_similarity_threshold:
+            hard_violations.append(
+                "max cosine similarity val->test exceeds threshold "
+                f"({max_val_to_test:.6f} >= {audit_similarity_threshold:.6f})"
+            )
+
+    if len(df_val_m) < audit_min_malware_val:
+        hard_violations.append(
+            f"malware_val sample size below minimum ({len(df_val_m)} < {audit_min_malware_val})"
+        )
+
+    if not bool(stage2_manifest.get("gates", {}).get("all_pass", False)):
+        hard_violations.append("stage2 manifest hard gates are not all_pass")
+
+    if not manifest_consistency.get("match", False):
+        hard_violations.append("stage2/stage3 fingerprint consistency mismatch")
+
+    stage3_metrics_payload = {
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "stage2_manifest_path": str(stage2_manifest_path),
+        "stage2_run_id": stage2_manifest.get("run_id") if stage2_manifest else None,
+        "manifest_consistency": manifest_consistency,
+        "hard_checks": {
+            "exact_overlap": int(overlap_malware_val_test),
+            "imphash_overlap_stage2": {
+                "available": stage2_shared_imphash_unique is not None,
+                "shared_unique": int(stage2_shared_imphash_unique or 0),
+            },
+            "imphash_overlap_clean_proxy": imphash_overlap_proxy,
+            "max_cross_similarity_threshold": float(audit_similarity_threshold),
+            "min_malware_val_samples": int(audit_min_malware_val),
+        },
+        "quantitative_checks": {
+            "cross_similarity_profile": similarity_profile,
+            "knn_cross_split": knn_metrics,
+            "split_predictability_auc": split_auc,
+            "mmd_rbf_permutation": mmd_stats,
+        },
+        "hard_violations": hard_violations,
+        "all_hard_checks_pass": len(hard_violations) == 0,
+    }
+    independence_metrics_json_path.parent.mkdir(parents=True, exist_ok=True)
+    independence_metrics_json_path.write_text(json.dumps(stage3_metrics_payload, indent=2), encoding="utf-8")
+
+    stage3_summary = {
+        "exact_overlap": int(overlap_malware_val_test),
+        "imphash_shared_unique": int(stage2_shared_imphash_unique or 0),
+        "max_cosine_val_to_test": float(similarity_profile["val_to_test"]["max"]) if similarity_profile.get("available") else 0.0,
+        "max_cosine_test_to_val": float(similarity_profile["test_to_val"]["max"]) if similarity_profile.get("available") else 0.0,
+        "similarity_threshold": float(audit_similarity_threshold),
+        "split_auc_mean": float(split_auc.get("auc_mean", 0.0)) if split_auc.get("available") else 0.0,
+        "mmd_p_value": float(mmd_stats.get("p_value", 0.0)) if mmd_stats.get("available") else 0.0,
+    }
+    _write_independence_assessment_md(
+        out_path=independence_assessment_md_path,
+        stage2_manifest_path=stage2_manifest_path,
+        stage2_manifest=stage2_manifest,
+        manifest_consistency=manifest_consistency,
+        stage3_metrics=stage3_summary,
+        hard_violations=hard_violations,
+    )
+
+    print("\n--- Stage-3 Independence Audit ---")
+    print(f"  Metrics JSON: {independence_metrics_json_path}")
+    print(f"  Canonical document: {independence_assessment_md_path}")
+    print(f"  Hard-gate violations: {len(hard_violations)}")
+
+    if audit_mode == "enforce" and hard_violations:
+        formatted = "\n".join([f"- {item}" for item in hard_violations])
+        raise RuntimeError(
+            "Stage-3 independence audit failed hard gates:\n" + formatted
+        )
+
+    print("\n" + "=" * 70)
+    print("BEST VALIDATION-SET RESULTS")
+    print("=" * 70)
+    print(f"  Threshold: {float(final_threshold):.6f}")
+    print(f"  Val TPR:   {final_val_tpr * 100:.2f}%")
+    print(f"  Val FPR:   {final_val_fpr * 100:.2f}%")
+    print(f"  Val ROC-AUC: {val_auc_final:.4f}")
 
     print("\n" + "=" * 70)
     print("FINAL HOLDOUT TEST RESULTS")

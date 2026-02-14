@@ -1,6 +1,6 @@
 # Feature Selection Report
 
-**Date**: 2026-02-14 09:12
+**Date**: 2026-02-14 11:56
 
 ## Summary
 
@@ -8,7 +8,7 @@
 - After variance filtering: **570** (removed 53)
 - After correlation pruning: **533** (removed 37)
 - After stability filtering: **475** (removed 58)
-- Log-transformed features: **380**
+- Log-transformed features: **381**
 - **Final selected: 475 features in 23 groups**
 
 ## Per-Group Summary
@@ -426,7 +426,7 @@
 - `opt_sizeof_init_data` [log1p]
 - `opt_sizeof_uninit_data` [log1p]
 - `opt_entrypoint` [log1p]
-- `opt_imagebase`
+- `opt_imagebase` [log1p]
 - `opt_section_alignment`
 - `opt_file_alignment` [log1p]
 - `opt_major_os_ver`
@@ -564,27 +564,31 @@
 
 ## Malware Validation/Test Independence Audit
 
-- Validation size before control: **2169**
-- Validation size after audit: **876**
-- Exact duplicate overlap: **0**
-- Exact duplicate removed: **0**
-- Exact duplicate after cleanup: **0**
-- Enforce imphash disjoint: **True**
-- Rows removed by family disjoint: **1029**
-- Shared unique imphash: **0**
-- Imphash Jaccard (unique): **0.0000**
-- Shared-rate (val/test): **0.0000 / 0.0000**
-- Similarity threshold: **0.999**
-- Rows removed by similarity: **264**
-- Max cosine similarity (before/after): **1.0000 / 0.9990**
-- Sealed-test check (exact overlap == 0): **True**
+- Sealed-test check: **True**
+- Exact overlap after cleanup: **0**
+- Shared unique imphash after cleanup: **0**
+- Max cosine similarity after cleanup: **0.9950**
+
+## Independence Manifest
+
+- Run ID: **9f7b7520ad2c7e21**
+- Manifest path: **/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../reports/malware_val_test_independence_manifest_stage2.json**
+- Hard gates passed: **True**
+
+## Projected Similarity Pruning
+
+- Enabled: **True**
+- Threshold: **0.9950**
+- malware_val before/after: **473 / 263**
+- Removed by projected pruning: **210**
+- All top-k constraints pass: **True**
 
 ## Malware Validation Size Control
 
 - Ratio to benign_val: **0.2000**
 - Min malware_val floor: **500**
 - benign_val samples: **4967**
-- malware_val before: **876**
-- malware_val target: **876**
-- malware_val after: **876**
+- malware_val before: **473**
+- malware_val target: **473**
+- malware_val after: **473**
 - removed by ratio cap: **0**

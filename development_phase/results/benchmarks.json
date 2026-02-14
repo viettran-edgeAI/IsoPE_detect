@@ -8,16 +8,16 @@
     "contamination": 0.005,
     "random_state": 42
   },
-  "n_features": 40,
+  "n_features": 25,
   "n_trees": 200,
-  "threshold": 0.08601411674511084,
-  "offset": -0.6119936831465175,
+  "threshold": 0.08406001385991724,
+  "offset": -0.6129930305321212,
   "metrics": {
-    "roc_auc": 0.9879725781412335,
-    "fpr_benign_test": 0.05921584478577203,
-    "tpr_malware_test": 0.958273724368145,
-    "fpr_benign_val": 0.04972820616066036,
-    "tpr_malware_val": 0.9383561643835616
+    "roc_auc": 0.9858829393648163,
+    "fpr_benign_test": 0.06083265966046888,
+    "tpr_malware_test": 0.9659036719122556,
+    "fpr_benign_val": 0.04932554862089793,
+    "tpr_malware_val": 0.9429657794676806
   },
   "note": "Model not saved - C++ version will be built from these parameters"
 }

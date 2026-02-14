@@ -2,6 +2,15 @@
 
 All notable changes to the EDR Agent model and optimization pipeline will be documented in this file. This project follows absolute metric tracking for model effectiveness.
 
+## [1.6.2] - 2026-02-14
+
+### Changed
+- Hardcoded 4 mandatory leak-prevention layers (no config on/off toggles): exact overlap removal/check, imphash-family disjointness, projected top-k cosine pruning, and Stage-2↔Stage-3 fingerprint consistency enforcement.
+- `feature_selection.py`: leak-prevention now always runs in strict enforce mode; projected top-k pruning is always executed.
+- `model_optimization.py`: Stage-3 independence enforcement is always strict; manifest presence/consistency and hard-gate checks are mandatory.
+- `feature_selection_config.json` and `model_config.json`: removed leak-prevention enable/disable flags; retained only threshold/level controls.
+- `config_parameters.md`: documented that leak-prevention layers are hardcoded and only allowed thresholds/levels are configurable.
+
 ## [1.6.1] - 2026-02-14
 
 ### Changed

@@ -53,13 +53,23 @@ For each parameter: purpose, impact, and how to adjust.
 | `filtering.corr_threshold` | Correlation pruning threshold | Lower value removes more redundancy | Use 0.90–0.98; lower for compact/robust models |
 
 ### Separation / transparency controls
+Hardcoded policy (not configurable on/off):
+1. Exact overlap removal and sealed-test overlap check
+2. Imphash family disjoint enforcement
+3. Projected top-k cosine pruning against malware_test
+4. Stage-2/Stage-3 fingerprint consistency verification
+
+Only threshold/level values are configurable below.
+
 | Parameter | Purpose | Impact on process | How to adjust |
 |---|---|---|---|
 | `separation.malware_val_ratio_to_benign_val` | Caps malware validation size relative to benign val | Controls prevalence realism vs tuning stability | Keep moderate (e.g., 0.1–0.5) for stable thresholding |
 | `separation.malware_val_min_samples` | Floor for malware validation size | Prevents unstable thresholding from tiny malware_val | Raise if threshold/model selection is noisy |
 | `separation.malware_val_ratio_seed` | RNG seed for subset selection | Reproducibility of malware_val subset | Keep fixed for comparable experiments |
-| `separation.enforce_imphash_disjoint` | Remove malware_val rows sharing imphash families with malware_test | Strengthens family-level independence transparency | Keep `true` for final reporting |
 | `separation.max_cross_similarity` | Prune very-high-similarity malware_val rows vs malware_test | Reduces near-duplicate leakage risk | Tighten (smaller threshold) for stricter independence; loosen if val size too small |
+| `independence_audit.projected_similarity_threshold` | Max allowed projected cosine similarity across all configured top-k views | Enforces strict anti-pattern leakage in Stage-3 feature regime | Keep ≤ `separation.max_cross_similarity`; lower for stricter hygiene |
+| `independence_audit.projected_max_iterations` | Max iterative passes to remove projected violators | Controls cleanup completeness vs runtime | Increase if residual violators persist after first passes |
+| `independence_audit.require_min_malware_val_after_audit` | Minimum malware_val count after all mandatory pruning | Prevents unreliable tuning due to over-pruning | Increase for statistical stability; decrease only when data is limited |
 
 ### Outputs
 | Parameter | Purpose | Impact on process | How to adjust |
@@ -102,7 +112,25 @@ For each parameter: purpose, impact, and how to adjust.
 | `thresholding.val_fpr_delta` | Delta to derive `val_fpr_target` | Fine-tunes threshold strictness | Keep near zero for direct alignment |
 | `thresholding.strategy` | Threshold selection objective (`fpr`, `f1`, `tpr`, `youden`, `model`) | Controls precision/recall tradeoff | Use `tpr` for recall-heavy, `f1` for balance |
 | `thresholding.f_beta` | Beta for `f1`-style strategy weighting | Recall-vs-precision emphasis | >1 favors recall, <1 favors precision |
-| `thresholding.expose_test_during_search` | Safety guard against test leakage during search | If true, invalidates sealed-test policy | Keep `false` always |
+
+### Independence audit (mandatory)
+Hardcoded policy (not configurable on/off):
+1. Stage-2 manifest must exist
+2. Stage-2 hard gates must pass
+3. Stage-3 fingerprints must match Stage-2 manifest
+4. Stage-3 cosine hard threshold must pass
+
+Only threshold/sample/analysis levels are configurable below.
+
+| Parameter | Purpose | Impact on process | How to adjust |
+|---|---|---|---|
+| `independence_audit.max_cross_similarity` | Stage-3 hard cap for val→test cosine similarity | Primary anti-pattern leakage gate in optimized feature space | Lower for stricter separation; may reduce available validation malware |
+| `independence_audit.require_min_malware_val_samples` | Minimum malware_val count accepted by Stage-3 hard gate | Stabilizes validation reliability after strict pruning | Raise for stronger statistical confidence |
+| `independence_audit.similarity_profile_thresholds` | Additional reported similarity cutoffs | Improves audit transparency | Keep a ladder near the hard cap (e.g., 0.99/0.995/0.999) |
+| `independence_audit.knn_k_list` | k values for cross-split neighborhood diagnostics | Gives local mixing context | Include small and medium k values |
+| `independence_audit.knn_sample_size_per_split` | Sample cap for kNN audit | Runtime vs precision tradeoff | Increase for tighter estimates |
+| `independence_audit.split_auc_cv_folds` | CV folds for split predictability metric | Stability of separability estimate | Use 5–10 for robust reporting |
+| `independence_audit.mmd_permutations` | Permutation count for MMD p-value | Statistical precision vs runtime | Increase for narrower p-value uncertainty |
 
 ### Output artifacts
 | Parameter | Purpose | Impact on process | How to adjust |

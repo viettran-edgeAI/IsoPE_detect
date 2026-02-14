@@ -15,8 +15,18 @@
     "malware_val_ratio_to_benign_val": 0.2,
     "malware_val_ratio_seed": 42,
     "malware_val_min_samples": 500,
-    "enforce_imphash_disjoint": true,
-    "max_cross_similarity": 0.999
+    "max_cross_similarity": 0.995
+  },
+  "independence_audit": {
+    "manifest_path": "../reports/malware_val_test_independence_manifest_stage2.json",
+    "knn_k_list": [1, 5, 10],
+    "knn_sample_size_per_split": 2000,
+    "knn_seed": 42,
+    "similarity_profile_thresholds": [0.99, 0.995, 0.999],
+    "require_min_malware_val_after_audit": 200,
+    "projected_similarity_threshold": 0.995,
+    "projected_max_iterations": 8,
+    "model_config_path": "model_config.json"
   },
   "outputs": {
     "cleaned_data_dir": "../data/cleaned",
