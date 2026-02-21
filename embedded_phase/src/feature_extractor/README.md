@@ -1,68 +1,42 @@
 # LIEF C++ Feature Extractor (Embedded Phase)
 
-This directory contains a **standalone C++ PE feature extractor** built with LIEF, aligned with the optimized feature set from the completed development phase.
+This directory contains a module-style PE feature extractor built with LIEF.
 
-It is designed for the embedding pipeline and currently covers the exact optimized feature list from:
+## Module layout
 
-- `development_phase/results/feature_names.json`
-- `development_phase/results/feature_group_mapping.json`
+- `include/extractor/extractor.hpp`: public API (`FeatureVector`, `IExtractor`, `PEExtractor`)
+- `src/pe_extractor.cpp`: library implementation
+- `app/pe_feature_extractor_cli.cpp`: standalone CLI wrapper
+- `compiled_feature_config.hpp`: generated compile-time feature selection
 
----
+Each module has its own `CMakeLists.txt`:
 
-## 1) What this extractor does
+- `feature_extractor/CMakeLists.txt`
+- `feature_extractor/src/CMakeLists.txt`
+- `feature_extractor/app/CMakeLists.txt`
 
-The binary `lief_feature_extractor`:
+## Public API
 
-1. Parses PE files with LIEF C++ (`LIEF::PE::Parser::parse`)
-2. Computes the selected optimized features (40 features)
-3. Outputs per-file features as:
-   - `csv` (default), or
-   - `jsonl`
-4. Records **processing time per file** (`processing_time_ms`)
+```cpp
+#include "extractor/extractor.hpp"
 
-Core implementation file:
+extractor::PEExtractor ext;
+extractor::FeatureVector features = ext.extract("sample.exe");
+```
 
-- `embedded_phase/src/feature_extractor/lief_feature_extractor.cpp`
+The model integration path only needs this API surface.
 
----
+## Compile-time feature locking
 
-## 2) Implemented feature parity (Python ↔ C++)
+The selected feature list is generated into C++ at build time and fixed after compilation.
 
-The implementation mirrors development-phase logic in `development_phase/src/feature_extraction.py` for the selected features:
+- Source list: `development_phase/results/feature_names.json` (or another JSON list)
+- Generated header: `embedded_phase/src/feature_extractor/compiled_feature_config.hpp`
+- Runtime: no `--feature-names` option, no runtime schema parsing
 
-- COFF / optional header fields and flags
-- Section slot and aggregate entropy features
-- Section name hash features
-- Import DLL and API hash features
-- Resource/version presence
-- Debug/repro flags
-- Rich header max build ID
-- Signature-derived fields (`num_certificates`, `sig_verified`)
-- Overlay size/entropy
-- Data directory RVAs/sizes
-- `checksum_matches`
+## Build
 
-### Hashing trick parity
-
-For hashed string features, the C++ version reproduces the Python algorithm:
-
-- `idx = little_endian_u64(md5(string)[:8]) % n_features`
-- `sign = +1 if little_endian_u64(sha1(string)[:8]) % 2 == 0 else -1`
-- `vector[idx] += sign`
-
-This is implemented via LIEF's internal `hashstream` (`MD5`, `SHA1`) to avoid extra external build dependencies.
-
----
-
-## 3) Build
-
-## Prerequisite
-
-LIEF source is cloned to:
-
-- `embedded_phase/third_party/LIEF`
-
-and built once as static library:
+### Prerequisite: build LIEF once
 
 ```bash
 cd embedded_phase/third_party/LIEF
@@ -76,43 +50,33 @@ cmake -S . -B build \
 cmake --build build -j$(nproc)
 ```
 
-## Build extractor (no project CMake)
+### Build extractor with default features
 
 ```bash
 cd /home/viettran/Documents/visual_code/EDR_AGENT
 embedded_phase/src/feature_extractor/build.sh
 ```
 
-Output binary:
+### Build extractor with a model-specific feature list
 
-- `embedded_phase/src/feature_extractor/lief_feature_extractor`
+```bash
+cd /home/viettran/Documents/visual_code/EDR_AGENT
+FEATURE_NAMES_PATH=/absolute/path/to/feature_names.json \
+embedded_phase/src/feature_extractor/build.sh
+```
 
----
+`build.sh` runs `generate_compiled_features.py` and then builds the `lief_feature_extractor` target with CMake.
 
-## 4) Usage
-
-## Basic
+## CLI usage
 
 ```bash
 embedded_phase/src/feature_extractor/lief_feature_extractor \
-  --feature-names development_phase/results/feature_names.json \
+  --format jsonl \
   datasets/BENIGN_TEST_DATASET/<file>.dll
 ```
 
-## JSONL output
-
 ```bash
 embedded_phase/src/feature_extractor/lief_feature_extractor \
-  --feature-names development_phase/results/feature_names.json \
-  --format jsonl \
-  datasets/MALWARE_TEST_DATASET/<file>.exe
-```
-
-## Write output file
-
-```bash
-embedded_phase/src/feature_extractor/lief_feature_extractor \
-  --feature-names development_phase/results/feature_names.json \
   --format csv \
   --output embedded_phase/src/feature_extractor/sample_output.csv \
   datasets/BENIGN_TEST_DATASET/<file1>.dll \
@@ -121,30 +85,16 @@ embedded_phase/src/feature_extractor/lief_feature_extractor \
 
 CLI options:
 
-- `--feature-names <path>`: feature order source (defaults to `development_phase/results/feature_names.json`)
-- `--format csv|jsonl`: output format
-- `--output <path>`: write to file (otherwise stdout)
+- `--format csv|jsonl`
+- `--output <path>`
 
----
-
-## 5) Python-vs-C++ parity validation
+## Python ↔ C++ parity validation
 
 Validation harness:
 
 - `embedded_phase/src/feature_extractor/compare_cpp_python.py`
 
-It does the following:
-
-1. Imports Python extractor function `extract_features` from development phase
-2. Runs C++ extractor on the same files
-3. Compares all optimized features in order
-4. Uses absolute tolerance (`1e-6` default)
-5. Writes:
-   - per-file timing report
-   - per-feature parity details
-   - summary JSON
-
-Run command:
+Run:
 
 ```bash
 /home/viettran/Documents/visual_code/EDR_AGENT/.venv/bin/python \
@@ -152,50 +102,10 @@ Run command:
   --samples-per-class 3
 ```
 
-Generated outputs:
+Important: pass the same feature list via `--feature-names` that was used at compile time for `build.sh`, otherwise comparison will be invalid.
+
+Outputs:
 
 - `embedded_phase/src/feature_extractor/validation/parity_summary.json`
 - `embedded_phase/src/feature_extractor/validation/cpp_processing_time.csv`
 - `embedded_phase/src/feature_extractor/validation/feature_parity_details.csv`
-
----
-
-## 6) Current verification result
-
-From `embedded_phase/src/feature_extractor/validation/parity_summary.json`:
-
-- `samples_tested`: 6
-- `features_per_sample`: 40
-- `parse_failures_python`: 0
-- `files_with_mismatch_or_parse_error`: 0
-- `total_feature_mismatches`: 0
-- `tolerance`: `1e-6`
-
-This confirms parity for sampled benign/malware PE files.
-
----
-
-## 7) Processing-time measurements (current run)
-
-From `embedded_phase/src/feature_extractor/validation/cpp_processing_time.csv`:
-
-| label   | file (short) | processing_time_ms |
-|---------|---------------|-------------------:|
-| benign  | `000d81f6...ec00.dll` | 20.842012 |
-| benign  | `000de8f5...d9c2.dll` | 2.349149 |
-| benign  | `000e0a55...8243.dll` | 2.269791 |
-| malware | `0005626a...f6a0.exe` | 0.840911 |
-| malware | `0009f3b6...52dc.exe` | 33.609066 |
-| malware | `0019e0ae...2460.exe` | 34.049850 |
-
-Note: processing time depends on file structure/size and host load.
-
----
-
-## 8) Notes for next embedding step
-
-- This extractor currently focuses on feature parity and standalone execution.
-- The next step is integrating this feature logic into your lightweight embedded pipeline API (buffer-based or stream-based interface), then wiring model scoring in C++ with:
-  - `development_phase/results/scaler_params.json`
-  - `development_phase/results/trees.json`
-  - `development_phase/results/threshold.json`

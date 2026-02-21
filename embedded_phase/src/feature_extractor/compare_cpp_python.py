@@ -21,11 +21,9 @@ def load_python_extractor(root: Path):
     return module.extract_features
 
 
-def run_cpp_extractor(extractor_bin: Path, feature_names_path: Path, target_file: Path):
+def run_cpp_extractor(extractor_bin: Path, target_file: Path):
     command = [
         str(extractor_bin),
-        "--feature-names",
-        str(feature_names_path),
         "--format",
         "jsonl",
         str(target_file),
@@ -99,7 +97,7 @@ def main():
             continue
         py_features = {name: numeric(py_raw.get(name, 0.0)) for name in feature_names}
 
-        cpp_result = run_cpp_extractor(extractor_bin, (root / args.feature_names).resolve(), sample_path)
+        cpp_result = run_cpp_extractor(extractor_bin, sample_path)
         parse_ok = bool(cpp_result.get("parse_ok", False))
         cpp_features_raw = cpp_result.get("features", {})
         cpp_features = {name: numeric(cpp_features_raw.get(name, 0.0)) for name in feature_names}
