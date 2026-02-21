@@ -27,11 +27,11 @@ Thumbs.db
 
 processing_data
 
-data/mnist_copy.csv
-data/result/mnist_copy_nml.bin
-data/result/mnist_copy_nml.csv
-data/result/mnist_copy_dp.csv
-data/result/mnist_copy_qtz.bin
-data/result/emnist_nml.csv
-data/emnist.csv
-data/result/mnist_data_nml.csv
+datasets/mnist_copy.csv
+datasets/emnist.csv
+quantized_datasets/mnist_copy_nml.bin
+quantized_datasets/mnist_copy_nml.csv
+quantized_datasets/mnist_copy_dp.txt
+quantized_datasets/mnist_copy_qtz.bin
+quantized_datasets/emnist_nml.csv
+quantized_datasets/mnist_data_nml.csv

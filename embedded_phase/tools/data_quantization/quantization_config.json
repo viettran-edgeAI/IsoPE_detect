@@ -1,6 +1,6 @@
 {
     "input_path": {
-        "value": "data/digit_data.csv",
+        "value": "datasets/benign_test_optimized.csv",
         "description": "Path to the input CSV dataset file (required)."
     },
     "quantization_bits": {
@@ -16,26 +16,14 @@
         "options": ["auto", "yes", "no"],
         "description": "CSV header handling: 'auto' = detect automatically, 'yes' = skip first line, 'no' = process all lines."
     },
-    "label_column": {
-        "value": 0,
-        "description": "Column index containing the label (0 = first column, -1 = last column)."
-    },
-    "max_features": {
-        "value": 1023,
-        "description": "Maximum number of features to process (1-1023). Features beyond this limit will be truncated."
+    "problem_type": {
+        "value": "isolation",
+        "options": ["classification", "regression", "isolation"],
+        "description": "Problem mode for processing logic. Use 'isolation' for unlabeled anomaly-detection datasets."
     },
     "remove_outliers": {
         "value": false,
         "options": [true, false],
         "description": "Apply Z-score outlier clipping during preprocessing. true = adapts to gradually changing data streams (removes outliers), false = adapts to suddenly fluctuating data streams (keeps all variations)."
-    },
-    "max_samples": {
-        "value": -1,
-        "description": "Maximum samples retained in mcu binary dataset (FIFO). -1 = current dataset size (default), >0 = specific limit. Oldest samples removed when limit exceeded."
-    },
-    "run_visualization": {
-        "value": true,
-        "options": [true, false],
-        "description": "Whether to generate quantization visualization plots after processing."
     }
 }

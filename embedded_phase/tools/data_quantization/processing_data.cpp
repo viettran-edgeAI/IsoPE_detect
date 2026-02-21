@@ -22,6 +22,7 @@ using u8 = uint8_t;
 enum class ProblemType : uint8_t {
     CLASSIFICATION = 0,
     REGRESSION = 1,
+    ISOLATION = 2,
     UNKNOWN = 255
 };
 
@@ -29,14 +30,28 @@ inline std::string problemTypeToString(ProblemType type) {
     switch (type) {
         case ProblemType::CLASSIFICATION: return "classification";
         case ProblemType::REGRESSION: return "regression";
+        case ProblemType::ISOLATION: return "isolation";
         default: return "unknown";
     }
 }
 
-static uint8_t quantization_coefficient = 2; // Coefficient for quantization (bits per feature value)
+inline ProblemType problemTypeFromString(const std::string& value) {
+    size_t start = value.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return ProblemType::UNKNOWN;
+    }
+    size_t end = value.find_last_not_of(" \t\r\n");
+    std::string lowered = value.substr(start, end - start + 1);
+    for (char& c : lowered) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (lowered == "classification") return ProblemType::CLASSIFICATION;
+    if (lowered == "regression") return ProblemType::REGRESSION;
+    if (lowered == "isolation") return ProblemType::ISOLATION;
+    return ProblemType::UNKNOWN;
+}
 
-static const int MAX_LABELS = 256; // Maximum number of unique labels supporte 
-static const int MAX_FEATURES = 1023;
+static uint8_t quantization_coefficient = 2; // Coefficient for quantization (bits per feature value)
 
 // Helper functions to calculate derived values from quantization coefficient
 static uint16_t getGroupsPerFeature() {
@@ -69,19 +84,13 @@ static uint16_t getPackedFeatureBytes(uint16_t featureCount) {
     return static_cast<uint16_t>((totalBits + 7u) / 8u);
 }
 
-static int num_features = 1023;
-static int label_column_index = 0; // Column index containing the label (0 = first column)
-
 struct QuantizationConfig {
     std::string inputPath;
     std::string modelName;
     std::string headerMode = "auto"; // auto|yes|no
-    int maxFeatures = MAX_FEATURES;
     int quantBits = quantization_coefficient;
-    int labelColumn = 0;
-    bool runVisualization = true;
     bool removeOutliers = true;
-    int32_t maxSamples = -1; // -1 = current size (default), 0 = unlimited, >0 = specific limit
+    ProblemType problemType = ProblemType::ISOLATION;
 };
 
 static std::string trimWhitespace(const std::string& in) {
@@ -172,43 +181,26 @@ static QuantizationConfig loadQuantizationConfig(const std::string& configPath) 
     if (extractValue(content, "header", raw)) {
         cfg.headerMode = toLowerCopy(trimWhitespace(raw));
     }
-    if (extractValue(content, "max_features", raw)) {
-        cfg.maxFeatures = std::stoi(raw);
-    }
     if (extractValue(content, "quantization_bits", raw)) {
         cfg.quantBits = std::stoi(raw);
     }
-    if (extractValue(content, "label_column", raw)) {
-        cfg.labelColumn = std::stoi(raw);
-    }
-    if (extractValue(content, "run_visualization", raw)) {
-        std::string lowered = toLowerCopy(raw);
-        cfg.runVisualization = (lowered == "true" || lowered == "1" || lowered == "yes");
+    if (extractValue(content, "problem_type", raw)) {
+        cfg.problemType = problemTypeFromString(raw);
     }
     if (extractValue(content, "remove_outliers", raw)) {
         std::string lowered = toLowerCopy(raw);
         cfg.removeOutliers = (lowered == "true" || lowered == "1" || lowered == "yes");
-    }
-    if (extractValue(content, "max_samples", raw)) {
-        cfg.maxSamples = std::stoi(raw);
     }
 
     // Validation and defaults fallback
     if (cfg.inputPath.empty()) {
         throw std::runtime_error("Config missing required field: input_path");
     }
-    if (cfg.maxFeatures < 1 || cfg.maxFeatures > MAX_FEATURES) {
-        cfg.maxFeatures = MAX_FEATURES;
-    }
     if (cfg.quantBits < 1 || cfg.quantBits > 8) {
         cfg.quantBits = quantization_coefficient;
     }
-    if (cfg.labelColumn < 0) {
-        if(cfg.labelColumn == -1){
-            cfg.labelColumn = -1; // last column
-        }else{
-            cfg.labelColumn = 0;
-        }
+    if (cfg.problemType == ProblemType::UNKNOWN) {
+        throw std::runtime_error("Config has invalid problem_type. Supported values: classification, regression, isolation");
     }
 
     return cfg;
@@ -743,7 +735,7 @@ bool isLikelyNumeric(const std::string& str) {
 }
 
 // Function to automatically detect if CSV has header by analyzing first two rows
-bool detectCSVHeader(const char* inputFilePath) {
+bool detectCSVHeader(const char* inputFilePath, ProblemType problemType) {
     std::ifstream fin(inputFilePath);
     if (!fin) {
         throw std::runtime_error(std::string("Cannot open input file for header detection: ") + inputFilePath);
@@ -764,7 +756,12 @@ bool detectCSVHeader(const char* inputFilePath) {
     auto firstCols = split(firstLine);
     auto secondCols = split(secondLine);
     
-    if (firstCols.size() != secondCols.size() || firstCols.size() < 2) {
+    if (firstCols.size() != secondCols.size() || firstCols.empty()) {
+        return false;
+    }
+
+    const int featureStartColumn = (problemType == ProblemType::ISOLATION) ? 0 : 1;
+    if (static_cast<int>(firstCols.size()) <= featureStartColumn) {
         return false;
     }
     
@@ -773,9 +770,7 @@ bool detectCSVHeader(const char* inputFilePath) {
     int secondRowNumeric = 0;
     int totalCols = firstCols.size();
     
-    // Skip the label column for numeric analysis, focus on feature columns
-    for (int i = 0; i < totalCols; ++i) {
-        if (i == label_column_index) continue;
+    for (int i = featureStartColumn; i < totalCols; ++i) {
         if (isLikelyNumeric(firstCols[i])) {
             firstRowNumeric++;
         }
@@ -784,7 +779,10 @@ bool detectCSVHeader(const char* inputFilePath) {
         }
     }
     
-    int featureCols = totalCols - 1; // Exclude label column
+    int featureCols = totalCols - featureStartColumn;
+    if (featureCols <= 0) {
+        return false;
+    }
     
     // Heuristic: if first row has significantly fewer numeric values than second row,
     // and second row is mostly numeric, then first row is likely a header
@@ -809,7 +807,8 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
                                 int groupsPerFeature,
                                 const mcu::vector<mcu::pair<std::string, uint8_t>>& labelMapping,
                                 bool skipHeader = false,
-                                bool enableOutlierClipping = true){
+                                bool enableOutlierClipping = true,
+                                ProblemType problemType = ProblemType::ISOLATION){
     if (groupsPerFeature < 1) {
         throw std::runtime_error("groupsPerFeature must be >= 1");
     }
@@ -824,19 +823,16 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
     std::getline(fin, firstLine);
     auto cols = split(firstLine);
     int n_cols = (int)cols.size();
-    if (n_cols < 2) {
+    if ((problemType == ProblemType::ISOLATION && n_cols < 1) ||
+        (problemType != ProblemType::ISOLATION && n_cols < 2)) {
         fin.close();
-        throw std::runtime_error("Input CSV needs at least one label + one feature");
+        throw std::runtime_error(problemType == ProblemType::ISOLATION
+            ? "Input CSV needs at least one feature column"
+            : "Input CSV needs at least one label + one feature");
     }
-    
-    // Validate label_column_index
-    if (label_column_index < 0 || label_column_index >= n_cols) {
-        fin.close();
-        throw std::runtime_error("Label column index " + std::to_string(label_column_index) + 
-                               " is out of range (0-" + std::to_string(n_cols-1) + ")");
-    }
-    
-    int n_feats = std::min(n_cols - 1, num_features);
+
+    const int featureStartColumn = (problemType == ProblemType::ISOLATION) ? 0 : 1;
+    int n_feats = n_cols - featureStartColumn;
     
     // First pass: collect data and calculate statistics for Z-score
     mcu::vector<FeatureStats> featureStats(n_feats);
@@ -850,13 +846,13 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
     if (processFirstLine) {
         // Process the first line as data
         if ((int)cols.size() == n_cols) {
-            labels.push_back(cols[label_column_index]);
+            if (problemType != ProblemType::ISOLATION) {
+                labels.push_back(cols[0]);
+            }
             mcu::vector<float> feats;
             feats.reserve(n_feats);
             
-            for (int j = 0; j < n_cols; ++j) {
-                if (j == label_column_index) continue; // Skip label column
-                if ((int)feats.size() >= n_feats) break; // Truncate features
+            for (int j = featureStartColumn; j < n_cols; ++j) {
                 try {
                     float val = std::stof(cols[j]);
                     feats.push_back(val);
@@ -884,13 +880,13 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
             continue; 
         }
         
-        labels.push_back(cells[label_column_index]);
+        if (problemType != ProblemType::ISOLATION) {
+            labels.push_back(cells[0]);
+        }
         mcu::vector<float> feats;
         feats.reserve(n_feats);
         
-        for (int j = 0; j < n_cols; ++j) {
-            if (j == label_column_index) continue; // Skip label column
-            if ((int)feats.size() >= n_feats) break; // Truncate features
+        for (int j = featureStartColumn; j < n_cols; ++j) {
             try {
                 float val = std::stof(cells[j]);
                 feats.push_back(val);
@@ -1034,11 +1030,19 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
     
     // Write quantized data (no headers needed for quantized output)
     for (int i = 0; i < n_samples; ++i) {
-        // Use normalized label from mapping
-        uint8_t normalizedLabel = getNormalizedLabel(labels[i], labelMapping);
-        fout << static_cast<int>(normalizedLabel);
-        for (int j = 0; j < n_feats; ++j) {
-            fout << "," << static_cast<int>(encoded[i][j]);
+        if (problemType == ProblemType::ISOLATION) {
+            for (int j = 0; j < n_feats; ++j) {
+                if (j > 0) {
+                    fout << ",";
+                }
+                fout << static_cast<int>(encoded[i][j]);
+            }
+        } else {
+            uint8_t normalizedLabel = getNormalizedLabel(labels[i], labelMapping);
+            fout << static_cast<int>(normalizedLabel);
+            for (int j = 0; j < n_feats; ++j) {
+                fout << "," << static_cast<int>(encoded[i][j]);
+            }
         }
         fout << "\n";
     }
@@ -1052,17 +1056,16 @@ struct DatasetInfo {
     int numFeatures;
     int numSamples;
     mcu::vector<mcu::pair<std::string, uint8_t>> labelMapping; // original -> normalized
-    bool needsHorizontalTruncation;
-    ProblemType problemType; // classification or regression
+    ProblemType problemType;
     
     DatasetInfo() : numFeatures(0), numSamples(0), 
-                   needsHorizontalTruncation(false),
-                   problemType(ProblemType::CLASSIFICATION) {}
+                   problemType(ProblemType::ISOLATION) {}
 };
 
 // Scan dataset to get info and create label mapping
-DatasetInfo scanDataset(const char* inputFilePath) {
+DatasetInfo scanDataset(const char* inputFilePath, ProblemType configuredProblemType) {
     DatasetInfo info;
+    info.problemType = configuredProblemType;
     std::ifstream fin(inputFilePath);
     if (!fin) {
         throw std::runtime_error(std::string("Cannot open input file for scanning: ") + inputFilePath);
@@ -1070,7 +1073,7 @@ DatasetInfo scanDataset(const char* inputFilePath) {
 
     // Detect if CSV has header
     fin.close(); // Close and reopen for header detection
-    bool hasHeader = detectCSVHeader(inputFilePath);
+    bool hasHeader = detectCSVHeader(inputFilePath, configuredProblemType);
     
     fin.open(inputFilePath);
     if (!fin) {
@@ -1082,24 +1085,16 @@ DatasetInfo scanDataset(const char* inputFilePath) {
     std::getline(fin, firstLine);
     auto cols = split(firstLine);
     int n_cols = (int)cols.size();
-    if (n_cols < 2) {
+    if ((configuredProblemType == ProblemType::ISOLATION && n_cols < 1) ||
+        (configuredProblemType != ProblemType::ISOLATION && n_cols < 2)) {
         fin.close();
-        throw std::runtime_error("Input CSV needs at least one label + one feature");
+        throw std::runtime_error(configuredProblemType == ProblemType::ISOLATION
+            ? "Input CSV needs at least one feature column"
+            : "Input CSV needs at least one label + one feature");
     }
-    
-    // Validate label_column_index
-    if (label_column_index < 0 || label_column_index >= n_cols) {
-        if(label_column_index == -1){
-            label_column_index = n_cols - 1; // Default to last column
-        }else{
-            fin.close();
-            throw std::runtime_error("Label column index " + std::to_string(label_column_index) + 
-                                   " is out of range (0-" + std::to_string(n_cols-1) + ")");
-        }
-    }
-    
-    info.numFeatures = std::min(n_cols - 1, num_features); // Exclude label column and truncate if needed
-    info.needsHorizontalTruncation = ((n_cols - 1) > num_features);
+
+    const int featureStartColumn = (configuredProblemType == ProblemType::ISOLATION) ? 0 : 1;
+    info.numFeatures = n_cols - featureStartColumn;
     
     // Collect unique labels
     mcu::vector<std::string> uniqueLabels;
@@ -1111,8 +1106,10 @@ DatasetInfo scanDataset(const char* inputFilePath) {
         auto cells = split(firstLine);
         if ((int)cells.size() == n_cols) {
             lineCount++;
-            std::string label = cells[label_column_index].c_str();
-            uniqueLabels.push_back(label);
+            if (configuredProblemType != ProblemType::ISOLATION) {
+                std::string label = cells[0].c_str();
+                uniqueLabels.push_back(label);
+            }
         }
     }
     
@@ -1122,91 +1119,33 @@ DatasetInfo scanDataset(const char* inputFilePath) {
         if ((int)cells.size() != n_cols) continue; // Skip malformed rows
         
         lineCount++;
-        std::string label = cells[label_column_index].c_str();
-        
-        // Check if label already exists in uniqueLabels
-        bool found = false;
-        for (size_t i = 0; i < uniqueLabels.size(); ++i) {
-            if (uniqueLabels[i] == label) {
-                found = true;
-                break;
+        if (configuredProblemType != ProblemType::ISOLATION) {
+            std::string label = cells[0].c_str();
+
+            bool found = false;
+            for (size_t i = 0; i < uniqueLabels.size(); ++i) {
+                if (uniqueLabels[i] == label) {
+                    found = true;
+                    break;
+                }
             }
-        }
-        
-        if (!found) {
-            uniqueLabels.push_back(label);
+
+            if (!found) {
+                uniqueLabels.push_back(label);
+            }
         }
     }
     
     fin.close();
     info.numSamples = lineCount;
-    uniqueLabels.sort(); // Sort labels for consistent mapping
-    
-    // Create label mapping: original label -> normalized index (0, 1, 2, ...)
-    info.labelMapping.reserve(uniqueLabels.size());
-    for (size_t i = 0; i < uniqueLabels.size(); ++i) {
-        info.labelMapping.push_back({uniqueLabels[i], static_cast<uint8_t>(i)});
-    }
-    
-    // Detect problem type based on label characteristics
-    // Classification: discrete integer labels or small number of unique values
-    // Regression: continuous/floating-point labels or very large number of unique values
-    info.problemType = ProblemType::CLASSIFICATION; // Default to classification
-    
-    bool hasFloatingPointLabels = false;
-    bool allIntegerLabels = true;
-    size_t numUniqueLabels = uniqueLabels.size();
-    
-    for (size_t i = 0; i < uniqueLabels.size(); ++i) {
-        const std::string& label = uniqueLabels[i];
-        // Check if label contains a decimal point (floating-point)
-        if (label.find('.') != std::string::npos) {
-            // Verify it's actually a float and not just an integer with trailing zeros
-            try {
-                float fval = std::stof(label);
-                int ival = static_cast<int>(fval);
-                if (std::abs(fval - static_cast<float>(ival)) > 1e-6f) {
-                    hasFloatingPointLabels = true;
-                    allIntegerLabels = false;
-                }
-            } catch (...) {
-                // Not a numeric label - treat as classification
-                allIntegerLabels = false;
-            }
-        } else {
-            // Check if it's a valid integer
-            try {
-                std::stoi(label);
-            } catch (...) {
-                // Non-integer string label - classification
-                allIntegerLabels = false;
-            }
+    if (configuredProblemType != ProblemType::ISOLATION) {
+        uniqueLabels.sort();
+        info.labelMapping.reserve(uniqueLabels.size());
+        for (size_t i = 0; i < uniqueLabels.size(); ++i) {
+            info.labelMapping.push_back({uniqueLabels[i], static_cast<uint8_t>(i)});
         }
     }
-    
-    // Determine problem type:
-    // - If labels are floating-point -> regression
-    // - If more than MAX_LABELS (256) unique values and all numeric -> likely regression
-    // - Otherwise -> classification
-    if (hasFloatingPointLabels) {
-        info.problemType = ProblemType::REGRESSION;
-        std::cout << "🔍 Detected floating-point labels -> Problem type: REGRESSION\n";
-    } else if (numUniqueLabels > MAX_LABELS && allIntegerLabels) {
-        // Too many unique integer labels suggests regression (e.g., continuous integer target)
-        info.problemType = ProblemType::REGRESSION;
-        std::cout << "🔍 Detected " << numUniqueLabels << " unique labels (>" << MAX_LABELS 
-                  << ") -> Problem type: REGRESSION\n";
-    } else {
-        info.problemType = ProblemType::CLASSIFICATION;
-        std::cout << "🔍 Detected " << numUniqueLabels << " discrete labels -> Problem type: CLASSIFICATION\n";
-    }
-    
-    // Silent operation - only report if there are issues
-    if (info.needsHorizontalTruncation) {
-        std::cout << "⚠️  Feature count (" << info.numFeatures << ") exceeds num_features (" 
-                  << num_features << "). Truncating to " << num_features << " features.\n";
-    }
-    
+
     return info;
 }
 
@@ -1228,34 +1167,48 @@ void generateDatasetParams(std::string path, const DatasetInfo& datasetInfo, con
         throw std::runtime_error(std::string("Cannot create dataset params file: ") + outputFile);
     }
     
-    // Calculate samples per label from the validation results
-    mcu::vector<uint32_t> samplesPerLabel(datasetInfo.labelMapping.size(), 0);
+    mcu::vector<uint32_t> samplesPerLabel;
     uint32_t actualTotalSamples = 0;
-    
-    // Read the generated CSV to count actual samples per label
-    std::ifstream csvFile(path);
-    if (csvFile) {
-        std::string line;
-        while (std::getline(csvFile, line)) {
-            if (line.empty()) continue;
-            auto cells = split(line);
-            if (cells.size() < 1) continue;
-            
-            try {
-                int labelValue = std::stoi(cells[0]);
-                if (labelValue >= 0 && static_cast<size_t>(labelValue) < samplesPerLabel.size()) {
-                    samplesPerLabel[labelValue]++;
-                    actualTotalSamples++;
-                }
-            } catch (...) {
-                // Skip invalid labels
+
+    if (datasetInfo.problemType == ProblemType::ISOLATION) {
+        samplesPerLabel = mcu::vector<uint32_t>(1, 0);
+        std::ifstream csvFile(path);
+        if (csvFile) {
+            std::string line;
+            while (std::getline(csvFile, line)) {
+                if (line.empty()) continue;
+                auto cells = split(line);
+                if ((int)cells.size() != datasetInfo.numFeatures) continue;
+                samplesPerLabel[0]++;
+                actualTotalSamples++;
             }
+            csvFile.close();
         }
-        csvFile.close();
+    } else {
+        samplesPerLabel = mcu::vector<uint32_t>(datasetInfo.labelMapping.size(), 0);
+        std::ifstream csvFile(path);
+        if (csvFile) {
+            std::string line;
+            while (std::getline(csvFile, line)) {
+                if (line.empty()) continue;
+                auto cells = split(line);
+                if (cells.empty()) continue;
+
+                try {
+                    int labelValue = std::stoi(cells[0]);
+                    if (labelValue >= 0 && static_cast<size_t>(labelValue) < samplesPerLabel.size()) {
+                        samplesPerLabel[labelValue]++;
+                        actualTotalSamples++;
+                    }
+                } catch (...) {
+                    // Skip invalid labels
+                }
+            }
+            csvFile.close();
+        }
     }
-    
-    // Calculate actual number of features after possible truncation
-    uint16_t actualFeatures = std::min(datasetInfo.numFeatures, num_features);
+
+    uint16_t actualFeatures = static_cast<uint16_t>(datasetInfo.numFeatures);
     
     // Write TXT header
     fout << "parameter,value\n";
@@ -1264,7 +1217,7 @@ void generateDatasetParams(std::string path, const DatasetInfo& datasetInfo, con
     fout << "quantization_coefficient," << static_cast<int>(quantization_coefficient) << "\n";
     fout << "num_features," << actualFeatures << "\n";
     fout << "num_samples," << actualTotalSamples << "\n";
-    fout << "num_labels," << datasetInfo.labelMapping.size() << "\n";
+    fout << "num_labels," << samplesPerLabel.size() << "\n";
     
     // Write samples per label
     for (size_t i = 0; i < samplesPerLabel.size(); ++i) {
@@ -1296,7 +1249,7 @@ struct ESP32_Sample {
 };
 
 // Load CSV data for binary conversion
-mcu::vector<ESP32_Sample> loadCSVForBinary(const std::string& csvFilename, uint16_t expectedFeatures) {
+mcu::vector<ESP32_Sample> loadCSVForBinary(const std::string& csvFilename, uint16_t expectedFeatures, ProblemType problemType) {
     std::ifstream file(csvFilename);
     if (!file) {
         throw std::runtime_error("Cannot open CSV file: " + csvFilename);
@@ -1319,37 +1272,51 @@ mcu::vector<ESP32_Sample> loadCSVForBinary(const std::string& csvFilename, uint1
         
         auto fields = split(line);
         
-        // Validate field count (label + features)
-        if (fields.size() != static_cast<size_t>(expectedFeatures + 1)) {
-            errorCount++;
-            continue;
-        }
-        
         ESP32_Sample sample;
         sample.features.reserve(expectedFeatures);
         
         try {
-            // Parse label
-            int labelValue = std::stoi(fields[0]);
-            if (labelValue < 0 || labelValue > 255) {
-                errorCount++;
-                continue;
-            }
-            sample.label = static_cast<uint8_t>(labelValue);
-            
-            // Parse features
             bool parseError = false;
-            for (size_t i = 1; i < fields.size(); ++i) {
-                int featureValue = std::stoi(fields[i]);
-                
-                if (featureValue < 0 || featureValue > getMaxFeatureValue()) {
-                    parseError = true;
-                    break;
+
+            if (problemType == ProblemType::ISOLATION) {
+                if (fields.size() != static_cast<size_t>(expectedFeatures)) {
+                    errorCount++;
+                    continue;
                 }
-                
-                sample.features.push_back(static_cast<uint8_t>(featureValue));
+                sample.label = 0;
+                for (size_t i = 0; i < fields.size(); ++i) {
+                    int featureValue = std::stoi(fields[i]);
+                    if (featureValue < 0 || featureValue > getMaxFeatureValue()) {
+                        parseError = true;
+                        break;
+                    }
+                    sample.features.push_back(static_cast<uint8_t>(featureValue));
+                }
+            } else {
+                if (fields.size() != static_cast<size_t>(expectedFeatures + 1)) {
+                    errorCount++;
+                    continue;
+                }
+
+                int labelValue = std::stoi(fields[0]);
+                if (labelValue < 0 || labelValue > 255) {
+                    errorCount++;
+                    continue;
+                }
+                sample.label = static_cast<uint8_t>(labelValue);
+
+                for (size_t i = 1; i < fields.size(); ++i) {
+                    int featureValue = std::stoi(fields[i]);
+
+                    if (featureValue < 0 || featureValue > getMaxFeatureValue()) {
+                        parseError = true;
+                        break;
+                    }
+
+                    sample.features.push_back(static_cast<uint8_t>(featureValue));
+                }
             }
-            
+
             if (parseError) {
                 errorCount++;
                 continue;
@@ -1450,33 +1417,12 @@ void saveBinaryDataset(const mcu::vector<ESP32_Sample>& samples,
 }
 
 // Integrated CSV to binary conversion function
-void convertCSVToBinary(const std::string& inputCSV, const std::string& outputBinary, uint16_t numFeatures, int32_t maxSamples) {
+void convertCSVToBinary(const std::string& inputCSV, const std::string& outputBinary, uint16_t numFeatures, ProblemType problemType) {
     // Load CSV data
-    auto samples = loadCSVForBinary(inputCSV, numFeatures);
+    auto samples = loadCSVForBinary(inputCSV, numFeatures, problemType);
     
     if (samples.empty()) {
         throw std::runtime_error("No valid samples found in CSV file");
-    }
-
-    // Enforce FIFO-style cap for ESP32 binary data (keep the newest samples)
-    // maxSamples: -1 = keep current size (no change), 0 = unlimited (no cap), >0 = specific limit
-    uint32_t effectiveLimit = 0;
-    if (maxSamples == -1) {
-        // Keep current dataset size (no capping)
-        effectiveLimit = static_cast<uint32_t>(samples.size());
-    } else if (maxSamples > 0) {
-        effectiveLimit = static_cast<uint32_t>(maxSamples);
-    }
-    // maxSamples == 0 means unlimited, no capping applied
-    
-    if (maxSamples != 0 && samples.size() > effectiveLimit) {
-        size_t startIndex = samples.size() - static_cast<size_t>(effectiveLimit);
-        mcu::vector<ESP32_Sample> limited;
-        limited.reserve(static_cast<size_t>(effectiveLimit));
-        for (size_t i = startIndex; i < samples.size(); ++i) {
-            limited.push_back(samples[i]);
-        }
-        samples = std::move(limited);
     }
     
     // Convert to binary format
@@ -1499,15 +1445,12 @@ int main(int argc, char* argv[]) {
                 std::cout << "  -ip, --input_path <path>  Path to input CSV dataset\n";
                 std::cout << "  -mn, --model_name <name>  Unified name for result files (e.g., 'iris')\n";
                 std::cout << "  -hd, --header <auto|yes|no> Whether CSV has header (default: auto)\n";
-                std::cout << "  -lc, --label_column <idx> Column index for labels (0=first, -1=last)\n";
-                std::cout << "  -mf, --max_features <int> Max features to use from input (default: 1023)\n";
+                std::cout << "  -pt, --problem_type <classification|regression|isolation> Problem mode (default: isolation)\n";
                 std::cout << "  -qb, --quantization_bits <1-8> Bits per feature (default: 2)\n";
                 std::cout << "  -ro, --remove_outliers <bool> Enable Z-score outlier clipping (default: true)\n";
-                std::cout << "  -ms, --max_samples <int>  Max samples for binary data (-1=all, 0=unlimited)\n";
-                std::cout << "  -rv, --run_visualization <bool> Run visualization script (default: true)\n";
                 std::cout << "\nExample usage:\n";
                 std::cout << "  " << argv[0] << " -ip dataset.csv -qb 4 -mn my_model\n";
-                std::cout << "  " << argv[0] << " -c config.json -qb 2 -mf 10\n";
+                std::cout << "  " << argv[0] << " -c config.json -pt isolation -qb 2\n";
                 return 0;
             }
         }
@@ -1530,23 +1473,14 @@ int main(int argc, char* argv[]) {
                 if (i + 1 < argc) config.modelName = argv[++i];
             } else if (arg == "-hd" || arg == "--header") {
                 if (i + 1 < argc) config.headerMode = toLowerCopy(argv[++i]);
-            } else if (arg == "-lc" || arg == "--label_column") {
-                if (i + 1 < argc) config.labelColumn = std::stoi(argv[++i]);
-            } else if (arg == "-mf" || arg == "--max_features") {
-                if (i + 1 < argc) config.maxFeatures = std::stoi(argv[++i]);
+            } else if (arg == "-pt" || arg == "--problem_type") {
+                if (i + 1 < argc) config.problemType = problemTypeFromString(argv[++i]);
             } else if (arg == "-qb" || arg == "--quantization_bits") {
                 if (i + 1 < argc) config.quantBits = std::stoi(argv[++i]);
             } else if (arg == "-ro" || arg == "--remove_outliers") {
                 if (i + 1 < argc) {
                     std::string val = toLowerCopy(argv[++i]);
                     config.removeOutliers = (val == "true" || val == "1" || val == "yes");
-                }
-            } else if (arg == "-ms" || arg == "--max_samples") {
-                if (i + 1 < argc) config.maxSamples = std::stoi(argv[++i]);
-            } else if (arg == "-rv" || arg == "--run_visualization") {
-                if (i + 1 < argc) {
-                    std::string val = toLowerCopy(argv[++i]);
-                    config.runVisualization = (val == "true" || val == "1" || val == "yes");
                 }
             }
         }
@@ -1555,11 +1489,13 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: No input_path specified (use -ip or -c config.json)\n";
             return 1;
         }
+        if (config.problemType == ProblemType::UNKNOWN) {
+            std::cerr << "Error: Invalid problem_type. Use classification, regression, or isolation\n";
+            return 1;
+        }
 
         // Apply configuration to globals used elsewhere
         quantization_coefficient = static_cast<uint8_t>(config.quantBits);
-        num_features = config.maxFeatures;
-        label_column_index = config.labelColumn;
 
         bool skipHeader = false;
         bool headerSpecified = false;
@@ -1577,7 +1513,6 @@ int main(int argc, char* argv[]) {
 
         // Generate output file names based on inputFile or modelName
         std::string baseName;
-        std::string inputDir = ".";
         
         // extract base name if modelName are empty or "auto"
         if (modelName.empty() || modelName == "auto") {
@@ -1585,7 +1520,6 @@ int main(int argc, char* argv[]) {
             std::string inputName(inputFile);
             size_t slash = inputName.find_last_of("/\\");
             if (slash != std::string::npos) {
-                inputDir = inputName.substr(0, slash);
                 inputName = inputName.substr(slash + 1);
             }
             baseName = inputName;
@@ -1596,31 +1530,28 @@ int main(int argc, char* argv[]) {
         } else {
             // Use the provided model name
             baseName = modelName;
-            
-            // Extract directory from input file path for output location
-            std::string inputName(inputFile);
-            size_t slash = inputName.find_last_of("/\\");
-            if (slash != std::string::npos) {
-                inputDir = inputName.substr(0, slash);
-            }
         }
-        
-        // All result files in the same directory as input
-        std::string resultDir = inputDir + "/result";
-        if (!std::filesystem::exists(resultDir)) {
-            std::filesystem::create_directories(resultDir);
+
+        std::filesystem::path configDir = std::filesystem::path(configPath).parent_path();
+        if (configDir.empty()) {
+            configDir = std::filesystem::current_path();
         }
-        std::string quantizerFile = resultDir + "/" + baseName + "_qtz.bin";
-        std::string dataParamsFile = resultDir + "/" + baseName + "_dp.txt";
-        std::string normalizedFile = resultDir + "/" + baseName + "_nml.csv";
-        std::string binaryFile = resultDir + "/" + baseName + "_nml.bin";
+        std::filesystem::path resultDirPath = configDir / "quantized_datasets";
+        if (!std::filesystem::exists(resultDirPath)) {
+            std::filesystem::create_directories(resultDirPath);
+        }
+        std::string resultDir = resultDirPath.string();
+        std::string quantizerFile = (resultDirPath / (baseName + "_qtz.bin")).string();
+        std::string dataParamsFile = (resultDirPath / (baseName + "_dp.txt")).string();
+        std::string normalizedFile = (resultDirPath / (baseName + "_nml.csv")).string();
+        std::string binaryFile = (resultDirPath / (baseName + "_nml.bin")).string();
 
         // Step 1: Scan dataset to get info and create label mapping
-        DatasetInfo datasetInfo = scanDataset(inputFile.c_str());
+        DatasetInfo datasetInfo = scanDataset(inputFile.c_str(), config.problemType);
 
         // Auto-detect header if not explicitly specified by user
         if (!headerSpecified) {
-            bool hasHeader = detectCSVHeader(inputFile.c_str());
+            bool hasHeader = detectCSVHeader(inputFile.c_str(), config.problemType);
             skipHeader = hasHeader; // Skip header if detected
             (void)hasHeader; // Header detection is silent for clean CLI output
         }
@@ -1631,7 +1562,8 @@ int main(int argc, char* argv[]) {
                                getGroupsPerFeature(),
                                datasetInfo.labelMapping,
                                skipHeader,
-                               config.removeOutliers);
+                               config.removeOutliers,
+                               datasetInfo.problemType);
 
         // Save quantizer for ESP32 transfer
         test_ctg.saveQuantizer(quantizerFile.c_str());
@@ -1640,7 +1572,7 @@ int main(int argc, char* argv[]) {
         generateDatasetParams(normalizedFile, datasetInfo, dataParamsFile.c_str());
 
         // Step 4: Convert CSV to binary format
-        convertCSVToBinary(normalizedFile, binaryFile, test_ctg.getNumFeatures(), config.maxSamples);
+        convertCSVToBinary(normalizedFile, binaryFile, test_ctg.getNumFeatures(), datasetInfo.problemType);
 
         // Calculate file size compression ratio
         size_t inputFileSize = 0;
@@ -1658,8 +1590,10 @@ int main(int argc, char* argv[]) {
         
         std::cout << "\n=== Processing Complete ===\n";
         std::cout << "✅ Dataset quantized and compressed:\n";
+        size_t numLabels = datasetInfo.problemType == ProblemType::ISOLATION ? 1 : datasetInfo.labelMapping.size();
         std::cout << "   📊 Samples: " << datasetInfo.numSamples << " | Features: " << test_ctg.getNumFeatures() 
-                  << " | Labels: " << datasetInfo.labelMapping.size() << "\n";
+              << " | Labels: " << numLabels << "\n";
+        std::cout << "   🧩 Problem type: " << problemTypeToString(datasetInfo.problemType) << "\n";
         std::cout << "   🗜️  Quantization: " << static_cast<int>(quantization_coefficient) << std::endl;
         
         if (inputFileSize > 0 && outputFileSize > 0) {
@@ -1669,7 +1603,6 @@ int main(int argc, char* argv[]) {
                       << compressionRatio << "x (" << compressionPercent << "% size reduction)\n";
             std::cout << "      Input: " << inputFileSize << " bytes → Output: " << outputFileSize << " bytes\n";
         }
-        (void)config.runVisualization; // Wrapper script controls visualization
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

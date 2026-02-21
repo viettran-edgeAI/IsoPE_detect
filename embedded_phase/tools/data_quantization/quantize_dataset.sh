@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# ESP32 Dataset Quantization and Visualization Script
-# This script quantizes CSV datasets to 2-bit categories and optionally generates visualizations
+# ESP32 Dataset Quantization Script
+# This script quantizes CSV datasets and exports artifacts for isolation workflows
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -26,8 +26,8 @@ show_usage() {
     echo "Usage: $0 [-c quantization_config.json]"
     echo ""
     echo "Configuration is provided in JSON (default: quantization_config.json in this folder)."
-    echo "Fields: input_path, model_name, HEADER, label_column, max_features, quantization_bits,"
-    echo "        remove_outliers, max_samples, run_visualization"
+    echo "Fields: input_path, model_name, header, problem_type, quantization_bits,"
+    echo "        remove_outliers"
     echo ""
     echo "Options:"
     echo "  -c, --config <file>   Path to configuration JSON (default: ./quantization_config.json)"
@@ -87,20 +87,16 @@ def emit(val):
 emit(get_value(cfg, "input_path", ""))
 emit(get_value(cfg, "model_name", ""))
 emit(str(get_value(cfg, "header", "auto")).lower())
-emit(get_value(cfg, "max_features", 1023))
+emit(str(get_value(cfg, "problem_type", "isolation")).lower())
 emit(get_value(cfg, "quantization_bits", 2))
-emit(str(get_value(cfg, "run_visualization", True)).lower())
-emit(get_value(cfg, "max_samples", -1))
 PY
 )
 
 CSV_PATH="${CFG[0]}"
 MODEL_NAME="${CFG[1]}"
 HEADER="${CFG[2]}"
-MAX_FEATURES="${CFG[3]}"
+PROBLEM_TYPE="${CFG[3]}"
 QUANT_BITS="${CFG[4]}"
-RUN_VISUALIZATION="${CFG[5]}"
-MAX_SAMPLES="${CFG[6]}"
 
 if [[ -z "$CSV_PATH" ]]; then
     echo -e "${RED}Error: 'input_path' is missing in $CONFIG_PATH${NC}"
@@ -112,7 +108,7 @@ if [[ ! -f "$CSV_PATH" ]]; then
     exit 1
 fi
 
-echo -e "${CYAN}=== ESP32 Dataset Processing and Visualization ===${NC}"
+echo -e "${CYAN}=== ESP32 Dataset Quantization ===${NC}"
 echo -e "${BLUE}Configuration (from ${CONFIG_PATH}):${NC}"
 echo -e "  📁 Input file: ${GREEN}$CSV_PATH${NC}"
 if [[ -n "$MODEL_NAME" ]]; then
@@ -121,10 +117,8 @@ else
     echo -e "  📛 Model name: ${GREEN}(derived from input)${NC}"
 fi
 echo -e "  📋 Header mode: ${GREEN}${HEADER:-auto}${NC}"
-echo -e "  📊 Max features: ${GREEN}${MAX_FEATURES:-1023}${NC}"
+echo -e "  🧩 Problem type: ${GREEN}${PROBLEM_TYPE:-isolation}${NC}"
 echo -e "  🧮 Quantization bits: ${GREEN}${QUANT_BITS:-2}${NC}"
-echo -e "  🔁 Max samples (bin): ${GREEN}${MAX_SAMPLES:-0}${NC}"
-echo -e "  📊 Run visualization: ${GREEN}${RUN_VISUALIZATION}${NC}"
 echo ""
 
 # Compile processing program if needed (quiet unless failure)
@@ -147,20 +141,8 @@ if [[ -n "$MODEL_NAME" && "$MODEL_NAME" != "auto" ]]; then
 else
     BASENAME=$(basename "$CSV_PATH" .csv)
 fi
-DIRNAME=$(dirname "$CSV_PATH")
-RESULT_DIR="$DIRNAME/result"
-
-if [[ "$RUN_VISUALIZATION" == "true" ]]; then
-    echo -e "\n📊 Running visualization..."
-    ORIGINAL_CSV="$CSV_PATH"
-    QUANTIZED_CSV="$RESULT_DIR/${BASENAME}_nml.csv"
-    
-    if python3 quantization_visualizer.py "$BASENAME" --original "$ORIGINAL_CSV" --quantized "$QUANTIZED_CSV" >/dev/null 2>&1; then
-        :
-    else
-        echo -e "${YELLOW}⚠️  Visualization failed (run manually: python3 quantization_visualizer.py $BASENAME --original $ORIGINAL_CSV --quantized $QUANTIZED_CSV)${NC}"
-    fi
-fi
+CONFIG_DIR="$(cd "$(dirname "$CONFIG_PATH")" && pwd)"
+RESULT_DIR="$CONFIG_DIR/quantized_datasets"
 
 echo -e "\n${CYAN}Generated Files:${NC}"
 if [[ -f "$RESULT_DIR/${BASENAME}_nml.csv" ]]; then
@@ -172,12 +154,8 @@ fi
 if [[ -f "$RESULT_DIR/${BASENAME}_qtz.bin" ]]; then
     echo -e "  📋 Quantizer: ${GREEN}$RESULT_DIR/${BASENAME}_qtz.bin${NC}"
 fi
-if [[ -f "$RESULT_DIR/${BASENAME}_dp.csv" ]]; then
-    echo -e "  ⚙️  Parameters: ${GREEN}$RESULT_DIR/${BASENAME}_dp.csv${NC}"
-fi
-
-if [[ "$RUN_VISUALIZATION" == "yes" && -d "plots" ]]; then
-    echo -e "  📊 Visualizations: ${GREEN}plots/${NC}"
+if [[ -f "$RESULT_DIR/${BASENAME}_dp.txt" ]]; then
+    echo -e "  ⚙️  Parameters: ${GREEN}$RESULT_DIR/${BASENAME}_dp.txt${NC}"
 fi
 
 echo ""

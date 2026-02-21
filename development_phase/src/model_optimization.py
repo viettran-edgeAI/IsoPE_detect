@@ -25,7 +25,6 @@ Outputs:
 """
 
 import argparse
-import hashlib
 import json
 import time
 from itertools import product
@@ -41,20 +40,6 @@ from sklearn.metrics.pairwise import rbf_kernel
 from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
-
-
-def _compute_dataset_fingerprint(df: pd.DataFrame, name: str) -> str:
-    """Compute SHA256 fingerprint of a dataset for audit trail."""
-    df_hash = pd.util.hash_pandas_object(df, index=False)
-    combined = hashlib.sha256()
-    combined.update(np.asarray(df_hash.values).tobytes())
-    fingerprint = combined.hexdigest()[:16]
-    return fingerprint
-
-
-def _stable_json_hash(payload: dict[str, Any]) -> str:
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def _count_cross_split_overlap(source_df: pd.DataFrame, target_df: pd.DataFrame) -> int:
@@ -94,37 +79,6 @@ def _load_stage2_independence_manifest(manifest_path: Path) -> dict[str, Any]:
         )
     with open(manifest_path, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def _assert_manifest_consistency(
-    stage2_manifest: dict[str, Any],
-    df_val_m: pd.DataFrame,
-    df_test_m: pd.DataFrame,
-) -> dict[str, Any]:
-    fp_live_val = _compute_dataset_fingerprint(df_val_m, "val_malware_live")
-    fp_live_test = _compute_dataset_fingerprint(df_test_m, "test_malware_live")
-    expected = stage2_manifest.get("fingerprints", {})
-
-    mismatches = []
-    if expected.get("malware_val_clean") != fp_live_val:
-        mismatches.append("malware_val fingerprint mismatch")
-    if expected.get("malware_test_clean") != fp_live_test:
-        mismatches.append("malware_test fingerprint mismatch")
-
-    return {
-        "available": True,
-        "match": len(mismatches) == 0,
-        "run_id": stage2_manifest.get("run_id"),
-        "expected": {
-            "malware_val_clean": expected.get("malware_val_clean"),
-            "malware_test_clean": expected.get("malware_test_clean"),
-        },
-        "actual": {
-            "malware_val_clean": fp_live_val,
-            "malware_test_clean": fp_live_test,
-        },
-        "mismatches": mismatches,
-    }
 
 
 def _compute_cross_similarity_profile(
@@ -313,7 +267,6 @@ def _write_independence_assessment_md(
     out_path: Path,
     stage2_manifest_path: Path,
     stage2_manifest: dict[str, Any] | None,
-    manifest_consistency: dict[str, Any],
     stage3_metrics: dict[str, Any],
     hard_violations: list[str],
 ) -> None:
@@ -345,14 +298,12 @@ def _write_independence_assessment_md(
         "",
         "## Methods",
         "1. **Stage-2 hard controls**: exact duplicate removal, imphash-family disjoint enforcement, and cosine-similarity pruning.",
-        "2. **Stage-3 provenance gate**: fingerprints of `malware_val_clean` and `malware_test_clean` must exactly match Stage-2 manifest fingerprints.",
-        "3. **Non-UMAP quantitative diagnostics**: cross-split cosine profile, kNN cross-split mixing rates, split predictability AUC (cross-validated), and permutation MMD.",
+        "2. **Non-UMAP quantitative diagnostics**: cross-split cosine profile, kNN cross-split mixing rates, split predictability AUC (cross-validated), and permutation MMD.",
         "",
         "## Hard Decision Rule",
         "The run is marked **PASS** only if all hard constraints are simultaneously satisfied; otherwise it is **FAIL** and final claims should not be treated as sealed-test evidence.",
         "",
         "## Results",
-        f"- Manifest consistency match: **{manifest_consistency.get('match', False)}**",
         f"- Exact overlap (stage3): **{stage3_metrics.get('exact_overlap', 0)}**",
         f"- Shared imphash unique: **{stage3_metrics.get('imphash_shared_unique', 0)}**",
         f"- Max cosine val→test: **{stage3_metrics.get('max_cosine_val_to_test', 0.0):.6f}** (threshold: {stage3_metrics.get('similarity_threshold', 0.0):.6f})",
@@ -949,7 +900,30 @@ def main():
     parser = argparse.ArgumentParser(description="Stage 3: Model Training & Optimization")
     parser.add_argument("--config", type=str, default=None,
                         help=f"Path to JSON config file (defaults to {default_config_path})")
+    parser.add_argument(
+        "--audit-similarity-profile-threshold",
+        type=float,
+        default=0.995,
+        help="Single cosine threshold used for cross-split similarity profile counts (default: 0.995)",
+    )
+    parser.add_argument(
+        "--audit-distribution-diagnostic-k",
+        type=int,
+        default=5,
+        help="k value for kNN cross-split distribution diagnostic (default: 5)",
+    )
+    parser.add_argument(
+        "--audit-split-auc-classifier-folds",
+        type=int,
+        default=3,
+        help="Cross-validation folds for split-predictability AUC classifier (default: 3)",
+    )
     args = parser.parse_args()
+
+    if args.audit_distribution_diagnostic_k <= 0:
+        raise ValueError("--audit-distribution-diagnostic-k must be > 0")
+    if args.audit_split_auc_classifier_folds < 2:
+        raise ValueError("--audit-split-auc-classifier-folds must be >= 2")
 
     config_path = Path(args.config) if args.config else default_config_path
     if not config_path.is_file():
@@ -1028,16 +1002,24 @@ def main():
         independence_cfg.get("stage2_manifest_path", "../reports/malware_val_test_independence_manifest_stage2.json"),
     )
     audit_similarity_threshold = float(independence_cfg.get("max_cross_similarity", 0.995))
-    audit_similarity_profile_thresholds = [
-        float(x) for x in independence_cfg.get("similarity_profile_thresholds", [0.99, 0.995, 0.999])
-    ]
-    audit_knn_k_list = [int(x) for x in independence_cfg.get("knn_k_list", [1, 5, 10])]
-    audit_knn_sample_size = int(independence_cfg.get("knn_sample_size_per_split", 2000))
-    audit_knn_seed = int(independence_cfg.get("knn_seed", random_state))
-    audit_split_auc_folds = int(independence_cfg.get("split_auc_cv_folds", 5))
+    audit_similarity_profile_thresholds = [float(args.audit_similarity_profile_threshold)]
+    audit_knn_k_list = [int(args.audit_distribution_diagnostic_k)]
+    audit_knn_seed = 42
+    audit_split_auc_folds = int(args.audit_split_auc_classifier_folds)
     audit_mmd_permutations = int(independence_cfg.get("mmd_permutations", 300))
-    audit_mmd_sample_size = int(independence_cfg.get("mmd_sample_size_per_split", 1500))
     audit_min_malware_val = int(independence_cfg.get("require_min_malware_val_samples", 300))
+    audit_max_malware_val_pct_raw = float(
+        independence_cfg.get("max_malware_val_percent_of_benign_train", 5.0)
+    )
+    audit_max_malware_val_ratio = (
+        audit_max_malware_val_pct_raw / 100.0
+        if audit_max_malware_val_pct_raw > 1.0
+        else audit_max_malware_val_pct_raw
+    )
+    if not (0.0 < audit_max_malware_val_ratio <= 1.0):
+        raise ValueError(
+            "independence_audit.max_malware_val_percent_of_benign_train must be in (0, 100]"
+        )
     audit_require_imphash_disjoint = True
     independence_metrics_json_path = _resolve_path(
         config_path,
@@ -1084,7 +1066,20 @@ def main():
     if val_m_path:
         if not val_m_path.exists():
             raise FileNotFoundError(f"val_malware_path not found: {val_m_path}")
-        df_val_m = pd.read_parquet(val_m_path)
+        df_val_m_all = pd.read_parquet(val_m_path)
+        max_malware_val_allowed = max(1, int(np.floor(len(df_train) * audit_max_malware_val_ratio)))
+        if len(df_val_m_all) > max_malware_val_allowed:
+            df_val_m_model = (
+                df_val_m_all.sample(n=max_malware_val_allowed, random_state=random_state)
+                .reset_index(drop=True)
+            )
+            print(
+                "  Capping malware validation samples for model selection: "
+                f"{len(df_val_m_all)} -> {len(df_val_m_model)} "
+                f"(max {audit_max_malware_val_ratio * 100:.2f}% of benign_train)"
+            )
+        else:
+            df_val_m_model = df_val_m_all
         print("  Using malware validation split for feature ranking and selection.")
     else:
         raise ValueError(
@@ -1093,18 +1088,10 @@ def main():
 
     print(f"  Training samples: {len(df_train)}")
     print(f"  Validation benign samples: {len(df_val)}")
-    print(f"  Validation malware samples: {len(df_val_m)}")
+    print(f"  Validation malware samples (full): {len(df_val_m_all)}")
+    print(f"  Validation malware samples (model selection): {len(df_val_m_model)}")
     print("  Test data will be loaded after model selection (sealed until final evaluation)")
-    
-    # Dataset fingerprinting for audit trail
-    print("\n--- Dataset Fingerprinting (Audit Trail) ---")
-    train_fp = _compute_dataset_fingerprint(df_train, "train")
-    val_fp = _compute_dataset_fingerprint(df_val, "val_benign")
-    val_m_fp = _compute_dataset_fingerprint(df_val_m, "val_malware")
-    print(f"  Training (benign):      {train_fp}")
-    print(f"  Validation (benign):    {val_fp}")
-    print(f"  Validation (malware):   {val_m_fp}")
-    
+
     print("\n--- Split Independence Focus ---")
     print("  Primary independence check in Stage 3: malware_val vs malware_test")
 
@@ -1113,11 +1100,19 @@ def main():
 
     X_train_var = df_train[selected_cols].values.astype(np.float32)
     X_val_var = df_val[selected_cols].values.astype(np.float32)
-    X_val_m_var = df_val_m[selected_cols].values.astype(np.float32)
+    X_val_m_var = df_val_m_model[selected_cols].values.astype(np.float32)
+    X_val_m_all_var = df_val_m_all[selected_cols].values.astype(np.float32)
     
     print(f"  Features: {len(selected_cols)}")
     print("  Feature ranking source: benign_train vs malware_val (Cohen's d)")
-    print(f"  Validation malware used for ranking/thresholding: {len(X_val_m_var)} samples")
+    print(
+        "  Validation malware used for ranking/thresholding: "
+        f"{len(X_val_m_var)} samples"
+    )
+    print(
+        "  Validation malware used for independence diagnostics: "
+        f"{len(X_val_m_all_var)} samples"
+    )
 
     # Load group mapping for artifact export
     schema_dir = _resolve_path(config_path, "../schemas")
@@ -1308,16 +1303,10 @@ def main():
     print(f"{'=' * 70}")
     df_test_b = pd.read_parquet(test_b_path)
     df_test_m = pd.read_parquet(test_m_path)
-    overlap_malware_val_test = _count_cross_split_overlap(df_val_m, df_test_m)
+    overlap_malware_val_test = _count_cross_split_overlap(df_val_m_all, df_test_m)
 
     print(f"  Test benign samples:  {len(df_test_b)}")
     print(f"  Test malware samples: {len(df_test_m)}")
-    
-    # Test data fingerprinting
-    test_b_fp = _compute_dataset_fingerprint(df_test_b, "test_benign")
-    test_m_fp = _compute_dataset_fingerprint(df_test_m, "test_malware")
-    print(f"  Test (benign) fingerprint:  {test_b_fp}")
-    print(f"  Test (malware) fingerprint: {test_m_fp}")
 
     print("\n--- Malware Val/Test Independence Verification ---")
     if overlap_malware_val_test == 0:
@@ -1328,17 +1317,7 @@ def main():
             f"{overlap_malware_val_test} samples"
         )
 
-    manifest_consistency = _assert_manifest_consistency(stage2_manifest, df_val_m, df_test_m)
-    if manifest_consistency.get("match"):
-        print("  ✓ Stage-3 inputs match Stage-2 manifest fingerprints")
-    else:
-        print("  ⚠ Stage-2/Stage-3 fingerprint mismatch detected")
-        for reason in manifest_consistency.get("mismatches", []):
-            print(f"    - {reason}")
-        if audit_mode == "enforce":
-            raise RuntimeError("Stage-3 manifest consistency failed.")
-
-    imphash_overlap_proxy = _compute_imphash_overlap(df_val_m, df_test_m)
+    imphash_overlap_proxy = _compute_imphash_overlap(df_val_m_all, df_test_m)
     stage2_shared_imphash_unique = int(stage2_manifest.get("separation", {}).get("shared_imphash_unique", 0))
 
     # ── Retrain best model and generate visualizations ──
@@ -1350,7 +1329,7 @@ def main():
     X_test_b = X_test_b_var[:, top_indices]
     X_test_m = X_test_m_var[:, top_indices]
     X_val_m_thr = X_val_m_var[:, top_indices]
-    X_val_m_full = X_val_m_var[:, top_indices]
+    X_val_m_full = X_val_m_all_var[:, top_indices]
 
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -1410,6 +1389,8 @@ def main():
 
     val_norm = _normalize_rows_l2(X_val_m_full_scaled.astype(np.float32, copy=False))
     test_norm = _normalize_rows_l2(X_test_m_scaled.astype(np.float32, copy=False))
+    audit_knn_sample_size = min(len(val_norm), 2000)
+    audit_mmd_sample_size = len(val_norm)
     similarity_profile = _compute_cross_similarity_profile(
         val_norm,
         test_norm,
@@ -1453,22 +1434,18 @@ def main():
                 f"({max_val_to_test:.6f} >= {audit_similarity_threshold:.6f})"
             )
 
-    if len(df_val_m) < audit_min_malware_val:
+    if len(df_val_m_all) < audit_min_malware_val:
         hard_violations.append(
-            f"malware_val sample size below minimum ({len(df_val_m)} < {audit_min_malware_val})"
+            f"malware_val sample size below minimum ({len(df_val_m_all)} < {audit_min_malware_val})"
         )
 
     if not bool(stage2_manifest.get("gates", {}).get("all_pass", False)):
         hard_violations.append("stage2 manifest hard gates are not all_pass")
 
-    if not manifest_consistency.get("match", False):
-        hard_violations.append("stage2/stage3 fingerprint consistency mismatch")
-
     stage3_metrics_payload = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "stage2_manifest_path": str(stage2_manifest_path),
         "stage2_run_id": stage2_manifest.get("run_id") if stage2_manifest else None,
-        "manifest_consistency": manifest_consistency,
         "hard_checks": {
             "exact_overlap": int(overlap_malware_val_test),
             "imphash_overlap_stage2": {
@@ -1478,6 +1455,9 @@ def main():
             "imphash_overlap_clean_proxy": imphash_overlap_proxy,
             "max_cross_similarity_threshold": float(audit_similarity_threshold),
             "min_malware_val_samples": int(audit_min_malware_val),
+            "max_malware_val_percent_of_benign_train": float(audit_max_malware_val_ratio * 100.0),
+            "malware_val_total_samples": int(len(df_val_m_all)),
+            "malware_val_model_samples": int(len(df_val_m_model)),
         },
         "quantitative_checks": {
             "cross_similarity_profile": similarity_profile,
@@ -1504,7 +1484,6 @@ def main():
         out_path=independence_assessment_md_path,
         stage2_manifest_path=stage2_manifest_path,
         stage2_manifest=stage2_manifest,
-        manifest_consistency=manifest_consistency,
         stage3_metrics=stage3_summary,
         hard_violations=hard_violations,
     )

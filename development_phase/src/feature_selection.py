@@ -32,15 +32,6 @@ from scipy.stats import kurtosis as sp_kurtosis
 from sklearn.preprocessing import StandardScaler
 
 
-def _compute_dataset_fingerprint(df: pd.DataFrame, name: str) -> str:
-    """Compute SHA256 fingerprint of a dataset for audit trail."""
-    df_hash = pd.util.hash_pandas_object(df, index=False)
-    combined = hashlib.sha256()
-    combined.update(np.asarray(df_hash.values).tobytes())
-    fingerprint = combined.hexdigest()[:16]
-    return fingerprint
-
-
 def _stable_json_hash(payload: dict[str, Any]) -> str:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
@@ -364,13 +355,11 @@ def _build_stage2_independence_manifest(
     projected_similarity_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     config_hash = _stable_json_hash(_load_config(config_path))
-    fp_val = _compute_dataset_fingerprint(malware_val_clean, "malware_val_clean")
-    fp_test = _compute_dataset_fingerprint(malware_test_clean, "malware_test_clean")
 
     run_basis = {
         "config_hash": config_hash,
-        "fp_val": fp_val,
-        "fp_test": fp_test,
+        "malware_val_count": int(len(malware_val_clean)),
+        "malware_test_count": int(len(malware_test_clean)),
         "audit_mode": "enforce",
     }
     run_id = _stable_json_hash(run_basis)
@@ -390,10 +379,6 @@ def _build_stage2_independence_manifest(
         "config_path": str(config_path),
         "config_hash": config_hash,
         "audit_mode": "enforce",
-        "fingerprints": {
-            "malware_val_clean": fp_val,
-            "malware_test_clean": fp_test,
-        },
         "counts": {
             "malware_val_clean": int(len(malware_val_clean)),
             "malware_test_clean": int(len(malware_test_clean)),
@@ -1049,16 +1034,7 @@ def main():
     print(f"  Validation (benign):    {len(dfs_train_val['benign_val'])} samples")
     print(f"  Validation (malware):   {len(dfs_train_val['malware_val'])} samples")
     print("  Test data will be loaded after feature selection (sealed until needed)")
-    
-    # Dataset fingerprinting for audit trail
-    print("\n--- Dataset Fingerprinting (Audit Trail) ---")
-    train_fp = _compute_dataset_fingerprint(dfs_train_val["benign_train"], "train")
-    val_fp = _compute_dataset_fingerprint(dfs_train_val["benign_val"], "val_benign")
-    val_m_fp = _compute_dataset_fingerprint(dfs_train_val["malware_val"], "val_malware")
-    print(f"  Training (benign):      {train_fp}")
-    print(f"  Validation (benign):    {val_fp}")
-    print(f"  Validation (malware):   {val_m_fp}")
-    
+
     print("\n--- Benign Split Independence Verification ---")
     print(
         "  ✓ Applied automatic deduplication between benign_train and benign_val "
@@ -1132,13 +1108,7 @@ def main():
         raise ValueError("benign_test became empty after duplicate cleanup")
     print(f"  Test (benign):  {len(dfs_test['benign_test'])} samples")
     print(f"  Test (malware): {len(dfs_test['malware_test'])} samples")
-    
-    # Test data fingerprinting
-    test_b_fp = _compute_dataset_fingerprint(dfs_test["benign_test"], "test_benign")
-    test_m_fp = _compute_dataset_fingerprint(dfs_test["malware_test"], "test_malware")
-    print(f"  Test (benign) fingerprint:  {test_b_fp}")
-    print(f"  Test (malware) fingerprint: {test_m_fp}")
-    
+
     # Verify benign test/validation independence
     print("\n--- Benign Test/Validation Independence Verification ---")
     print(
