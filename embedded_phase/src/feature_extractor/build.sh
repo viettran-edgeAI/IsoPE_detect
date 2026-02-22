@@ -8,7 +8,7 @@ LIEF_DIR="${ROOT_DIR}/embedded_phase/third_party/LIEF"
 LIEF_BUILD_DIR="${LIEF_DIR}/build"
 
 OUT="${SCRIPT_DIR}/lief_feature_extractor"
-FEATURE_NAMES_PATH="${FEATURE_NAMES_PATH:-${ROOT_DIR}/development_phase/results/feature_names.json}"
+OPTIMIZED_FEATURE_LIST_PATH="${OPTIMIZED_FEATURE_LIST_PATH:-${FEATURE_NAMES_PATH:-${ROOT_DIR}/development_phase/results/optimized_feature_list.json}}"
 COMPILED_CFG="${SCRIPT_DIR}/compiled_feature_config.hpp"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 BUILD_DIR="${SCRIPT_DIR}/build"
@@ -23,7 +23,7 @@ if [[ ! -f "${LIEF_BUILD_DIR}/libLIEF.a" ]]; then
 fi
 
 "${PYTHON_BIN}" "${SCRIPT_DIR}/generate_compiled_features.py" \
-  --feature-names "${FEATURE_NAMES_PATH}" \
+  --feature-names "${OPTIMIZED_FEATURE_LIST_PATH}" \
   --output "${COMPILED_CFG}"
 
 cmake -S "${SCRIPT_DIR}" -B "${BUILD_DIR}" \

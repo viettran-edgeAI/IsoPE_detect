@@ -1,2 +1,0 @@
-# No external Python packages are required for the quantization pipeline.
-# quantize_dataset.sh uses Python standard library only (json/sys).

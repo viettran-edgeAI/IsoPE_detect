@@ -1,0 +1,7 @@
+parameter,value
+quantization_coefficient,3
+num_features,40
+num_samples,31954
+num_labels,1
+samples_label_0,31954
+problem_type,isolation

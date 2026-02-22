@@ -1,4 +1,5 @@
 #include "extractor/extractor.hpp"
+#include "extractor/resource_limits.hpp"
 
 #include <LIEF/PE.hpp>
 #include <LIEF/PE/signature/Signature.hpp>
@@ -7,10 +8,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -27,7 +30,7 @@ using embedded_feature_config::kCompiledFeatureSpecs;
 using embedded_feature_config::kDataDirectorySlots;
 using embedded_feature_config::kDirectFeatureCount;
 
-constexpr size_t MAX_SECTIONS = 10;
+constexpr size_t MAX_SECTIONS = static_cast<size_t>(EDR_PE_MAX_SECTIONS);
 
 struct ExtractResult {
   bool parse_ok = false;
@@ -46,6 +49,14 @@ struct ExtractResult {
   std::array<double, kDataDirectorySlots> dd_rva{};
   std::array<double, kDataDirectorySlots> dd_size{};
 };
+
+std::string clamp_error(const std::string& error) {
+  const size_t max_error_bytes = static_cast<size_t>(EDR_PE_MAX_ERROR_TEXT_BYTES);
+  if (max_error_bytes == 0 || error.size() <= max_error_bytes) {
+    return error;
+  }
+  return error.substr(0, max_error_bytes);
+}
 
 std::string lower_ascii(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
@@ -77,16 +88,32 @@ double entropy_from_span(LIEF::span<const uint8_t> data, size_t max_bytes = std:
 }
 
 template <size_t N>
-void hash_update(std::array<double, N>& buckets, const std::string& input, bool lower) {
+void hash_update(
+    std::array<double, N>& buckets,
+    const std::string& input,
+    bool lower,
+    size_t& hash_updates,
+    bool& hash_budget_exhausted) {
   if (input.empty()) {
     return;
   }
 
+  const size_t max_hash_updates = static_cast<size_t>(EDR_PE_MAX_HASH_UPDATES_PER_FILE);
+  if (hash_updates >= max_hash_updates) {
+    hash_budget_exhausted = true;
+    return;
+  }
+
   const std::string payload = lower ? lower_ascii(input) : input;
+  const size_t max_hashable_name_bytes = static_cast<size_t>(EDR_PE_MAX_HASHABLE_NAME_BYTES);
+  const size_t input_len = std::min(payload.size(), max_hashable_name_bytes);
+  if (input_len == 0) {
+    return;
+  }
   const auto* data = reinterpret_cast<const uint8_t*>(payload.data());
 
-  const auto md5_digest = LIEF::PE::Signature::hash(data, payload.size(), LIEF::PE::ALGORITHMS::MD5);
-  const auto sha1_digest = LIEF::PE::Signature::hash(data, payload.size(), LIEF::PE::ALGORITHMS::SHA_1);
+  const auto md5_digest = LIEF::PE::Signature::hash(data, input_len, LIEF::PE::ALGORITHMS::MD5);
+  const auto sha1_digest = LIEF::PE::Signature::hash(data, input_len, LIEF::PE::ALGORITHMS::SHA_1);
   if (md5_digest.size() < sizeof(uint64_t) || sha1_digest.size() < sizeof(uint64_t)) {
     return;
   }
@@ -99,13 +126,64 @@ void hash_update(std::array<double, N>& buckets, const std::string& input, bool 
   const size_t bucket = static_cast<size_t>(h1 % N);
   const double sign = (h2 % 2 == 0) ? 1.0 : -1.0;
   buckets[bucket] += sign;
+  hash_updates += 1;
 }
 
 ExtractResult extract_row(const std::string& filepath) {
   ExtractResult result;
   const auto started = std::chrono::steady_clock::now();
+  bool truncated = false;
+  size_t hash_updates = 0;
 
   try {
+    const size_t max_path_bytes = static_cast<size_t>(EDR_PE_MAX_PATH_BYTES);
+    if (filepath.empty() || filepath.size() > max_path_bytes) {
+      result.error = "path_limit";
+      const auto ended = std::chrono::steady_clock::now();
+      result.processing_time_ms = std::chrono::duration<double, std::milli>(ended - started).count();
+      return result;
+    }
+
+    const std::filesystem::path fs_path(filepath);
+    std::error_code stat_ec;
+    const bool exists = std::filesystem::exists(fs_path, stat_ec);
+    if (stat_ec || !exists) {
+      result.error = "file_not_found";
+      const auto ended = std::chrono::steady_clock::now();
+      result.processing_time_ms = std::chrono::duration<double, std::milli>(ended - started).count();
+      return result;
+    }
+
+    const uintmax_t file_size_raw = std::filesystem::file_size(fs_path, stat_ec);
+    if (stat_ec) {
+      result.error = "file_stat_failed";
+      const auto ended = std::chrono::steady_clock::now();
+      result.processing_time_ms = std::chrono::duration<double, std::milli>(ended - started).count();
+      return result;
+    }
+
+    const uintmax_t min_input_bytes = static_cast<uintmax_t>(EDR_PE_MIN_INPUT_FILE_BYTES);
+    const uintmax_t max_input_bytes = static_cast<uintmax_t>(EDR_PE_MAX_INPUT_FILE_BYTES);
+    const uintmax_t max_working_set_bytes = static_cast<uintmax_t>(EDR_PE_MAX_WORKING_SET_BYTES);
+    if (file_size_raw < min_input_bytes) {
+      result.error = "file_too_small";
+      const auto ended = std::chrono::steady_clock::now();
+      result.processing_time_ms = std::chrono::duration<double, std::milli>(ended - started).count();
+      return result;
+    }
+    if (file_size_raw > max_input_bytes) {
+      result.error = "file_too_large";
+      const auto ended = std::chrono::steady_clock::now();
+      result.processing_time_ms = std::chrono::duration<double, std::milli>(ended - started).count();
+      return result;
+    }
+    if (file_size_raw > max_working_set_bytes) {
+      result.error = "memory_budget_exceeded";
+      const auto ended = std::chrono::steady_clock::now();
+      result.processing_time_ms = std::chrono::duration<double, std::milli>(ended - started).count();
+      return result;
+    }
+
     std::unique_ptr<LIEF::PE::Binary> pe = LIEF::PE::Parser::parse(filepath);
     if (!pe) {
       result.error = "parse_failed";
@@ -140,6 +218,7 @@ ExtractResult extract_row(const std::string& filepath) {
 
       for (const LIEF::PE::Section& sec : pe->sections()) {
         if (section_count >= MAX_SECTIONS) {
+          truncated = true;
           break;
         }
 
@@ -148,7 +227,11 @@ ExtractResult extract_row(const std::string& filepath) {
         result.sec_vsize[section_count] = static_cast<double>(sec.virtual_size());
         result.sec_is_write[section_count] = sec.has_characteristic(LIEF::PE::Section::CHARACTERISTICS::MEM_WRITE) ? 1.0 : 0.0;
 
-        hash_update(result.sec_name_hash, sec.name(), false);
+        bool hash_budget_exhausted = false;
+        hash_update(result.sec_name_hash, sec.name(), false, hash_updates, hash_budget_exhausted);
+        if (hash_budget_exhausted) {
+          truncated = true;
+        }
 
         entropy_sum += entropy;
         if (section_count == 0 || entropy > entropy_max) {
@@ -174,11 +257,18 @@ ExtractResult extract_row(const std::string& filepath) {
 
       if (pe->has_debug()) {
         bool has_repro = false;
+        size_t debug_count = 0;
+        const size_t max_debug_entries = static_cast<size_t>(EDR_PE_MAX_DEBUG_ENTRIES);
         for (const LIEF::PE::Debug& debug_entry : pe->debug()) {
+          if (debug_count >= max_debug_entries) {
+            truncated = true;
+            break;
+          }
           if (debug_entry.type() == LIEF::PE::Debug::TYPES::REPRO) {
             has_repro = true;
             break;
           }
+          debug_count += 1;
         }
         result.direct[embedded_feature_config::D_HAS_REPRO] = has_repro ? 1.0 : 0.0;
       }
@@ -186,8 +276,15 @@ ExtractResult extract_row(const std::string& filepath) {
       if (pe->has_rich_header()) {
         if (const LIEF::PE::RichHeader* rich = pe->rich_header()) {
           uint32_t max_build_id = 0;
+          size_t rich_count = 0;
+          const size_t max_rich_entries = static_cast<size_t>(EDR_PE_MAX_RICH_ENTRIES);
           for (const LIEF::PE::RichEntry& entry : rich->entries()) {
+            if (rich_count >= max_rich_entries) {
+              truncated = true;
+              break;
+            }
             max_build_id = std::max(max_build_id, static_cast<uint32_t>(entry.build_id()));
+            rich_count += 1;
           }
           result.direct[embedded_feature_config::D_RICH_MAX_BUILD_ID] = static_cast<double>(max_build_id);
         }
@@ -196,23 +293,65 @@ ExtractResult extract_row(const std::string& filepath) {
       const auto overlay = pe->overlay();
       result.direct[embedded_feature_config::D_HAS_OVERLAY] = overlay.empty() ? 0.0 : 1.0;
       result.direct[embedded_feature_config::D_OVERLAY_SIZE] = static_cast<double>(overlay.size());
-      result.direct[embedded_feature_config::D_OVERLAY_ENTROPY] = overlay.empty() ? 0.0 : entropy_from_span(overlay, 8192);
+      result.direct[embedded_feature_config::D_OVERLAY_ENTROPY] =
+          overlay.empty() ? 0.0 : entropy_from_span(overlay, static_cast<size_t>(EDR_PE_MAX_OVERLAY_ENTROPY_BYTES));
 
       if (pe->has_imports()) {
+        size_t dll_count = 0;
+        size_t import_func_count = 0;
+        const size_t max_import_dlls = static_cast<size_t>(EDR_PE_MAX_IMPORT_DLLS);
+        const size_t max_import_funcs_total = static_cast<size_t>(EDR_PE_MAX_IMPORT_FUNCS_TOTAL);
         for (const LIEF::PE::Import& imp : pe->imports()) {
-          hash_update(result.imp_dll_hash, imp.name(), true);
+          if (dll_count >= max_import_dlls) {
+            truncated = true;
+            break;
+          }
+
+          bool hash_budget_exhausted = false;
+          hash_update(result.imp_dll_hash, imp.name(), true, hash_updates, hash_budget_exhausted);
+          if (hash_budget_exhausted) {
+            truncated = true;
+          }
+          dll_count += 1;
+
           for (const LIEF::PE::ImportEntry& entry : imp.entries()) {
-            if (!entry.is_ordinal() && !entry.name().empty()) {
-              hash_update(result.imp_func_hash, entry.name(), true);
+            if (import_func_count >= max_import_funcs_total) {
+              truncated = true;
+              break;
             }
+            if (!entry.is_ordinal() && !entry.name().empty()) {
+              hash_budget_exhausted = false;
+              hash_update(result.imp_func_hash, entry.name(), true, hash_updates, hash_budget_exhausted);
+              if (hash_budget_exhausted) {
+                truncated = true;
+              }
+              import_func_count += 1;
+            }
+          }
+
+          if (import_func_count >= max_import_funcs_total) {
+            break;
           }
         }
       }
 
       if (pe->has_signatures()) {
         size_t certificate_count = 0;
+        size_t signature_count = 0;
+        const size_t max_signatures = static_cast<size_t>(EDR_PE_MAX_SIGNATURES);
+        const size_t max_certificates_total = static_cast<size_t>(EDR_PE_MAX_CERTIFICATES_TOTAL);
         for (const LIEF::PE::Signature& signature : pe->signatures()) {
+          if (signature_count >= max_signatures) {
+            truncated = true;
+            break;
+          }
           certificate_count += signature.certificates().size();
+          if (certificate_count >= max_certificates_total) {
+            certificate_count = max_certificates_total;
+            truncated = true;
+            break;
+          }
+          signature_count += 1;
         }
         result.direct[embedded_feature_config::D_NUM_CERTIFICATES] = static_cast<double>(certificate_count);
 
@@ -225,12 +364,25 @@ ExtractResult extract_row(const std::string& filepath) {
         }
       }
 
+      const size_t max_data_directories = std::min(
+          static_cast<size_t>(kDataDirectorySlots),
+          static_cast<size_t>(EDR_PE_MAX_DATA_DIRECTORIES));
+      size_t data_directory_count = 0;
       for (const LIEF::PE::DataDirectory& directory : pe->data_directories()) {
+        if (data_directory_count >= max_data_directories) {
+          truncated = true;
+          break;
+        }
         const size_t idx = static_cast<size_t>(directory.type());
         if (idx < kDataDirectorySlots) {
           result.dd_rva[idx] = static_cast<double>(directory.RVA());
           result.dd_size[idx] = static_cast<double>(directory.size());
         }
+        data_directory_count += 1;
+      }
+
+      if (truncated) {
+        result.error = "resource_limit";
       }
     }
   } catch (const std::exception& ex) {
@@ -238,6 +390,8 @@ ExtractResult extract_row(const std::string& filepath) {
   } catch (...) {
     result.error = "unknown_exception";
   }
+
+  result.error = clamp_error(result.error);
 
   const auto ended = std::chrono::steady_clock::now();
   result.processing_time_ms = std::chrono::duration<double, std::milli>(ended - started).count();

@@ -17,4 +17,6 @@ See the full guide in `DEVELOPMENT_PHASE_GUIDE.md`.
 3. `model_optimization.py` + `model_config.json`
    - Model optimization on cleaned datasets.
    - Grid search/model ranking is validation-driven; keep `thresholding.expose_test_during_search=false` to seal test data.
-   - Output: `data/optimized/*`, `reports/*`, and `results/*`.
+   - Output: `data/optimized/*`, `reports/*`, and two embedding artifacts in `results/`:
+   - `optimized_feature_list.json` (optimized feature set)
+     - `model_engine_config.json` (optimized parameters + evaluation)

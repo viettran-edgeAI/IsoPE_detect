@@ -18,7 +18,7 @@ Note: low-level filtering parameters such as variance/correlation are now config
 
 ## thresholding
 - fpr_threshold: Maximum allowed false positive rate on validation. Lower values make the model more conservative (lower FPR, lower TPR). Higher values allow more alerts for higher recall.
-- val_fpr_delta: If val_fpr_target is not set, the target is computed as fpr_threshold minus val_fpr_delta. Positive values loosen the threshold, negative values tighten it.
+- val_fpr_delta: Required when val_fpr_target is not set. The target is computed as fpr_threshold minus val_fpr_delta.
 - strategy: How the decision threshold is selected. Options are fpr, f1, tpr, youden, model. The choice shifts the precision/recall trade-off.
 - f_beta: Beta used when strategy is f1. Higher beta emphasizes recall, lower beta emphasizes precision.
 
@@ -40,3 +40,8 @@ Diagnostic sampling behavior in Stage 3:
 - kNN sample size per split is automatic: min(len(malware_val), 2000).
 - kNN seed is fixed at 42.
 - MMD sample size per split is automatic: len(malware_val).
+
+## outputs (embedding-focused)
+- results_dir: Directory for Stage-3 embedding handoff artifacts.
+- optimized_feature_list_json: Output JSON list of optimized feature names (default: `../results/optimized_feature_list.json`).
+- optimized_model_config_json: Output consolidated model-engine config (default: `../results/model_engine_config.json`). Contains optimized hyperparameters, threshold settings (including `val_fpr_delta`), scaler parameters, deployment scaling policy (build-time threshold folding), and final validation/test metrics.

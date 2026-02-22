@@ -37,6 +37,8 @@
   "outputs": {
     "report_dir": "../reports",
     "results_dir": "../results",
+    "optimized_feature_list_json": "../results/optimized_feature_list.json",
+    "optimized_model_config_json": "../results/model_engine_config.json",
     "optimized_data_dir": "../data/optimized",
     "results_csv": "../reports/optimization_results.csv",
     "optimized_params_json": "../reports/optimized_params.json",

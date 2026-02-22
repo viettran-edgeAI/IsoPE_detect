@@ -21,7 +21,8 @@ Outputs:
     ../reports/malware_val_test_independence_metrics_stage3.json
     ../reports/score_distribution.svg
     ../docs/malware_val_test_independence_assessment.md
-    ../results  (model parameters & benchmarks for C++ embedding)
+    ../results/optimized_feature_list.json
+    ../results/model_engine_config.json
 """
 
 import argparse
@@ -365,6 +366,8 @@ def _validate_config(cfg):
     strategy = threshold_cfg.get("strategy", "fpr")
     if strategy not in {"fpr", "f1", "tpr", "youden", "model"}:
         raise ValueError("thresholding.strategy must be one of: fpr, f1, tpr, youden, model")
+    if "val_fpr_target" not in threshold_cfg and "val_fpr_delta" not in threshold_cfg:
+        raise ValueError("thresholding.val_fpr_delta is required when thresholding.val_fpr_target is not set")
 
 
 def _find_threshold_precise(scores_benign, max_fpr):
@@ -799,90 +802,99 @@ def _write_score_hist_svg(scores_benign, scores_malware, out_path):
 # ═══════════════════════════════════════════════════════════════
 
 def export_results(model, scaler, feature_names, threshold, fpr_threshold,
-                   val_fpr, val_tpr, test_fpr, test_tpr, auc_value, best_params,
-                   group_mapping, results_dir, threshold_strategy="fpr"):
-    """Export model parameters and benchmarks for C++ embedding."""
+                   val_fpr_target, val_fpr_delta,
+                   val_fpr, val_tpr, val_auc_value, test_fpr, test_tpr, auc_value, best_params,
+                   group_mapping, results_dir, feature_names_path, model_config_path,
+                   threshold_strategy="fpr", f_beta=1.0):
+    """Export exactly two embedding artifacts: selected feature names and model-engine config."""
     results_dir.mkdir(parents=True, exist_ok=True)
+    feature_names_path.parent.mkdir(parents=True, exist_ok=True)
+    model_config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Scaler parameters (JSON for C++)
+    # Remove legacy artifacts from older export layout.
+    legacy_artifacts = [
+        results_dir / "scaler_params.json",
+        results_dir / "threshold.json",
+        results_dir / "trees.json",
+        results_dir / "feature_group_mapping.json",
+        results_dir / "benchmarks.json",
+        results_dir / "feature_names.json",
+    ]
+    for legacy_path in legacy_artifacts:
+        if legacy_path.exists() and legacy_path not in {feature_names_path, model_config_path}:
+            legacy_path.unlink()
+
+    # 1) Optimized features artifact
+    feature_name_list = [str(name) for name in feature_names]
+    with open(feature_names_path, "w", encoding="utf-8") as f:
+        json.dump(feature_name_list, f, indent=2)
+
+    # 2) Consolidated model-engine artifact (optimized parameters + evaluation)
     scaler_export = {
         "mean": scaler.mean_.tolist(),
         "scale": scaler.scale_.tolist(),
         "n_features": int(scaler.n_features_in_),
     }
-    with open(results_dir / "scaler_params.json", "w") as f:
-        json.dump(scaler_export, f, indent=2)
-
-    # Threshold
-    threshold_export = {
-        "threshold": float(threshold),
-        "fpr_target": float(fpr_threshold),
-        "val_fpr_achieved": float(val_fpr),
-        "val_tpr": float(val_tpr),
-        "test_fpr": float(test_fpr),
-        "test_tpr": float(test_tpr),
-        "auc": float(auc_value),
-        "threshold_strategy": str(threshold_strategy),
-    }
-    with open(results_dir / "threshold.json", "w") as f:
-        json.dump(threshold_export, f, indent=2)
-
-    # Feature names
-    with open(results_dir / "feature_names.json", "w") as f:
-        json.dump(list(feature_names), f, indent=2)
-
-    # Tree structures
-    trees_export = []
-    for i, estimator in enumerate(model.estimators_):
-        tree = estimator.tree_
-        trees_export.append({
-            "tree_index": i,
-            "n_nodes": int(tree.node_count),
-            "max_depth": int(tree.max_depth),
-            "feature": tree.feature.tolist(),
-            "threshold": tree.threshold.tolist(),
-            "children_left": tree.children_left.tolist(),
-            "children_right": tree.children_right.tolist(),
-            "n_node_samples": tree.n_node_samples.tolist(),
-            "features_used": sorted(set(tree.feature[tree.feature >= 0].tolist())),
-        })
-
-    max_samples_val = best_params.get("max_samples", "auto")
-    with open(results_dir / "trees.json", "w") as f:
-        json.dump({
-            "n_trees": len(trees_export),
-            "n_features": len(feature_names),
-            "max_samples": max_samples_val,
-            "offset": float(model.offset_),
-            "trees": trees_export,
-        }, f)
-
-    # Feature group mapping
-    with open(results_dir / "feature_group_mapping.json", "w") as f:
-        json.dump(group_mapping, f, indent=2)
-
-    # Benchmarks summary
-    benchmarks = {
+    consolidated = {
         "model_type": "IsolationForest",
-        "hyperparameters": {k: (v if not isinstance(v, np.integer) else int(v)) for k, v in best_params.items()},
-        "n_features": len(feature_names),
-        "n_trees": len(trees_export),
-        "threshold": float(threshold),
-        "offset": float(model.offset_),
-        "metrics": {
-            "roc_auc": float(auc_value),
-            "fpr_benign_test": float(test_fpr),
-            "tpr_malware_test": float(test_tpr),
-            "fpr_benign_val": float(val_fpr),
-            "tpr_malware_val": float(val_tpr),
+        "optimized_feature_set": {
+            "source_file": str(feature_names_path),
+            "n_features": len(feature_name_list),
+            "features": feature_name_list,
+            "feature_groups": group_mapping,
         },
-        "note": "Model not saved - C++ version will be built from these parameters"
+        "preprocessing": {
+            "scaler": scaler_export,
+        },
+        "deployment_scaling": {
+            "runtime_normalization": "disabled",
+            "build_time_threshold_folding": {
+                "enabled": True,
+                "description": "Convert split thresholds from standardized space to raw feature space during model build.",
+                "formula": "threshold_raw = threshold_scaled * scale[feature] + mean[feature]",
+                "note": "Keep scaler parameters in artifact for audit/parity checks.",
+            },
+            "audit": {
+                "keep_scaler_params": True,
+                "parity_reference": "python_stage3_standardized_training",
+            },
+        },
+        "optimized_parameters": {
+            "hyperparameters": {k: (v if not isinstance(v, np.integer) else int(v)) for k, v in best_params.items()},
+            "thresholding": {
+                "strategy": str(threshold_strategy),
+                "f_beta": float(f_beta),
+                "threshold": float(threshold),
+                "fpr_threshold": float(fpr_threshold),
+                "val_fpr_target": float(val_fpr_target),
+                "val_fpr_delta": float(val_fpr_delta),
+                "offset": float(model.offset_),
+            },
+        },
+        "evaluation": {
+            "validation": {
+                "fpr": float(val_fpr),
+                "tpr": float(val_tpr),
+                "roc_auc": float(val_auc_value),
+            },
+            "test": {
+                "fpr": float(test_fpr),
+                "tpr": float(test_tpr),
+                "roc_auc": float(auc_value),
+            },
+        },
+        "notes": [
+            "Consolidated artifact for embedded model engine rebuild.",
+            "Model trees are not serialized; C++ model engine should rebuild from optimized parameters.",
+        ],
     }
-    with open(results_dir / "benchmarks.json", "w") as f:
-        json.dump(benchmarks, f, indent=2)
+
+    with open(model_config_path, "w", encoding="utf-8") as f:
+        json.dump(consolidated, f, indent=2)
 
     print(f"\n  Results exported to: {results_dir}")
-    for p in sorted(results_dir.glob("*")):
+    generated = [feature_names_path, model_config_path]
+    for p in generated:
         sz = p.stat().st_size
         unit = "KB" if sz > 1024 else "B"
         val = sz / 1024 if sz > 1024 else sz
@@ -989,11 +1001,15 @@ def main():
         )
     
     val_fpr_target = threshold_cfg.get("val_fpr_target")
+    val_fpr_delta = threshold_cfg.get("val_fpr_delta")
     if val_fpr_target is None:
-        val_fpr_delta = float(threshold_cfg.get("val_fpr_delta", 0.005))
+        val_fpr_delta = float(val_fpr_delta)
         val_fpr_target = max(fpr_threshold - val_fpr_delta, 0.0)
     else:
         val_fpr_target = float(val_fpr_target)
+        if val_fpr_delta is None:
+            val_fpr_delta = fpr_threshold - val_fpr_target
+        val_fpr_delta = float(val_fpr_delta)
 
     independence_cfg = cfg.get("independence_audit", {})
     audit_mode = "enforce"
@@ -1032,7 +1048,21 @@ def main():
 
     outputs_cfg = cfg["outputs"]
     report_dir = _resolve_path(config_path, outputs_cfg.get("report_dir", "../reports"))
-    results_dir = _resolve_path(config_path, outputs_cfg.get("results_dir", "../results/final"))
+    results_dir = _resolve_path(config_path, outputs_cfg.get("results_dir", "../results"))
+    optimized_features_json_raw = outputs_cfg.get("optimized_feature_list_json")
+    if optimized_features_json_raw is None:
+        optimized_features_json_raw = outputs_cfg.get("optimized_features_json")
+    optimized_model_config_json_raw = outputs_cfg.get("optimized_model_config_json")
+    optimized_features_json = (
+        _resolve_path(config_path, optimized_features_json_raw)
+        if optimized_features_json_raw
+        else results_dir / "optimized_feature_list.json"
+    )
+    optimized_model_config_json = (
+        _resolve_path(config_path, optimized_model_config_json_raw)
+        if optimized_model_config_json_raw
+        else results_dir / "model_engine_config.json"
+    )
     optimized_data_dir = _resolve_path(config_path, outputs_cfg.get("optimized_data_dir", "../data/optimized"))
     results_csv = _resolve_path(config_path, outputs_cfg.get("results_csv", "../reports/optimization_results.csv"))
     params_json = _resolve_path(config_path, outputs_cfg.get("optimized_params_json", "../reports/optimized_params.json"))
@@ -1294,6 +1324,7 @@ def main():
         "f_beta": float(f_beta),
         "fpr_threshold": float(fpr_threshold),
         "val_fpr_target": float(val_fpr_target),
+        "val_fpr_delta": float(val_fpr_delta),
     }
     params_json.write_text(json.dumps(params_payload, indent=2), encoding="utf-8")
 
@@ -1542,15 +1573,21 @@ def main():
         feature_names=top_names,
         threshold=final_threshold,
         fpr_threshold=fpr_threshold,
+        val_fpr_target=val_fpr_target,
+        val_fpr_delta=val_fpr_delta,
         val_fpr=final_val_fpr,
         val_tpr=final_val_tpr,
+        val_auc_value=val_auc_final,
         test_fpr=final_fpr,
         test_tpr=final_tpr,
         auc_value=auc_value,
         best_params=best_params,
         group_mapping=selected_group_mapping,
         results_dir=results_dir,
+        feature_names_path=optimized_features_json,
+        model_config_path=optimized_model_config_json,
         threshold_strategy=threshold_strategy,
+        f_beta=f_beta,
     )
 
     # ── Save optimized datasets with best feature set ──

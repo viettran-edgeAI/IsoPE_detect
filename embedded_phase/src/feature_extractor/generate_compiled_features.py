@@ -155,7 +155,7 @@ def main():
 
     raw = json.loads(args.feature_names.read_text(encoding="utf-8"))
     if not isinstance(raw, list) or not raw:
-        raise RuntimeError("feature_names.json must be a non-empty JSON list")
+        raise RuntimeError("optimized feature list must be a non-empty JSON list")
 
     deduped = []
     seen = set()

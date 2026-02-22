@@ -1,10 +1,14 @@
 #include "extractor/extractor.hpp"
+#include "extractor/resource_limits.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -70,10 +74,53 @@ bool parse_args(int argc, char** argv, Args& args) {
     }
   }
 
-  return !args.files.empty();
+  if (args.files.empty()) {
+    return false;
+  }
+
+  if (args.files.size() > static_cast<size_t>(EDR_PE_MAX_CLI_FILES_PER_RUN)) {
+    return false;
+  }
+
+  return true;
 }
 
 int run(const Args& args) {
+  static_assert(EDR_PE_MAX_THREADS == 1ULL, "Extractor CLI currently supports single-thread execution only");
+
+  uint64_t total_input_bytes = 0;
+  const uint64_t max_total_input_bytes = static_cast<uint64_t>(EDR_PE_MAX_CLI_TOTAL_INPUT_BYTES);
+  const size_t max_path_bytes = static_cast<size_t>(EDR_PE_MAX_PATH_BYTES);
+  for (const std::string& path : args.files) {
+    if (path.empty() || path.size() > max_path_bytes) {
+      std::cerr << "Input path exceeds limits: " << path << "\n";
+      return 2;
+    }
+
+    std::error_code ec;
+    const std::filesystem::path fs_path(path);
+    if (!std::filesystem::exists(fs_path, ec) || ec) {
+      std::cerr << "Input file not found: " << path << "\n";
+      return 2;
+    }
+
+    const uintmax_t file_size = std::filesystem::file_size(fs_path, ec);
+    if (ec) {
+      std::cerr << "Failed to read file size: " << path << "\n";
+      return 2;
+    }
+
+    if (file_size > std::numeric_limits<uint64_t>::max() - total_input_bytes) {
+      std::cerr << "Input size overflow while validating batch\n";
+      return 2;
+    }
+    total_input_bytes += static_cast<uint64_t>(file_size);
+    if (total_input_bytes > max_total_input_bytes) {
+      std::cerr << "Total input batch exceeds limit\n";
+      return 2;
+    }
+  }
+
   std::ostream* out = &std::cout;
   std::ofstream file_out;
   if (!args.output_path.empty()) {

@@ -1,10 +1,10 @@
 {
     "input_path": {
-        "value": "datasets/benign_test_optimized.csv",
+        "value": "../../../development_phase/data/optimized/malware_val_optimized.csv",
         "description": "Path to the input CSV dataset file (required)."
     },
     "quantization_bits": {
-        "value": 2,
+        "value": 3,
         "description": "Quantization coefficient in bits per feature value (1-8). Higher values = more precision but larger file size."
     },
     "model_name": {

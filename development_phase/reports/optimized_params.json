@@ -8,5 +8,6 @@
   "threshold_strategy": "tpr",
   "f_beta": 1.0,
   "fpr_threshold": 0.05,
-  "val_fpr_target": 0.04
+  "val_fpr_target": 0.04,
+  "val_fpr_delta": 0.01
 }

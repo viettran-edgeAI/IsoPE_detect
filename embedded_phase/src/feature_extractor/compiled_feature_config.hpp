@@ -55,7 +55,7 @@ enum DirectFeatureId : uint16_t {
 static constexpr size_t kDataDirectorySlots = 16;
 static constexpr size_t kDirectFeatureCount = static_cast<size_t>(DIRECT_FEATURE_COUNT);
 static constexpr size_t kCompiledFeatureCount = 40;
-static constexpr const char* kCompiledFeatureSource = "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/results/feature_names.json";
+static constexpr const char* kCompiledFeatureSource = "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/results/optimized_feature_list.json";
 
 static constexpr std::array<const char*, kCompiledFeatureCount> kCompiledFeatureNames = {
   "coff_machine",

@@ -30,7 +30,7 @@ The model integration path only needs this API surface.
 
 The selected feature list is generated into C++ at build time and fixed after compilation.
 
-- Source list: `development_phase/results/feature_names.json` (or another JSON list)
+- Source list: `development_phase/results/optimized_feature_list.json` (or another JSON list)
 - Generated header: `embedded_phase/src/feature_extractor/compiled_feature_config.hpp`
 - Runtime: no `--feature-names` option, no runtime schema parsing
 
@@ -61,11 +61,60 @@ embedded_phase/src/feature_extractor/build.sh
 
 ```bash
 cd /home/viettran/Documents/visual_code/EDR_AGENT
-FEATURE_NAMES_PATH=/absolute/path/to/feature_names.json \
+OPTIMIZED_FEATURE_LIST_PATH=/absolute/path/to/optimized_feature_list.json \
 embedded_phase/src/feature_extractor/build.sh
 ```
 
 `build.sh` runs `generate_compiled_features.py` and then builds the `lief_feature_extractor` target with CMake.
+
+## Resource limits (endpoint hardening)
+
+The extractor enforces compile-time limits to bound CPU/memory usage on endpoint devices.
+
+Default limits are defined in:
+
+- `embedded_phase/src/feature_extractor/include/extractor/resource_limits.hpp`
+
+Current baseline:
+
+- `EDR_PE_MAX_INPUT_FILE_BYTES`: `128 MiB`
+- `EDR_PE_MAX_WORKING_SET_BYTES`: `256 MiB`
+- `EDR_PE_MIN_INPUT_FILE_BYTES`: `512 bytes`
+- `EDR_PE_MAX_PATH_BYTES`: `4096`
+- `EDR_PE_MAX_CLI_FILES_PER_RUN`: `2048`
+- `EDR_PE_MAX_CLI_TOTAL_INPUT_BYTES`: `2 GiB`
+- `EDR_PE_MAX_THREADS`: `1` (single-thread policy)
+- `EDR_PE_MAX_SECTIONS`: `10`
+- `EDR_PE_MAX_IMPORT_DLLS`: `512`
+- `EDR_PE_MAX_IMPORT_FUNCS_TOTAL`: `8192`
+- `EDR_PE_MAX_HASHABLE_NAME_BYTES`: `256`
+- `EDR_PE_MAX_HASH_UPDATES_PER_FILE`: `10000`
+- `EDR_PE_MAX_OVERLAY_ENTROPY_BYTES`: `8192`
+- `EDR_PE_MAX_SIGNATURES`: `4`
+- `EDR_PE_MAX_CERTIFICATES_TOTAL`: `64`
+- `EDR_PE_MAX_DEBUG_ENTRIES`: `128`
+- `EDR_PE_MAX_RICH_ENTRIES`: `256`
+- `EDR_PE_MAX_DATA_DIRECTORIES`: `16`
+- `EDR_PE_MAX_ERROR_TEXT_BYTES`: `256`
+
+Behavior notes:
+
+- Hard input validation failures (path/file/size limits) produce `parse_ok=false` with a bounded error code.
+- Feature-complexity truncation (for example import/signature/hash caps) keeps `parse_ok=true` and sets `error="resource_limit"`.
+
+### Overriding limits at build time
+
+You can override any limit with `-D` compile definitions.
+
+Example:
+
+```bash
+cd /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor
+cmake -S . -B build \
+  -DFEATURE_EXTRACTOR_FETCH_LIEF=OFF \
+  -DCMAKE_CXX_FLAGS="-DEDR_PE_MAX_INPUT_FILE_BYTES=67108864 -DEDR_PE_MAX_IMPORT_FUNCS_TOTAL=4096"
+cmake --build build -j$(nproc)
+```
 
 ## CLI usage
 
@@ -88,24 +137,3 @@ CLI options:
 - `--format csv|jsonl`
 - `--output <path>`
 
-## Python ↔ C++ parity validation
-
-Validation harness:
-
-- `embedded_phase/src/feature_extractor/compare_cpp_python.py`
-
-Run:
-
-```bash
-/home/viettran/Documents/visual_code/EDR_AGENT/.venv/bin/python \
-  embedded_phase/src/feature_extractor/compare_cpp_python.py \
-  --samples-per-class 3
-```
-
-Important: pass the same feature list via `--feature-names` that was used at compile time for `build.sh`, otherwise comparison will be invalid.
-
-Outputs:
-
-- `embedded_phase/src/feature_extractor/validation/parity_summary.json`
-- `embedded_phase/src/feature_extractor/validation/cpp_processing_time.csv`
-- `embedded_phase/src/feature_extractor/validation/feature_parity_details.csv`

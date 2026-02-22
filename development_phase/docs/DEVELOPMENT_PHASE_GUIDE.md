@@ -41,7 +41,6 @@ development_phase/
     optimized/
   reports/
   results/
-    final/
   schemas/
 ```
 
@@ -109,7 +108,7 @@ Useful Stage-3 audit CLI overrides:
 - `--audit-distribution-diagnostic-k` (default: 5)
 - `--audit-split-auc-classifier-folds` (default: 3)
 
-This script loads the cleaned datasets, selects top-k features using Cohen's d, runs grid search over Isolation Forest parameters, and exports the final model artifacts. It also generates a malware val/test clustering analysis (UMAP and t-SNE) using the optimized datasets. If raw malware parquet files are present, it computes imphash overlap as a family proxy.  
+This script loads the cleaned datasets, selects top-k features using Cohen's d, runs grid search over Isolation Forest parameters, and exports exactly two embedding handoff artifacts in `results/`: the optimized feature list and a consolidated model-engine configuration (optimized parameters + evaluation metrics). If raw malware parquet files are present, it computes imphash overlap as a family proxy.  
 The Stage-3 manifest records dataset counts and audit parameters.
 
 ### Config File: development_phase/src/model_config.json
@@ -142,7 +141,7 @@ Controls how decision thresholds are selected.
 - strategy: one of fpr | f1 | tpr | youden | model.
 - f_beta: beta for F-score when strategy is f1.
 - val_fpr_target: optional explicit FPR target on validation.
-- val_fpr_delta: if val_fpr_target is not set, uses fpr_threshold - val_fpr_delta.
+- val_fpr_delta: required if val_fpr_target is not set; uses fpr_threshold - val_fpr_delta.
 - expose_test_during_search: if false (default), test metrics are not computed or shown during grid search.
 
 #### independence_audit
@@ -164,6 +163,8 @@ Stage-3 diagnostic sampling behavior:
 Where artifacts and reports are written.
 - report_dir
 - results_dir
+- optimized_feature_list_json
+- optimized_model_config_json
 - optimized_data_dir
 - results_csv
 - optimized_params_json
@@ -175,7 +176,9 @@ Where artifacts and reports are written.
 
 ### Outputs
 - Optimized datasets: development_phase/data/optimized/*_optimized.parquet
-- Model artifacts: development_phase/results/*
+- Embedding artifacts:
+  - development_phase/results/optimized_feature_list.json
+  - development_phase/results/model_engine_config.json
 - Optimization report: development_phase/reports/optimization_results.csv
 - Plots: development_phase/reports/roc_curve.svg and pr_curve.svg
 - Malware split analysis:
