@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace mcu {
+namespace eml {
     // Add embedded-specific conditional implementation
     template<bool B, typename T, typename F>
     struct conditional_t {

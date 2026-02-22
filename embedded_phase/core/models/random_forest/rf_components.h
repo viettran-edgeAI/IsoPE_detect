@@ -23,7 +23,7 @@
 #include <limits>
 
 
-namespace mcu {
+namespace eml {
 
     // Core dataset types are now provided by eml_data (framework core).
     using Rf_sample = eml_sample_t<problem_type::CLASSIFICATION>;
@@ -4103,4 +4103,4 @@ namespace mcu {
 
     using Rf_logger = eml_logger_t<Rf_base>;
 
-}   // namespace mcu
+}   // namespace eml

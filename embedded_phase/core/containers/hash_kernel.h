@@ -7,7 +7,7 @@
 #include <Arduino.h>
 #endif
 
-namespace mcu{
+namespace eml{
     static constexpr uint8_t MAX_CAP = 255;
     static constexpr uint8_t INIT_CAP = 10;
 
@@ -286,4 +286,4 @@ namespace mcu{
             cap_ = 0;
         }
     };
-}   // namespace mcu
+}   // namespace eml

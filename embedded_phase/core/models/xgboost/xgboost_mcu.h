@@ -52,7 +52,7 @@
 #define XG_SOFTMAX_LUT_MAX (8.0f)
 #endif
 
-namespace mcu {
+namespace eml {
 
     using xg_label_map_t = eml_label_t<problem_type::CLASSIFICATION>;
     using XG_data = eml_data<problem_type::CLASSIFICATION>;
@@ -1731,4 +1731,4 @@ namespace mcu {
         return tree_memory + score_memory + overhead;
     }
 
-} // namespace mcu
+} // namespace eml

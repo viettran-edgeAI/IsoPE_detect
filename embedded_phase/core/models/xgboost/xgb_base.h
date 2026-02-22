@@ -22,7 +22,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace mcu {
+namespace eml {
 
     // XGBoost-specific constants
     static constexpr uint8_t  XG_PATH_BUFFER       = 64;
@@ -405,4 +405,4 @@ namespace mcu {
         }
     };
 
-} // namespace mcu
+} // namespace eml

@@ -4,7 +4,7 @@
 #include "../base/eml_base.h"
 #include "eml_samples.h"
 
-namespace mcu {
+namespace eml {
 
     template<problem_type ProblemType = problem_type::CLASSIFICATION, size_t LabelMax = EML_MAX_LABEL_LENGTH>
     struct eml_predict_result_t {
@@ -41,4 +41,21 @@ namespace mcu {
         }
     };
 
-} // namespace mcu
+    // Isolation forest anomaly score result
+    struct eml_isolation_result_t {
+        size_t prediction_time = 0;  // inference time in microseconds
+        float anomaly_score = 0.0f;  // raw anomaly score from isolation forest
+        bool is_anomaly = false;     // true if score exceeds threshold
+        float threshold = 0.0f;      // decision threshold used
+        bool success = false;
+
+        void clear() {
+            prediction_time = 0;
+            anomaly_score = 0.0f;
+            is_anomaly = false;
+            threshold = 0.0f;
+            success = false;
+        }
+    };
+
+} // namespace eml

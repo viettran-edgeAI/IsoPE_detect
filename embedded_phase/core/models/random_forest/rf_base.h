@@ -16,7 +16,7 @@
     #define ENABLE_TEST_DATA 0
 #endif
 
-namespace mcu {
+namespace eml {
 
     /*
     NOTE : Forest file components (with each model)
@@ -356,4 +356,4 @@ namespace mcu {
         }
     };
 
-} // namespace mcu
+} // namespace eml

@@ -2,10 +2,11 @@
 
 #include "../base/eml_base.h"
 
-namespace mcu {
+namespace eml {
     // ----------------------- Label types ---------------------------
     using c_label_type = uint8_t;           // sample for classification problem
-    using r_label_type = int16_t;          // sample for regression problem (quantized from float)    
+    using r_label_type = int16_t;          // sample for regression problem (quantized from float)
+    using i_label_type = uint8_t;           // dummy label for isolation forest (unused in training)
 
     // ----------------------- Error label ---------------------------
     // define error label template
@@ -30,6 +31,12 @@ namespace mcu {
         using label_type = r_label_type;
         static constexpr label_type error_label = eml_err_label<label_type>::value;
     };
+    // isolation
+    template<>
+    struct eml_label_traits<problem_type::ISOLATION> {
+        using label_type = i_label_type;
+        static constexpr label_type error_label = eml_err_label<label_type>::value;
+    };
 
     template<problem_type ProblemType>
     using eml_label_t = typename eml_label_traits<ProblemType>::label_type;
@@ -37,7 +44,10 @@ namespace mcu {
     template<problem_type ProblemType>
     static constexpr eml_label_t<ProblemType> EML_ERROR_LABEL = eml_label_traits<ProblemType>::error_label;
 
-    // sample structures using CRTP pattern
+    // ----------------------- Sample traits ---------------------------
+    // sample structures using CRTP pattern (Static / compile-time polymorphism)
+
+    // 0. base sample structure (not used directly, only for inheritance)
     template<typename Derived, problem_type ProblemType>
     struct eml_sample_base {
         using label_type = eml_label_t<ProblemType>;
@@ -265,6 +275,79 @@ namespace mcu {
         
     };
 
+    // 3. isolation sample
+    struct isolation_sample_t : public eml_sample_base<isolation_sample_t, problem_type::ISOLATION> {
+        using base_t = eml_sample_base<isolation_sample_t, problem_type::ISOLATION>;
+        using label_type = typename base_t::label_type;
+
+        using base_t::base_t;
+        isolation_sample_t() = default;
+
+        template<uint8_t BitsPerValue>
+        isolation_sample_t(label_type label, packed_vector<BitsPerValue>&& features) {
+            this->label = label;
+            this->features = std::move(features);
+        }
+
+        // ----------------- required implementations -----------------
+
+        // 1. slice constructor implementation
+        template<uint8_t BitsPerValue>
+        static isolation_sample_t create_from_slice_impl(label_type label,
+                                                        const packed_vector<BitsPerValue>& source,
+                                                        size_t start, size_t end)
+        {
+            return isolation_sample_t(label, packed_vector<BitsPerValue>(source, start, end));
+        }
+
+        template<uint8_t BitsPerValue>
+        static isolation_sample_t create_from_slice_impl(uint8_t /*bpv*/,
+                                                        label_type label,
+                                                        const packed_vector<BitsPerValue>& source,
+                                                        size_t start, size_t end)
+        {
+            return create_from_slice_impl(label, source, start, end);
+        }
+
+        // 2. standard constructor implementation
+        template<uint8_t BitsPerValue>
+        static isolation_sample_t create_from_features_impl(const packed_vector<BitsPerValue>& features,
+                                                            label_type label)
+        {
+            return isolation_sample_t(features, label);
+        }
+
+        template<uint8_t BitsPerValue>
+        static isolation_sample_t create_from_features_impl(uint8_t /*bpv*/,
+                                                            const packed_vector<BitsPerValue>& features,
+                                                            label_type label)
+        {
+            return create_from_features_impl(features, label);
+        }
+
+        // 3. move constructor implementation
+        template<uint8_t BitsPerValue>
+        static isolation_sample_t create_from_features_move_impl(label_type label,
+                                                                packed_vector<BitsPerValue>&& features)
+        {
+            return isolation_sample_t(label, std::move(features));
+        }
+
+        template<uint8_t BitsPerValue>
+        static isolation_sample_t create_from_features_move_impl(uint8_t /*bpv*/,
+                                                                label_type label,
+                                                                packed_vector<BitsPerValue>&& features)
+        {
+            return create_from_features_move_impl(label, std::move(features));
+        }
+
+        // 4. operator[] implementation
+        inline uint8_t operator[](size_t index) const {
+            return static_cast<uint8_t>(features[index]);
+        }
+
+    };
+
     // ----------------------- sample traits ---------------------------
 
     // global sample traits
@@ -279,6 +362,7 @@ namespace mcu {
 
         static constexpr bool is_classification = true;
         static constexpr bool is_regression = false;
+        static constexpr bool is_isolation = false;
     };
 
     // regression
@@ -289,6 +373,18 @@ namespace mcu {
 
         static constexpr bool is_classification = false;
         static constexpr bool is_regression = true;
+        static constexpr bool is_isolation = false;
+    };
+
+    // isolation
+    template<>
+    struct eml_sample_traits<problem_type::ISOLATION> {
+        using sample_type = isolation_sample_t;
+        using label_type  = i_label_type;
+
+        static constexpr bool is_classification = false;
+        static constexpr bool is_regression = false;
+        static constexpr bool is_isolation = true;
     };
 
 

@@ -1,8 +1,9 @@
 #pragma once
 
+#include <random>
 #include "../containers/STL_MCU.h"
 
-namespace mcu {
+namespace eml {
     /*
     ------------------------------------------------------------------------------------------------------------------
     -------------------------------------------------- RF_RANDOM -----------------------------------------------------
@@ -64,22 +65,10 @@ namespace mcu {
         }
 
         static inline uint64_t platform_entropy64() {
-        #if defined(ESP_PLATFORM)
-            uint64_t hw = (static_cast<uint64_t>(esp_random()) << 32) ^ static_cast<uint64_t>(esp_random());
-            uint64_t cyc = 0;
-        #if defined(ARDUINO)
-            cyc = static_cast<uint64_t>(ESP.getCycleCount());
-        #endif
-            return hw ^ (cyc + (hw << 1));
-        #elif defined(ARDUINO)
-            uint64_t t = (static_cast<uint64_t>(micros()) << 32) ^ static_cast<uint64_t>(millis());
-            uint64_t r = (static_cast<uint64_t>(rand()) << 32) ^ static_cast<uint64_t>(rand());
-            return t ^ r ^ static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&t));
-        #else
-            uint64_t r = (static_cast<uint64_t>(rand()) << 32) ^ static_cast<uint64_t>(rand());
-            uint64_t addr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&r));
-            return r ^ addr;
-        #endif
+            std::random_device rd;
+            uint64_t hi = static_cast<uint64_t>(rd()) << 32;
+            uint64_t lo = static_cast<uint64_t>(rd());
+            return hi | lo;
         }
 
         static inline uint64_t entropy64() {

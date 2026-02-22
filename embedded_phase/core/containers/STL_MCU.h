@@ -20,7 +20,7 @@
 
 #define hashers best_hashers_16 // change to best_hashers_8 to save 255 bytes of disk space, but more collisions
 
-namespace mcu {
+namespace eml {
     namespace detail_simd {
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
         [[gnu::target("avx2")]] inline void fill_words_avx2(size_t* dst, size_t word_count, size_t value) noexcept {
@@ -1551,7 +1551,7 @@ namespace mcu {
         }
 
         // Constructor: from min_init_list<T>
-        vector(const mcu::min_init_list<T>& init) noexcept
+        vector(const eml::min_init_list<T>& init) noexcept
             : array(new (std::nothrow) T[init.size()]), size_(init.size()), capacity_(init.size()) {
             for (unsigned i = 0; i < init.size(); ++i)
                 array[i] = init.data_[i];
@@ -2461,7 +2461,7 @@ namespace mcu {
         };
 
         template<typename T>
-        static init_view<T> normalize_init_list(mcu::min_init_list<T> init, uint8_t active_bpv) {
+        static init_view<T> normalize_init_list(eml::min_init_list<T> init, uint8_t active_bpv) {
             init_view<T> view{init.begin(), static_cast<size_t>(init.size())};
             if (!view.data || view.count == 0) {
                 view.count = 0;
@@ -2602,7 +2602,7 @@ namespace mcu {
         }
 
         template<typename T>
-        packed_vector(mcu::min_init_list<T> init)
+        packed_vector(eml::min_init_list<T> init)
             : packed_vector() {
             assign(init);
         }
@@ -2783,7 +2783,7 @@ namespace mcu {
         }
 
         template<typename T>
-        void assign(mcu::min_init_list<T> init) {
+        void assign(eml::min_init_list<T> init) {
             auto view = normalize_init_list(init, packed_data.get_bpv());
             clear();
             if (view.count == 0) {
@@ -3939,4 +3939,4 @@ namespace mcu {
         
     };
 
-}   // namespace MCU
+}   // namespace eml

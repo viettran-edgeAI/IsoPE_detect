@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <cmath>
 
-namespace mcu{
+namespace eml{
 
     using rf_predict_result_t = eml_predict_result;
 
@@ -2498,4 +2498,4 @@ namespace mcu{
     #endif
     
     };
-} // End of namespace mcu
+} // End of namespace eml

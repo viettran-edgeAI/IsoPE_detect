@@ -132,7 +132,7 @@ The pipeline mirrors the MCU library's `tools/data_quantization` tool:
 
 - The Isolation Forest is trained entirely on the integer-bin-index dataset.
 - Every split threshold stored in a tree node is a bin-index integer, not a
-  float.  Each node occupies **4 bytes** (matching the MCU library layout).
+  float.
 - Runtime inference: raw extractor feature vector → apply quantizer
   (look up bin index per feature) → feed integer vector to Isolation Forest.
 - No floating-point multiply or divide on the hot inference path.
@@ -164,9 +164,143 @@ Both artifacts are kept in the repository so that the parity harness can
 compare Python scores (float features + StandardScaler) against C++ scores
 (integer bin features + quantized Isolation Forest).
 
+## 4.5 Isolation Forest model architecture plan (embedding phase)
+
+This section defines the target model architecture for
+`embedded_phase/core/models/isolation_forest/`, using Random Forest internals
+as a reference while intentionally simplifying the design for this project.
+
+### 4.5.1 RF mechanisms reused as design references
+
+From `core/models/random_forest/` we reuse two proven ideas:
+
+1. **`node_resource` bit-layout manager**
+   - Dynamic bit-width selection (`feature_bits`, `threshold_bits`,
+     `child_bits`) with explicit field offsets.
+   - Accessors/setters read and write packed fields by `(offset, width)`.
+2. **Breadth-first tree construction**
+   - Queue-based node expansion.
+   - Parent stores only `left_child_index`.
+   - `right_child_index = left_child_index + 1` by BFS insertion order.
+
+### 4.5.2 Simplifications vs Random Forest (required)
+
+Isolation Forest in this repository intentionally removes RF complexity:
+
+- **One node type only** (no separate internal/mixed/leaf vectors).
+- **Static model only** (`EML_STATIC_MODEL` behavior; no retraining path).
+- **No alternating load/remove of components into RAM**.
+- **No add-on predictor helper classes** (for example RF-specific predictor
+  wrappers).
+- **No global model-agnostic node enum file** (`eml_nodes.h` removed);
+  node representation is local to the isolation forest implementation.
+
+### 4.5.3 Unified 64-bit node word
+
+Unlike the MCU-oriented 32-bit packing target, this embedding phase uses a
+**single 64-bit packed node word** (`uint64_t`) to simplify implementation and
+increase headroom.
+
+`IsoNode` has one storage field:
+
+- `uint64_t packed_data`
+
+Field overlays are interpreted by `is_leaf`:
+
+- **Split view**: `[is_leaf:1][threshold_slot:T][feature_id:F][left_child:C][reserved]`
+- **Leaf view**: `[is_leaf:1][leaf_size:S][leaf_depth:D][reserved]`
+
+Bit-width rules:
+
+- `T = threshold_bits` (derived from quantization; default 2 for 2-bit bins)
+- `F = desired_bits(num_features - 1)` (40 features → 6 bits)
+- `C = desired_bits(max_nodes_per_tree - 1)`
+- `S = desired_bits(max_samples_per_leaf)`
+- `D = desired_bits(max_depth)`
+
+Constraint:
+
+$$
+bits\_per\_node = 1 + max(T + F + C, S + D) \le 64
+$$
+
+If this constraint is violated, reduce `max_depth` and/or cap
+`max_nodes_per_tree` at build configuration time.
+
+### 4.5.4 `node_resource` for Isolation Forest
+
+Add an IF-specific resource descriptor (same pattern as RF, fewer layouts):
+
+- Stores widths: `threshold_bits`, `feature_bits`, `child_bits`,
+  `leaf_size_bits`, `depth_bits`
+- Stores layouts: split-field offsets and leaf-field offsets
+- Exposes:
+  - `set_bits(...)`
+  - `bits_per_node()`
+  - `get_split_*_layout()` / `get_leaf_*_layout()`
+
+All `IsoNode` getters/setters operate through this `node_resource`, keeping
+packing policy centralized and versionable.
+
+### 4.5.5 Breadth-first tree build procedure (IF)
+
+Build logic mirrors the RF queue flow, but with IF split criteria:
+
+1. Initialize root node at index `0`.
+2. Push root work item into `queue_nodes`.
+3. Pop front item, evaluate stop conditions:
+   - depth limit
+   - sample count <= 1
+   - unsplittable quantized feature range
+4. If leaf:
+   - set `is_leaf = 1`
+   - store `leaf_size` and `leaf_depth` in leaf overlay
+5. Else split:
+   - choose random feature (IF rule)
+   - choose random threshold slot in valid quantized range
+   - partition samples
+   - allocate children contiguously:
+     - `left = nodes.size()`
+     - `right = left + 1`
+   - write parent `left_child = left`
+   - append left then right node
+   - push left/right tasks to queue
+
+Traversal rule stays branch-light:
+
+$$
+next = (q[f] \le t) ? left : left + 1
+$$
+
+### 4.5.6 Tree container and runtime shape
+
+Planned `IsoTree` structure:
+
+- `packed_vector<64, IsoNode> nodes` (single node array, BFS order)
+- `node_resource resource`
+- `uint16_t depth`
+- `bool is_loaded`
+
+No `internal_nodes`, `mixed_nodes`, `leaf_nodes`, `branch_kind`, prefix arrays,
+or runtime conversion stage.
+
+### 4.5.7 Scoring path (static inference)
+
+- Quantizer converts raw feature vector to quantized bins.
+- Each tree traversal returns leaf-derived path length contribution.
+- Forest aggregates average path length and produces anomaly score.
+- Decision uses threshold from `model_engine_config.json`.
+
+Score representation plan:
+
+- Keep node storage fully quantized/integer.
+- Optionally keep final anomaly score as float for parity reporting.
+- If needed for stricter integer runtime, add fixed-point score format
+  (`Qm.n`) as a later optimization, not required for v1.
+
 ---
 
-## 5) Build-Time Threshold Representation
+## 5) Build-Time Threshold and Node Representation
 
 Because the Isolation Forest is trained on **quantized (integer) data**,
 tree node thresholds are already in integer bin-index space — no
@@ -178,6 +312,11 @@ For a split on feature $j$:
 - Quantizer maps $x_j$ to bin index $q_j \in \{0, 1, \ldots, 2^b-1\}$.
 - Tree split: $q_j \leq t_{\text{bin}}$, where $t_{\text{bin}}$ is a small
   integer stored directly in the node.
+
+Node child addressing follows breadth-first packing:
+
+- Parent stores only `left_child_index`.
+- `right_child_index` is implicit: `left_child_index + 1`.
 
 The previous standardised-space folding formula
 ($t_{\text{raw}} = t_{\text{std}} \cdot \sigma_j + \mu_j$) was designed for a
@@ -217,6 +356,8 @@ object — the bin boundaries already encode the feature distribution implicitly
 4. Model engine build:
    - Trains Isolation Forest on `benign_train_quantized.bin` (integer features).
    - All tree thresholds are bin-index integers; no float folding needed.
+  - Builds trees breadth-first and stores nodes as single 64-bit packed words.
+  - Uses IF `node_resource` to encode/decode split and leaf overlays.
    - Bundles `pe_quantizer.bin` into the deployable engine.
 5. Runtime path:
    - extractor emits **raw** selected features (float).
@@ -260,6 +401,8 @@ This confirms the renamed artifact contract and embedding handoff are operationa
 **Planned (not yet implemented)**:
 
 - Dataset quantization step using MCU library pipeline (§ 4.4).
-- Model engine C++ implementation trained on quantized data (§ 4.4.2).
+- Isolation Forest C++ implementation with single 64-bit node layout and
+  breadth-first builder (§ 4.5).
+- IF-specific `node_resource` and serialized static model format.
 - Parity harness comparing Python float-model scores vs C++ quantized-model
   scores (§ 7.2).

@@ -9,9 +9,11 @@
 
 #include "../base/eml_base.h"
 #include "eml_samples.h"
-// #include "../../Rf_file_manager.h"
+#include <fstream>
+#include <filesystem>
+#include <string>
 
-namespace mcu {
+namespace eml {
 
 	// Mapping filter used to lazily re-quantize previously stored samples after quantizer range updates.
 	// Stored inside Rf_data; applied the next time the dataset is loaded into RAM for model reconstruction.
@@ -384,16 +386,22 @@ namespace mcu {
 				return false;
 			}
 
-			if (!RF_FS_EXISTS(file_path)) {
+			if (!std::filesystem::exists(file_path)) {
 				eml_debug(0, "❌ Quantizer binary file not found: ", file_path);
 				return false;
 			}
 
-			File file = RF_FS_OPEN(file_path, "r");
+			std::ifstream file(file_path, std::ios::binary);
 			if (!file) {
 				eml_debug(0, "❌ Failed to open Quantizer binary file: ", file_path);
 				return false;
 			}
+
+			// Helper: read exactly n bytes, return false on short read
+			auto readExact = [&](void* buf, std::streamsize n) -> bool {
+				file.read(reinterpret_cast<char*>(buf), n);
+				return file.good() && file.gcount() == n;
+			};
 
 			auto resetData = [&]() {
 				numFeatures = 0;
@@ -426,21 +434,21 @@ namespace mcu {
 
 			// Read magic number
 			char magic[4];
-			if (file.readBytes(magic, 4) != 4 || memcmp(magic, "QTZ4", 4) != 0) {
+			if (!readExact(magic, 4) || memcmp(magic, "QTZ4", 4) != 0) {
 				eml_debug(0, "❌ Invalid quantizer binary magic number");
 				file.close();
 				return false;
 			}
 
 			// Read basic parameters
-			if (file.readBytes(reinterpret_cast<char*>(&numFeatures), sizeof(uint16_t)) != sizeof(uint16_t)) {
+			if (!readExact(&numFeatures, sizeof(uint16_t))) {
 				eml_debug(0, "❌ Failed to read numFeatures");
 				file.close();
 				resetData();
 				return false;
 			}
 
-			if (file.readBytes(reinterpret_cast<char*>(&groupsPerFeature), sizeof(uint16_t)) != sizeof(uint16_t)) {
+			if (!readExact(&groupsPerFeature, sizeof(uint16_t))) {
 				eml_debug(0, "❌ Failed to read groupsPerFeature");
 				file.close();
 				resetData();
@@ -448,7 +456,7 @@ namespace mcu {
 			}
 
 			uint8_t labelCount;
-			if (file.readBytes(reinterpret_cast<char*>(&labelCount), sizeof(uint8_t)) != sizeof(uint8_t)) {
+			if (!readExact(&labelCount, sizeof(uint8_t))) {
 				eml_debug(0, "❌ Failed to read label count");
 				file.close();
 				resetData();
@@ -459,7 +467,7 @@ namespace mcu {
 
 			// Read outlier filtering flag
 			uint8_t outlierFlag;
-			if (file.readBytes(reinterpret_cast<char*>(&outlierFlag), sizeof(uint8_t)) != sizeof(uint8_t)) {
+			if (!readExact(&outlierFlag, sizeof(uint8_t))) {
 				eml_debug(0, "❌ Failed to read outlier flag");
 				file.close();
 				resetData();
@@ -475,8 +483,8 @@ namespace mcu {
 		#endif
 				for (uint16_t i = 0; i < numFeatures; ++i) {
 					float mean, stdDev;
-					if (file.readBytes(reinterpret_cast<char*>(&mean), sizeof(float)) != sizeof(float) ||
-						file.readBytes(reinterpret_cast<char*>(&stdDev), sizeof(float)) != sizeof(float)) {
+					if (!readExact(&mean, sizeof(float)) ||
+						!readExact(&stdDev, sizeof(float))) {
 						eml_debug(0, "❌ Failed to read outlier statistics");
 						file.close();
 						resetData();
@@ -523,7 +531,7 @@ namespace mcu {
 			// Read label mappings
 			for (uint8_t i = 0; i < labelCount; ++i) {
 				uint8_t labelId;
-				if (file.readBytes(reinterpret_cast<char*>(&labelId), sizeof(uint8_t)) != sizeof(uint8_t)) {
+				if (!readExact(&labelId, sizeof(uint8_t))) {
 					eml_debug(0, "❌ Failed to read label ID");
 					file.close();
 					resetData();
@@ -531,7 +539,7 @@ namespace mcu {
 				}
 
 				uint8_t labelLen;
-				if (file.readBytes(reinterpret_cast<char*>(&labelLen), sizeof(uint8_t)) != sizeof(uint8_t)) {
+				if (!readExact(&labelLen, sizeof(uint8_t))) {
 					eml_debug(0, "❌ Failed to read label length");
 					file.close();
 					resetData();
@@ -540,7 +548,7 @@ namespace mcu {
 
 				char labelBuffer[256];
 				if (labelLen > 0) {
-					if (file.readBytes(labelBuffer, labelLen) != labelLen) {
+					if (!readExact(labelBuffer, labelLen)) {
 						eml_debug(0, "❌ Failed to read label text");
 						file.close();
 						resetData();
@@ -559,7 +567,7 @@ namespace mcu {
 			// Read feature definitions
 			for (uint16_t i = 0; i < numFeatures; ++i) {
 				uint8_t typeU8;
-				if (file.readBytes(reinterpret_cast<char*>(&typeU8), sizeof(uint8_t)) != sizeof(uint8_t)) {
+				if (!readExact(&typeU8, sizeof(uint8_t))) {
 					eml_debug(0, "❌ Failed to read feature type");
 					file.close();
 					resetData();
@@ -568,8 +576,8 @@ namespace mcu {
 
 				float minValue;
 				float maxValue;
-				if (file.readBytes(reinterpret_cast<char*>(&minValue), sizeof(float)) != sizeof(float) ||
-					file.readBytes(reinterpret_cast<char*>(&maxValue), sizeof(float)) != sizeof(float)) {
+				if (!readExact(&minValue, sizeof(float)) ||
+					!readExact(&maxValue, sizeof(float))) {
 					eml_debug(0, "❌ Failed to read feature min/max");
 					file.close();
 					resetData();
@@ -577,7 +585,7 @@ namespace mcu {
 				}
 
 				int64_t baselineValueScaled;
-				if (file.readBytes(reinterpret_cast<char*>(&baselineValueScaled), sizeof(int64_t)) != sizeof(int64_t)) {
+				if (!readExact(&baselineValueScaled, sizeof(int64_t))) {
 					eml_debug(0, "❌ Failed to read baseline");
 					file.close();
 					resetData();
@@ -585,7 +593,7 @@ namespace mcu {
 				}
 
 				uint64_t scaleValue;
-				if (file.readBytes(reinterpret_cast<char*>(&scaleValue), sizeof(uint64_t)) != sizeof(uint64_t)) {
+				if (!readExact(&scaleValue, sizeof(uint64_t))) {
 					eml_debug(0, "❌ Failed to read scale");
 					file.close();
 					resetData();
@@ -611,7 +619,7 @@ namespace mcu {
 
 					case FT_DC: {
 						uint8_t count;
-						if (file.readBytes(reinterpret_cast<char*>(&count), sizeof(uint8_t)) != sizeof(uint8_t)) {
+						if (!readExact(&count, sizeof(uint8_t))) {
 							eml_debug(0, "❌ Failed to read DC count");
 							file.close();
 							resetData();
@@ -621,7 +629,7 @@ namespace mcu {
 						uint32_t offset = static_cast<uint32_t>(allDiscreteValuesF.size());
 						for (uint8_t j = 0; j < count; ++j) {
 							float val;
-							if (file.readBytes(reinterpret_cast<char*>(&val), sizeof(float)) != sizeof(float)) {
+							if (!readExact(&val, sizeof(float))) {
 								eml_debug(0, "❌ Failed to read DC value");
 								file.close();
 								resetData();
@@ -637,7 +645,7 @@ namespace mcu {
 
 					case FT_CU: {
 						uint8_t edgeCount;
-						if (file.readBytes(reinterpret_cast<char*>(&edgeCount), sizeof(uint8_t)) != sizeof(uint8_t)) {
+						if (!readExact(&edgeCount, sizeof(uint8_t))) {
 							eml_debug(0, "❌ Failed to read CU edge count");
 							file.close();
 							resetData();
@@ -647,7 +655,7 @@ namespace mcu {
 						uint32_t offset = static_cast<uint32_t>(allEdgesScaled.size());
 						for (uint8_t j = 0; j < edgeCount; ++j) {
 							uint16_t edge;
-							if (file.readBytes(reinterpret_cast<char*>(&edge), sizeof(uint16_t)) != sizeof(uint16_t)) {
+							if (!readExact(&edge, sizeof(uint16_t))) {
 								eml_debug(0, "❌ Failed to read CU edge");
 								file.close();
 								resetData();
@@ -1239,4 +1247,4 @@ namespace mcu {
 		}
 	};
 
-} // namespace mcu
+} // namespace eml

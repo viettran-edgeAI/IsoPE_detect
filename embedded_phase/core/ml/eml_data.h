@@ -3,13 +3,17 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <fstream>
+#include <filesystem>
+#include <string>
+#include <sstream>
+#include <vector>
 
 #include "../base/eml_base.h"
 #include "eml_samples.h"
 #include "eml_quantize.h"
-#include "../../Rf_file_manager.h"
 
-namespace mcu {
+namespace eml {
 
     // eml data (core dataset container)
     template<problem_type ProblemType = problem_type::CLASSIFICATION>
@@ -21,11 +25,10 @@ namespace mcu {
 
     private:
 
-    #ifndef RS_PSRAM_AVAILABLE
-        static constexpr size_t MAX_CHUNKS_SIZE = 8192; // max bytes per chunk (8kB)
-    #else
-        static constexpr size_t MAX_CHUNKS_SIZE = 32768; // max bytes per chunk (32kB)
-    #endif
+        static constexpr size_t MAX_CHUNKS_SIZE = 1048576; // max bytes per chunk (1MB for Linux)
+
+        // Maximum dataset file size (1GB)
+        static constexpr size_t MAX_DATASET_BYTES = 1073741824ULL;
 
         // Chunked packed storage - eliminates both heap overhead per sample and large contiguous allocations
         vector<packed_vector<8>> sampleChunks;  // Multiple chunks of packed features (up to 8 bits per value)
@@ -339,20 +342,23 @@ namespace mcu {
                 isLoaded = false;
             }
 
-            File file = RF_FS_OPEN(csvfile_path, RF_FILE_READ);
-            if (!file) {
+            std::ifstream file(csvfile_path, std::ios::in);
+            if (!file.is_open()) {
                 eml_debug(0, "❌ Failed to open CSV file for reading: ", csvfile_path);
                 return false;
             }
 
             if (numFeatures == 0) {
                 // Read header line to determine number of features
-                String line = file.readStringUntil('\n');
-                line.trim();
-                if (line.length() == 0) {
+                std::string line;
+                if (!std::getline(file, line) || line.empty()) {
                     eml_debug(0, "❌ CSV file is empty or missing header: ", csvfile_path);
                     file.close();
                     return false;
+                }
+                // Trim trailing whitespace
+                while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ' || line.back() == '\t')) {
+                    line.pop_back();
                 }
                 int commaCount = 0;
                 for (char c : line) {
@@ -383,12 +389,15 @@ namespace mcu {
             // Pre-allocate for efficiency
             allLabels.reserve(1000); // Initial capacity
 
-            while (file.available()) {
-                String line = file.readStringUntil('\n');
-                line.trim();
+            std::string line;
+            while (std::getline(file, line)) {
+                // Trim trailing whitespace
+                while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ' || line.back() == '\t')) {
+                    line.pop_back();
+                }
                 linesProcessed++;
 
-                if (line.length() == 0) {
+                if (line.empty()) {
                     emptyLines++;
                     continue;
                 }
@@ -398,13 +407,10 @@ namespace mcu {
                 s.features.reserve(numFeatures);
 
                 uint16_t fieldIdx = 0;
-                int start = 0;
-                while (start < line.length()) {
-                    int comma = line.indexOf(',', start);
-                    if (comma < 0) comma = line.length();
-
-                    String tok = line.substring(start, comma);
-                    label_type v = static_cast<label_type>(tok.toInt());
+                std::istringstream iss(line);
+                std::string tok;
+                while (std::getline(iss, tok, ',')) {
+                    label_type v = static_cast<label_type>(std::stoi(tok));
 
                     if (fieldIdx == 0) {
                         s.label = v;
@@ -413,7 +419,6 @@ namespace mcu {
                     }
 
                     fieldIdx++;
-                    start = comma + 1;
                 }
 
                 // Validate the sample
@@ -434,7 +439,6 @@ namespace mcu {
                 // Store in chunked packed format
                 storeSample(s, validSamples);
                 validSamples++;
-
             }
             size_ = validSamples;
 
@@ -452,8 +456,8 @@ namespace mcu {
             }
             file.close();
             isLoaded = true;
-            RF_FS_REMOVE(csvfile_path);
-            eml_debug(1, "✅ CSV data loaded and file removed: ", csvfile_path);
+            // NOTE: CSV file is NOT deleted after loading (Linux behavior - user manages files)
+            eml_debug(1, "✅ CSV data loaded: ", csvfile_path);
             return true;
         }
 
@@ -560,11 +564,11 @@ namespace mcu {
             if (!reuse) {
                 eml_debug(1, "💾 Saving data to file system and clearing from RAM...");
                 // Remove any existing file
-                if (RF_FS_EXISTS(file_path)) {
-                    RF_FS_REMOVE(file_path);
+                if (std::filesystem::exists(file_path)) {
+                    std::filesystem::remove(file_path);
                 }
-                File file = RF_FS_OPEN(file_path, RF_FILE_WRITE);
-                if (!file) {
+                std::ofstream file(file_path, std::ios::binary);
+                if (!file.is_open()) {
                     eml_debug(0, "❌ Failed to open binary file for writing: ", file_path);
                     return false;
                 }
@@ -574,8 +578,8 @@ namespace mcu {
                 uint32_t numSamples = static_cast<uint32_t>(size_);
                 uint16_t numFeatures = static_cast<uint16_t>(bitsPerSample / quantization_coefficient);
 
-                file.write((uint8_t*)&numSamples, sizeof(numSamples));
-                file.write((uint8_t*)&numFeatures, sizeof(numFeatures));
+                file.write(reinterpret_cast<const char*>(&numSamples), sizeof(numSamples));
+                file.write(reinterpret_cast<const char*>(&numFeatures), sizeof(numFeatures));
 
                 // Calculate packed bytes needed for features per sample
                 uint32_t totalBits = static_cast<uint32_t>(numFeatures) * quantization_coefficient;
@@ -584,9 +588,9 @@ namespace mcu {
                 // Record size = label + packed features
                 uint16_t recordSize = sizeof(label_type) + packedFeatureBytes;
 
-                // Use a heap-allocated write buffer to batch multiple samples (512 bytes to save heap)
-                static constexpr size_t WRITE_BUFFER_SIZE = 512;
-                uint8_t* writeBuffer = (uint8_t*)malloc(WRITE_BUFFER_SIZE);
+                // Use a heap-allocated write buffer to batch multiple samples
+                static constexpr size_t WRITE_BUFFER_SIZE = 4096;
+                uint8_t* writeBuffer = new (std::nothrow) uint8_t[WRITE_BUFFER_SIZE];
                 if (!writeBuffer) {
                     eml_debug(0, "❌ Failed to allocate write buffer");
                     file.close();
@@ -630,11 +634,11 @@ namespace mcu {
 
                     // Flush buffer when full or last sample
                     if (bufferPos + recordSize > WRITE_BUFFER_SIZE || i == size_ - 1) {
-                        file.write(writeBuffer, bufferPos);
+                        file.write(reinterpret_cast<const char*>(writeBuffer), bufferPos);
                         bufferPos = 0;
                     }
                 }
-                free(writeBuffer);
+                delete[] writeBuffer;
                 file.close();
 
                 // If we wrote the remapped data back to storage, any pending update filter is now obsolete.
@@ -656,11 +660,11 @@ namespace mcu {
             if (isLoaded || !isProperlyInitialized()) return false;
             eml_debug(1, "📂 Loading data from: ", file_path);
 
-            File file = RF_FS_OPEN(file_path, RF_FILE_READ);
-            if (!file) {
+            std::ifstream file(file_path, std::ios::binary);
+            if (!file.is_open()) {
                 eml_debug(0, "❌ Failed to open data file: ", file_path);
-                if (RF_FS_EXISTS(file_path)) {
-                    RF_FS_REMOVE(file_path);
+                if (std::filesystem::exists(file_path)) {
+                    std::filesystem::remove(file_path);
                 }
                 return false;
             }
@@ -669,8 +673,8 @@ namespace mcu {
             uint32_t numSamples;
             uint16_t numFeatures;
 
-            if (file.read((uint8_t*)&numSamples, sizeof(numSamples)) != sizeof(numSamples) ||
-                file.read((uint8_t*)&numFeatures, sizeof(numFeatures)) != sizeof(numFeatures)) {
+            if (!file.read(reinterpret_cast<char*>(&numSamples), sizeof(numSamples)) ||
+                !file.read(reinterpret_cast<char*>(&numFeatures), sizeof(numFeatures))) {
                 eml_debug(0, "❌ Failed to read data header: ", file_path);
                 file.close();
                 return false;
@@ -705,8 +709,8 @@ namespace mcu {
             }
 
             // Batch read to reduce file I/O calls
-            const size_t MAX_BATCH_BYTES = 2048; // conservative for mcu
-            uint8_t* ioBuf = mem_alloc::allocate<uint8_t>(MAX_BATCH_BYTES);
+            const size_t MAX_BATCH_BYTES = 65536; // 64KB for Linux
+            uint8_t* ioBuf = new (std::nothrow) uint8_t[MAX_BATCH_BYTES];
             if (!ioBuf) {
                 eml_debug(1, "❌ Failed to allocate IO buffer");
                 file.close();
@@ -723,16 +727,13 @@ namespace mcu {
                     batchSamples = (numSamples - processed) < maxSamplesByBuf ? (numSamples - processed) : maxSamplesByBuf;
 
                     size_t bytesToRead = batchSamples * recordSize;
-                    size_t bytesRead = 0;
-                    while (bytesRead < bytesToRead) {
-                        int r = file.read(ioBuf + bytesRead, bytesToRead - bytesRead);
-                        if (r <= 0) {
-                            eml_debug(0, "❌ Read batch failed: ", file_path);
-                            if (ioBuf) mem_alloc::deallocate(ioBuf);
-                            file.close();
-                            return false;
-                        }
-                        bytesRead += r;
+                    file.read(reinterpret_cast<char*>(ioBuf), bytesToRead);
+                    size_t bytesRead = static_cast<size_t>(file.gcount());
+                    if (bytesRead < bytesToRead) {
+                        eml_debug(0, "❌ Read batch failed: ", file_path);
+                        delete[] ioBuf;
+                        file.close();
+                        return false;
                     }
 
                     // Process buffer
@@ -787,17 +788,17 @@ namespace mcu {
                     // Fallback: per-sample small buffer
                     batchSamples = 1;
                     label_type lbl;
-                    if (file.read(reinterpret_cast<uint8_t*>(&lbl), sizeof(lbl)) != sizeof(lbl)) {
+                    if (!file.read(reinterpret_cast<char*>(&lbl), sizeof(lbl))) {
                         eml_debug_2(0, "❌ Read label failed at sample: ", processed, ": ", file_path);
-                        if (ioBuf) mem_alloc::deallocate(ioBuf);
+                        delete[] ioBuf;
                         file.close();
                         return false;
                     }
                     allLabels.push_back(static_cast<uint32_t>(lbl));
-                    uint8_t packed[packedFeatureBytes] = {0};
-                    if (file.read(packed, packedFeatureBytes) != packedFeatureBytes) {
+                    std::vector<uint8_t> packed(packedFeatureBytes, 0);
+                    if (!file.read(reinterpret_cast<char*>(packed.data()), packedFeatureBytes)) {
                         eml_debug_2(0, "❌ Read features failed at sample: ", processed, ": ", file_path);
-                        if (ioBuf) mem_alloc::deallocate(ioBuf);
+                        delete[] ioBuf;
                         file.close();
                         return false;
                     }
@@ -836,7 +837,7 @@ namespace mcu {
                 processed += batchSamples;
             }
 
-            if (ioBuf) mem_alloc::deallocate(ioBuf);
+            delete[] ioBuf;
 
             allLabels.shrink_to_fit();
             for (auto& chunk : sampleChunks) {
@@ -856,7 +857,7 @@ namespace mcu {
             file.close();
             if (!re_use) {
                 eml_debug(1, "♻️ Single-load mode: removing file after loading: ", file_path);
-                RF_FS_REMOVE(file_path); // Remove file after loading in single mode
+                std::filesystem::remove(file_path); // Remove file after loading in single mode
             }
             eml_debug_2(1, "✅ Data loaded(", sampleChunks.size(), "chunks): ", file_path);
             return true;
@@ -871,13 +872,13 @@ namespace mcu {
          */
         bool loadData(eml_data& source, const sampleID_set& sample_IDs, bool save_ram = true) {
             // Only the source must exist on file system; destination can be an in-memory buffer
-            if (!RF_FS_EXISTS(source.file_path)) {
+            if (!std::filesystem::exists(source.file_path)) {
                 eml_debug(0, "❌ Source file does not exist: ", source.file_path);
                 return false;
             }
 
-            File file = RF_FS_OPEN(source.file_path, RF_FILE_READ);
-            if (!file) {
+            std::ifstream file(source.file_path, std::ios::binary);
+            if (!file.is_open()) {
                 eml_debug(0, "❌ Failed to open source file: ", source.file_path);
                 return false;
             }
@@ -893,8 +894,8 @@ namespace mcu {
             uint32_t numSamples;
             uint16_t numFeatures;
 
-            if (file.read((uint8_t*)&numSamples, sizeof(numSamples)) != sizeof(numSamples) ||
-                file.read((uint8_t*)&numFeatures, sizeof(numFeatures)) != sizeof(numFeatures)) {
+            if (!file.read(reinterpret_cast<char*>(&numSamples), sizeof(numSamples)) ||
+                !file.read(reinterpret_cast<char*>(&numFeatures), sizeof(numFeatures))) {
                 eml_debug(0, "❌ Failed to read source header: ", source.file_path);
                 file.close();
                 return false;
@@ -931,7 +932,8 @@ namespace mcu {
                 size_t sampleFilePos = headerSize + (sampleIdx * sampleDataSize);
 
                 // Seek to the sample position
-                if (!file.seek(sampleFilePos)) {
+                file.seekg(static_cast<std::streamoff>(sampleFilePos));
+                if (!file.good()) {
                     eml_debug_2(2, "⚠️ Failed to seek to sample ", sampleIdx, "position ", sampleFilePos);
                     continue;
                 }
@@ -939,7 +941,7 @@ namespace mcu {
                 sample_type s;
 
                 // Read label
-                if (file.read(reinterpret_cast<uint8_t*>(&s.label), sizeof(s.label)) != sizeof(s.label)) {
+                if (!file.read(reinterpret_cast<char*>(&s.label), sizeof(s.label))) {
                     eml_debug(2, "⚠️ Failed to read label for sample ", sampleIdx);
                     continue;
                 }
@@ -948,8 +950,8 @@ namespace mcu {
                 s.features.clear();
                 s.features.reserve(numFeatures);
 
-                uint8_t packedBuffer[packedFeatureBytes];
-                if (file.read(packedBuffer, packedFeatureBytes) != packedFeatureBytes) {
+                std::vector<uint8_t> packedBuffer(packedFeatureBytes, 0);
+                if (!file.read(reinterpret_cast<char*>(packedBuffer.data()), packedFeatureBytes)) {
                     eml_debug(2, "⚠️ Failed to read features for sample ", sampleIdx);
                     continue;
                 }
@@ -1039,19 +1041,24 @@ namespace mcu {
         eml_data& operator=(const eml_data& other) {
             purgeData(); // Clear existing data safely
             if (this != &other) {
-                if (RF_FS_EXISTS(other.file_path)) {
-                    File testFile = RF_FS_OPEN(other.file_path, RF_FILE_READ);
-                    if (testFile) {
+                if (std::filesystem::exists(other.file_path)) {
+                    std::ifstream testFile(other.file_path, std::ios::binary);
+                    if (testFile.is_open()) {
                         uint32_t testNumSamples;
                         uint16_t testNumFeatures;
-                        bool headerValid = (testFile.read((uint8_t*)&testNumSamples, sizeof(testNumSamples)) == sizeof(testNumSamples) &&
-                                           testFile.read((uint8_t*)&testNumFeatures, sizeof(testNumFeatures)) == sizeof(testNumFeatures) &&
-                                           testNumSamples > 0 && testNumFeatures > 0);
+                        bool headerValid = false;
+                        if (testFile.read(reinterpret_cast<char*>(&testNumSamples), sizeof(testNumSamples)) &&
+                            testFile.read(reinterpret_cast<char*>(&testNumFeatures), sizeof(testNumFeatures))) {
+                            headerValid = (testNumSamples > 0 && testNumFeatures > 0);
+                        }
                         testFile.close();
 
                         if (headerValid) {
-                            if (!cloneFile(other.file_path, file_path)) {
-                                eml_debug(0, "❌ Failed to clone source file: ", other.file_path);
+                            std::error_code ec;
+                            std::filesystem::copy_file(other.file_path, file_path,
+                                std::filesystem::copy_options::overwrite_existing, ec);
+                            if (ec) {
+                                eml_debug(0, "❌ Failed to copy source file: ", other.file_path);
                             }
                         } else {
                             eml_debug(0, "❌ Source file has invalid header: ", other.file_path);
@@ -1086,8 +1093,8 @@ namespace mcu {
             samplesEachChunk = 0;
 
             // Then remove the file system file if one was specified
-            if (RF_FS_EXISTS(file_path)) {
-                RF_FS_REMOVE(file_path);
+            if (std::filesystem::exists(file_path)) {
+                std::filesystem::remove(file_path);
                 eml_debug(1, "🗑️ Deleted file: ", file_path);
             }
         }
@@ -1107,7 +1114,7 @@ namespace mcu {
                 eml_debug(0, "❌ eml_data not properly initialized. Cannot add new data.");
                 return deletedLabels;
             }
-            if (!RF_FS_EXISTS(file_path)) {
+            if (!std::filesystem::exists(file_path)) {
                 eml_debug(0, "⚠️ File does not exist for adding new data: ", file_path);
                 return deletedLabels;
             }
@@ -1117,22 +1124,23 @@ namespace mcu {
             }
 
             // Read current file header to get existing info
-            File file = RF_FS_OPEN(file_path, RF_FILE_READ);
-            if (!file) {
-                eml_debug(0, "❌ Failed to open file for adding new data: ", file_path);
-                return deletedLabels;
-            }
-
             uint32_t currentNumSamples;
             uint16_t numFeatures;
+            {
+                std::ifstream file(file_path, std::ios::binary);
+                if (!file.is_open()) {
+                    eml_debug(0, "❌ Failed to open file for adding new data: ", file_path);
+                    return deletedLabels;
+                }
 
-            if (file.read((uint8_t*)&currentNumSamples, sizeof(currentNumSamples)) != sizeof(currentNumSamples) ||
-                file.read((uint8_t*)&numFeatures, sizeof(numFeatures)) != sizeof(numFeatures)) {
-                eml_debug(0, "❌ Failed to read file header: ", file_path);
+                if (!file.read(reinterpret_cast<char*>(&currentNumSamples), sizeof(currentNumSamples)) ||
+                    !file.read(reinterpret_cast<char*>(&numFeatures), sizeof(numFeatures))) {
+                    eml_debug(0, "❌ Failed to read file header: ", file_path);
+                    file.close();
+                    return deletedLabels;
+                }
                 file.close();
-                return deletedLabels;
             }
-            file.close();
 
             // Validate feature count compatibility
             if (!samples.empty() && samples[0].features.size() != numFeatures) {
@@ -1160,45 +1168,47 @@ namespace mcu {
                 newNumSamples = max_samples;
 
                 // Read labels of samples that will be removed (oldest samples at the beginning)
-                File readFile = RF_FS_OPEN(file_path, RF_FILE_READ);
-                if (readFile) {
-                    readFile.seek(headerSize); // Skip to data section
-                    for (sample_idx_type i = 0; i < samples_to_remove && i < currentNumSamples; i++) {
-                        label_type label;
-                        if (readFile.read(reinterpret_cast<uint8_t*>(&label), sizeof(label)) == sizeof(label)) {
-                            deletedLabels.push_back(label);
+                {
+                    std::ifstream readFile(file_path, std::ios::binary);
+                    if (readFile.is_open()) {
+                        readFile.seekg(static_cast<std::streamoff>(headerSize)); // Skip to data section
+                        for (sample_idx_type i = 0; i < samples_to_remove && i < currentNumSamples; i++) {
+                            label_type label;
+                            if (readFile.read(reinterpret_cast<char*>(&label), sizeof(label))) {
+                                deletedLabels.push_back(label);
+                            }
+                            // Skip the packed features to get to next sample
+                            readFile.seekg(static_cast<std::streamoff>(packedFeatureBytes), std::ios::cur);
                         }
-                        // Skip the packed features to get to next sample
-                        readFile.seek(readFile.position() + packedFeatureBytes);
+                        readFile.close();
                     }
-                    readFile.close();
                 }
 
                 // Shift remaining samples to the beginning (remove oldest)
                 // This is done by reading samples after the removed ones and writing them at the beginning
                 if (samples_to_remove < currentNumSamples) {
                     sample_idx_type samples_to_keep = currentNumSamples - samples_to_remove;
-                    b_vector<uint8_t> temp_buffer;
+                    vector<uint8_t> temp_buffer;
                     temp_buffer.reserve(sampleDataSize);
 
-                    File shiftFile = RF_FS_OPEN(file_path, "r+");
-                    if (shiftFile) {
+                    std::fstream shiftFile(file_path, std::ios::in | std::ios::out | std::ios::binary);
+                    if (shiftFile.is_open()) {
                         // Read and shift each sample
                         for (sample_idx_type i = 0; i < samples_to_keep; i++) {
                             size_t read_pos = headerSize + (samples_to_remove + i) * sampleDataSize;
                             size_t write_pos = headerSize + i * sampleDataSize;
 
-                            shiftFile.seek(read_pos);
+                            shiftFile.seekg(static_cast<std::streamoff>(read_pos));
                             temp_buffer.clear();
                             for (size_t b = 0; b < sampleDataSize; b++) {
-                                int byte_val = shiftFile.read();
-                                if (byte_val < 0) break;
+                                int byte_val = shiftFile.get();
+                                if (byte_val == std::char_traits<char>::eof()) break;
                                 temp_buffer.push_back(static_cast<uint8_t>(byte_val));
                             }
 
                             if (temp_buffer.size() == sampleDataSize) {
-                                shiftFile.seek(write_pos);
-                                shiftFile.write(temp_buffer.data(), temp_buffer.size());
+                                shiftFile.seekp(static_cast<std::streamoff>(write_pos));
+                                shiftFile.write(reinterpret_cast<const char*>(temp_buffer.data()), temp_buffer.size());
                             }
                         }
                         shiftFile.close();
@@ -1210,9 +1220,8 @@ namespace mcu {
             }
 
             size_t newFileSize = headerSize + (static_cast<size_t>(newNumSamples) * sampleDataSize);
-            const size_t datasetLimit = rf_storage_max_dataset_bytes();
-            if (newFileSize > datasetLimit) {
-                size_t maxSamplesBySize = (datasetLimit - headerSize) / sampleDataSize;
+            if (newFileSize > MAX_DATASET_BYTES) {
+                size_t maxSamplesBySize = (MAX_DATASET_BYTES - headerSize) / sampleDataSize;
                 eml_debug(2, "⚠️ Limiting samples by file size to ", maxSamplesBySize);
                 newNumSamples = static_cast<uint32_t>(maxSamplesBySize);
             }
@@ -1226,19 +1235,20 @@ namespace mcu {
             eml_debug_2(2, "📊 Dataset info: current=", currentNumSamples, ", new_total=", newNumSamples);
 
             // Open file for writing (r+ mode to update existing file)
-            file = RF_FS_OPEN(file_path, "r+");
-            if (!file) {
+            std::fstream file(file_path, std::ios::in | std::ios::out | std::ios::binary);
+            if (!file.is_open()) {
                 eml_debug(0, "❌ Failed to open file for writing: ", file_path);
                 return deletedLabels;
             }
 
             // Update header with new sample count
-            file.seek(0);
-            file.write((uint8_t*)&newNumSamples, sizeof(newNumSamples));
-            file.write((uint8_t*)&numFeatures, sizeof(numFeatures));
+            file.seekp(0);
+            file.write(reinterpret_cast<const char*>(&newNumSamples), sizeof(newNumSamples));
+            file.write(reinterpret_cast<const char*>(&numFeatures), sizeof(numFeatures));
 
             // Seek to write position
-            if (!file.seek(writePosition)) {
+            file.seekp(static_cast<std::streamoff>(writePosition));
+            if (!file.good()) {
                 eml_debug_2(0, "❌ Failed seek to write position ", writePosition, ": ", file_path);
                 file.close();
                 return deletedLabels;
@@ -1256,17 +1266,13 @@ namespace mcu {
                 }
 
                 // Write label
-                if (file.write(reinterpret_cast<const uint8_t*>(&sample.label), sizeof(sample.label)) != sizeof(sample.label)) {
+                if (!file.write(reinterpret_cast<const char*>(&sample.label), sizeof(sample.label))) {
                     eml_debug_2(0, "❌ Write label failed at sample ", i, ": ", file_path);
                     break;
                 }
 
                 // Pack and write features
-                uint8_t packedBuffer[packedFeatureBytes];
-                // Initialize buffer to 0
-                for (uint16_t j = 0; j < packedFeatureBytes; j++) {
-                    packedBuffer[j] = 0;
-                }
+                std::vector<uint8_t> packedBuffer(packedFeatureBytes, 0);
 
                 // Pack features according to quantization_coefficient
                 for (size_t j = 0; j < sample.features.size(); ++j) {
@@ -1286,7 +1292,7 @@ namespace mcu {
                     }
                 }
 
-                if (file.write(packedBuffer, packedFeatureBytes) != packedFeatureBytes) {
+                if (!file.write(reinterpret_cast<const char*>(packedBuffer.data()), packedFeatureBytes)) {
                     eml_debug_2(0, "❌ Write features failed at sample ", i, ": ", file_path);
                     break;
                 }
@@ -1318,4 +1324,4 @@ namespace mcu {
         }
     };
 
-} // namespace mcu
+} // namespace eml

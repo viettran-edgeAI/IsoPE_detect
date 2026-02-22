@@ -17,7 +17,7 @@
 #include <cctype>
 #include <set>
 
-using namespace mcu;
+using namespace eml;
 
 static uint8_t quantization_coefficient = 2; // Coefficient for quantization (bits per feature value)
 

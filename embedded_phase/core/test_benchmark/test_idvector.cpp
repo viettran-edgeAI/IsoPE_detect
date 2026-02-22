@@ -8,7 +8,7 @@
 #include <utility>
 #include "../containers/STL_MCU.h"
 
-using namespace mcu;
+using namespace eml;
 using namespace std::chrono;
 
 class TestSuite {

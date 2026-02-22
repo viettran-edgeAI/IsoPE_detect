@@ -2,11 +2,12 @@
 
 #include "../containers/STL_MCU.h"
 #include <type_traits>
+#include "eml_debug.h"
 
 // #define EML_STATIC_MODEL   // Uncomment to disable on-device training, saving disk & memory, speed up inference 
 // #define DEV_STAGE  // Uncomment for development stage (extra debug info, testing features and test_data)
 
-namespace mcu {
+namespace eml {
 
     using sample_idx_type = uint32_t;
     using node_idx_type   = uint32_t;
@@ -103,4 +104,4 @@ namespace mcu {
 
 
     
-}   // namespace mcu
+}   // namespace eml

@@ -42,7 +42,7 @@
 #include <cmath>
 #include <limits>
 
-namespace mcu {
+namespace eml {
 
     using xg_label_type  = uint16_t;
     using xg_sample_type = uint32_t;
@@ -1913,4 +1913,4 @@ namespace mcu {
         }
     };
 
-} // namespace mcu
+} // namespace eml
