@@ -6,7 +6,8 @@
 #include <limits>
 #include <sstream>
 #include <string>
-#include "../core/STL_MCU.h"
+#include "../core/containers/STL_MCU.h"
+#include "../core/base/eml_base.h"
 
 #include <utility>
 #include <cstring>
@@ -16,40 +17,7 @@
 #include <cctype>
 #include <set>
 
-using u8 = uint8_t;
-
-// Problem type enumeration for ML tasks
-enum class ProblemType : uint8_t {
-    CLASSIFICATION = 0,
-    REGRESSION = 1,
-    ISOLATION = 2,
-    UNKNOWN = 255
-};
-
-inline std::string problemTypeToString(ProblemType type) {
-    switch (type) {
-        case ProblemType::CLASSIFICATION: return "classification";
-        case ProblemType::REGRESSION: return "regression";
-        case ProblemType::ISOLATION: return "isolation";
-        default: return "unknown";
-    }
-}
-
-inline ProblemType problemTypeFromString(const std::string& value) {
-    size_t start = value.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos) {
-        return ProblemType::UNKNOWN;
-    }
-    size_t end = value.find_last_not_of(" \t\r\n");
-    std::string lowered = value.substr(start, end - start + 1);
-    for (char& c : lowered) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    if (lowered == "classification") return ProblemType::CLASSIFICATION;
-    if (lowered == "regression") return ProblemType::REGRESSION;
-    if (lowered == "isolation") return ProblemType::ISOLATION;
-    return ProblemType::UNKNOWN;
-}
+using namespace mcu;
 
 static uint8_t quantization_coefficient = 2; // Coefficient for quantization (bits per feature value)
 
@@ -90,7 +58,7 @@ struct QuantizationConfig {
     std::string headerMode = "auto"; // auto|yes|no
     int quantBits = quantization_coefficient;
     bool removeOutliers = true;
-    ProblemType problemType = ProblemType::ISOLATION;
+    problem_type problemType = problem_type::ISOLATION;
 };
 
 static std::string trimWhitespace(const std::string& in) {
@@ -199,7 +167,7 @@ static QuantizationConfig loadQuantizationConfig(const std::string& configPath) 
     if (cfg.quantBits < 1 || cfg.quantBits > 8) {
         cfg.quantBits = quantization_coefficient;
     }
-    if (cfg.problemType == ProblemType::UNKNOWN) {
+    if (cfg.problemType == problem_type::UNKNOWN) {
         throw std::runtime_error("Config has invalid problem_type. Supported values: classification, regression, isolation");
     }
 
@@ -735,7 +703,7 @@ bool isLikelyNumeric(const std::string& str) {
 }
 
 // Function to automatically detect if CSV has header by analyzing first two rows
-bool detectCSVHeader(const char* inputFilePath, ProblemType problemType) {
+bool detectCSVHeader(const char* inputFilePath, problem_type problemType) {
     std::ifstream fin(inputFilePath);
     if (!fin) {
         throw std::runtime_error(std::string("Cannot open input file for header detection: ") + inputFilePath);
@@ -760,7 +728,7 @@ bool detectCSVHeader(const char* inputFilePath, ProblemType problemType) {
         return false;
     }
 
-    const int featureStartColumn = (problemType == ProblemType::ISOLATION) ? 0 : 1;
+    const int featureStartColumn = (problemType == problem_type::ISOLATION) ? 0 : 1;
     if (static_cast<int>(firstCols.size()) <= featureStartColumn) {
         return false;
     }
@@ -808,7 +776,7 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
                                 const mcu::vector<mcu::pair<std::string, uint8_t>>& labelMapping,
                                 bool skipHeader = false,
                                 bool enableOutlierClipping = true,
-                                ProblemType problemType = ProblemType::ISOLATION){
+                                problem_type problemType = problem_type::ISOLATION){
     if (groupsPerFeature < 1) {
         throw std::runtime_error("groupsPerFeature must be >= 1");
     }
@@ -823,15 +791,15 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
     std::getline(fin, firstLine);
     auto cols = split(firstLine);
     int n_cols = (int)cols.size();
-    if ((problemType == ProblemType::ISOLATION && n_cols < 1) ||
-        (problemType != ProblemType::ISOLATION && n_cols < 2)) {
+    if ((problemType == problem_type::ISOLATION && n_cols < 1) ||
+        (problemType != problem_type::ISOLATION && n_cols < 2)) {
         fin.close();
-        throw std::runtime_error(problemType == ProblemType::ISOLATION
+        throw std::runtime_error(problemType == problem_type::ISOLATION
             ? "Input CSV needs at least one feature column"
             : "Input CSV needs at least one label + one feature");
     }
 
-    const int featureStartColumn = (problemType == ProblemType::ISOLATION) ? 0 : 1;
+    const int featureStartColumn = (problemType == problem_type::ISOLATION) ? 0 : 1;
     int n_feats = n_cols - featureStartColumn;
     
     // First pass: collect data and calculate statistics for Z-score
@@ -846,7 +814,7 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
     if (processFirstLine) {
         // Process the first line as data
         if ((int)cols.size() == n_cols) {
-            if (problemType != ProblemType::ISOLATION) {
+            if (problemType != problem_type::ISOLATION) {
                 labels.push_back(cols[0]);
             }
             mcu::vector<float> feats;
@@ -880,7 +848,7 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
             continue; 
         }
         
-        if (problemType != ProblemType::ISOLATION) {
+        if (problemType != problem_type::ISOLATION) {
             labels.push_back(cells[0]);
         }
         mcu::vector<float> feats;
@@ -1017,7 +985,7 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
     }
     
     // Encode into uint8_t categories
-    mcu::vector<mcu::vector<u8>> encoded(n_samples, mcu::vector<u8>(n_feats));
+    mcu::vector<mcu::vector<uint8_t>> encoded(n_samples, mcu::vector<uint8_t>(n_feats));
     for (int i = 0; i < n_samples; ++i) {
         encoded[i] = ctg.quantizeSample(data[i]);
     }
@@ -1030,7 +998,7 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
     
     // Write quantized data (no headers needed for quantized output)
     for (int i = 0; i < n_samples; ++i) {
-        if (problemType == ProblemType::ISOLATION) {
+        if (problemType == problem_type::ISOLATION) {
             for (int j = 0; j < n_feats; ++j) {
                 if (j > 0) {
                     fout << ",";
@@ -1056,14 +1024,14 @@ struct DatasetInfo {
     int numFeatures;
     int numSamples;
     mcu::vector<mcu::pair<std::string, uint8_t>> labelMapping; // original -> normalized
-    ProblemType problemType;
+    problem_type problemType;
     
     DatasetInfo() : numFeatures(0), numSamples(0), 
-                   problemType(ProblemType::ISOLATION) {}
+                   problemType(problem_type::ISOLATION) {}
 };
 
 // Scan dataset to get info and create label mapping
-DatasetInfo scanDataset(const char* inputFilePath, ProblemType configuredProblemType) {
+DatasetInfo scanDataset(const char* inputFilePath, problem_type configuredProblemType) {
     DatasetInfo info;
     info.problemType = configuredProblemType;
     std::ifstream fin(inputFilePath);
@@ -1085,15 +1053,15 @@ DatasetInfo scanDataset(const char* inputFilePath, ProblemType configuredProblem
     std::getline(fin, firstLine);
     auto cols = split(firstLine);
     int n_cols = (int)cols.size();
-    if ((configuredProblemType == ProblemType::ISOLATION && n_cols < 1) ||
-        (configuredProblemType != ProblemType::ISOLATION && n_cols < 2)) {
+    if ((configuredProblemType == problem_type::ISOLATION && n_cols < 1) ||
+        (configuredProblemType != problem_type::ISOLATION && n_cols < 2)) {
         fin.close();
-        throw std::runtime_error(configuredProblemType == ProblemType::ISOLATION
+        throw std::runtime_error(configuredProblemType == problem_type::ISOLATION
             ? "Input CSV needs at least one feature column"
             : "Input CSV needs at least one label + one feature");
     }
 
-    const int featureStartColumn = (configuredProblemType == ProblemType::ISOLATION) ? 0 : 1;
+    const int featureStartColumn = (configuredProblemType == problem_type::ISOLATION) ? 0 : 1;
     info.numFeatures = n_cols - featureStartColumn;
     
     // Collect unique labels
@@ -1106,7 +1074,7 @@ DatasetInfo scanDataset(const char* inputFilePath, ProblemType configuredProblem
         auto cells = split(firstLine);
         if ((int)cells.size() == n_cols) {
             lineCount++;
-            if (configuredProblemType != ProblemType::ISOLATION) {
+            if (configuredProblemType != problem_type::ISOLATION) {
                 std::string label = cells[0].c_str();
                 uniqueLabels.push_back(label);
             }
@@ -1119,7 +1087,7 @@ DatasetInfo scanDataset(const char* inputFilePath, ProblemType configuredProblem
         if ((int)cells.size() != n_cols) continue; // Skip malformed rows
         
         lineCount++;
-        if (configuredProblemType != ProblemType::ISOLATION) {
+        if (configuredProblemType != problem_type::ISOLATION) {
             std::string label = cells[0].c_str();
 
             bool found = false;
@@ -1138,7 +1106,7 @@ DatasetInfo scanDataset(const char* inputFilePath, ProblemType configuredProblem
     
     fin.close();
     info.numSamples = lineCount;
-    if (configuredProblemType != ProblemType::ISOLATION) {
+    if (configuredProblemType != problem_type::ISOLATION) {
         uniqueLabels.sort();
         info.labelMapping.reserve(uniqueLabels.size());
         for (size_t i = 0; i < uniqueLabels.size(); ++i) {
@@ -1170,7 +1138,7 @@ void generateDatasetParams(std::string path, const DatasetInfo& datasetInfo, con
     mcu::vector<uint32_t> samplesPerLabel;
     uint32_t actualTotalSamples = 0;
 
-    if (datasetInfo.problemType == ProblemType::ISOLATION) {
+    if (datasetInfo.problemType == problem_type::ISOLATION) {
         samplesPerLabel = mcu::vector<uint32_t>(1, 0);
         std::ifstream csvFile(path);
         if (csvFile) {
@@ -1249,7 +1217,7 @@ struct ESP32_Sample {
 };
 
 // Load CSV data for binary conversion
-mcu::vector<ESP32_Sample> loadCSVForBinary(const std::string& csvFilename, uint16_t expectedFeatures, ProblemType problemType) {
+mcu::vector<ESP32_Sample> loadCSVForBinary(const std::string& csvFilename, uint16_t expectedFeatures, problem_type problemType) {
     std::ifstream file(csvFilename);
     if (!file) {
         throw std::runtime_error("Cannot open CSV file: " + csvFilename);
@@ -1278,7 +1246,7 @@ mcu::vector<ESP32_Sample> loadCSVForBinary(const std::string& csvFilename, uint1
         try {
             bool parseError = false;
 
-            if (problemType == ProblemType::ISOLATION) {
+            if (problemType == problem_type::ISOLATION) {
                 if (fields.size() != static_cast<size_t>(expectedFeatures)) {
                     errorCount++;
                     continue;
@@ -1417,7 +1385,7 @@ void saveBinaryDataset(const mcu::vector<ESP32_Sample>& samples,
 }
 
 // Integrated CSV to binary conversion function
-void convertCSVToBinary(const std::string& inputCSV, const std::string& outputBinary, uint16_t numFeatures, ProblemType problemType) {
+void convertCSVToBinary(const std::string& inputCSV, const std::string& outputBinary, uint16_t numFeatures, problem_type problemType) {
     // Load CSV data
     auto samples = loadCSVForBinary(inputCSV, numFeatures, problemType);
     
@@ -1489,7 +1457,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: No input_path specified (use -ip or -c config.json)\n";
             return 1;
         }
-        if (config.problemType == ProblemType::UNKNOWN) {
+        if (config.problemType == problem_type::UNKNOWN) {
             std::cerr << "Error: Invalid problem_type. Use classification, regression, or isolation\n";
             return 1;
         }
@@ -1590,7 +1558,7 @@ int main(int argc, char* argv[]) {
         
         std::cout << "\n=== Processing Complete ===\n";
         std::cout << "✅ Dataset quantized and compressed:\n";
-        size_t numLabels = datasetInfo.problemType == ProblemType::ISOLATION ? 1 : datasetInfo.labelMapping.size();
+        size_t numLabels = datasetInfo.problemType == problem_type::ISOLATION ? 1 : datasetInfo.labelMapping.size();
         std::cout << "   📊 Samples: " << datasetInfo.numSamples << " | Features: " << test_ctg.getNumFeatures() 
               << " | Labels: " << numLabels << "\n";
         std::cout << "   🧩 Problem type: " << problemTypeToString(datasetInfo.problemType) << "\n";

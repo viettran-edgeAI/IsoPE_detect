@@ -2,6 +2,12 @@
 
 ## 1) Scope and Objective
 
+> **Note:** every module in the embedding phase that will ultimately be
+> linked or packaged into the endpoint agent must support a CMake-based
+> build.  Although this development machine runs Ubuntu, the final
+> product is expected to be built and deployed on both Windows and
+> Linux targets, so a portable build system (CMake) is required.
+
 The embedded phase converts development outputs into a deployable endpoint pipeline with two independently versioned modules:
 
 1. **Feature Extractor** (`embedded_phase/src/feature_extractor/`)
@@ -89,36 +95,113 @@ The chosen policy is:
 
 - Keep scaler parameters in artifact for audit/parity.
 - Disable runtime normalization in model engine inference.
-- Fold scaling into tree thresholds at build time.
+- The scaler transform is superseded by the per-feature quantizer bins (see § 4.4).
 
 This is recorded in `model_engine_config.json` under `deployment_scaling`.
 
+## 4.4 Full quantization — dataset and model (MCU library pipeline)
+
+The model engine adopts the **full quantization** approach from the
+[viettran-edgeAI/MCU](https://github.com/viettran-edgeAI/MCU) library.  The entire
+training dataset is quantized before the Isolation Forest is built, yielding an
+extremely memory-efficient model where all tree thresholds are small integers
+(bin indices) rather than floating-point values.
+
+### 4.4.1 Quantization pipeline (PC side)
+
+The pipeline mirrors the MCU library's `tools/data_quantization` tool:
+
+1. **Input**: `development_phase/data/optimized/benign_train_optimized.csv`
+   (the 40-feature standardised training split).
+2. **Per-feature binning**: each feature's value range is divided into
+   $2^{b}$ equal-probability bins via quantile-based boundaries, where $b$ is
+   the configurable bits-per-feature (default **2 bits = 4 bins**).
+   Z-score-based outlier clipping is applied before binning.
+3. **Outputs** written to `embedded_phase/src/model_engine/quantized/`:
+   - `benign_train_quantized.bin` — bit-packed dataset; each sample's 40
+     features stored as $40 \times b$ bits (2-bit → 10 bytes/sample instead
+     of 160 bytes).
+   - `pe_quantizer.bin` — binary quantizer: per-feature bin boundary arrays,
+     outlier statistics, and feature count.  Consumed at build time and
+     bundled into the agent for runtime use.
+   - `benign_val_quantized.bin`, `benign_test_quantized.bin` — validation and
+     test splits quantized using the **same quantizer** (trained on train split
+     only).
+
+### 4.4.2 Model trained on quantized data
+
+- The Isolation Forest is trained entirely on the integer-bin-index dataset.
+- Every split threshold stored in a tree node is a bin-index integer, not a
+  float.  Each node occupies **4 bytes** (matching the MCU library layout).
+- Runtime inference: raw extractor feature vector → apply quantizer
+  (look up bin index per feature) → feed integer vector to Isolation Forest.
+- No floating-point multiply or divide on the hot inference path.
+
+### 4.4.3 Compression expectations
+
+Based on the MCU library benchmark report across multiple datasets:
+
+| Quantization | Dataset compression | Model compression | Accuracy delta |
+|---|---|---|---|
+| 2-bit (default) | ~10–25× | ~15–150× | < 1% |
+| 3-bit | ~7–15× | ~8–50× | < 0.5% |
+| 4-bit | ~5–10× | ~5–20× | < 0.2% |
+
+For 40 features at 2-bit, a single quantized sample is **10 bytes**; a
+5 000-sample training set fits in ~50 KB instead of ~3 MB (float32).
+
+### 4.4.4 Quantizer artifact contract
+
+`pe_quantizer.bin` must be generated once from the training split and then kept
+fixed.  It is the runtime counterpart of the development-phase scaler:
+
+| Development artifact | Embedding artifact |
+|---|---|
+| `model_engine_config.json` → `scaler_params` | `pe_quantizer.bin` → bin boundaries |
+| Used for Python parity checks | Used by C++ engine at runtime |
+
+Both artifacts are kept in the repository so that the parity harness can
+compare Python scores (float features + StandardScaler) against C++ scores
+(integer bin features + quantized Isolation Forest).
+
 ---
 
-## 5) Build-Time Threshold Folding Technique
+## 5) Build-Time Threshold Representation
 
-For a split on feature `j` trained in standardized space:
+Because the Isolation Forest is trained on **quantized (integer) data**,
+tree node thresholds are already in integer bin-index space — no
+floating-point folding is required at build time.
 
-- standardized value: `z_j = (x_j - mean_j) / scale_j`
-- split test in trained model: `z_j <= t_scaled`
+For a split on feature $j$:
 
-Convert to raw-space threshold once during build:
+- Extractor emits raw float $x_j$.
+- Quantizer maps $x_j$ to bin index $q_j \in \{0, 1, \ldots, 2^b-1\}$.
+- Tree split: $q_j \leq t_{\text{bin}}$, where $t_{\text{bin}}$ is a small
+  integer stored directly in the node.
 
-- `x_j <= t_raw`
-- `t_raw = t_scaled * scale_j + mean_j`
+The previous standardised-space folding formula
+($t_{\text{raw}} = t_{\text{std}} \cdot \sigma_j + \mu_j$) was designed for a
+float-trained model.  With full quantization it is replaced by the quantizer
+object — the bin boundaries already encode the feature distribution implicitly.
 
 ### Practical notes
 
-- `scale_j` must be non-zero (guard with epsilon if needed).
-- Keep split direction unchanged.
-- Fold every tree node threshold using the node feature index.
-- After folding, runtime inference uses raw extractor features directly.
+- The quantizer must be trained on the training split **only** and then applied
+  identically to validation, test, and runtime samples.
+- Bin boundaries are stored in `pe_quantizer.bin` and must be loaded before
+  inference begins.
+- `scale_j` / `mean_j` from `model_engine_config.json` are retained for
+  audit and parity testing only; they are not used in the production inference
+  path when full quantization is active.
 
 ### Why this policy
 
-- Removes per-sample normalization overhead in runtime path.
-- Preserves decision equivalence to standardized-space model (up to floating-point tolerance).
-- Keeps reproducibility because scaler vectors remain stored in artifact.
+- Eliminates floating-point normalization on every sample in the runtime path.
+- Integer comparison in tree traversal is faster and branch-predictor friendly.
+- Massive dataset and model compression (see § 4.4.3) fits tight endpoint
+  memory budgets.
+- Keeps reproducibility: quantizer artifact is deterministic given the same
+  training split.
 
 ---
 
@@ -128,11 +211,18 @@ Convert to raw-space threshold once during build:
    - `optimized_feature_list.json`
    - `model_engine_config.json`
 2. Feature extractor build locks selected feature schema at compile-time.
-3. Model engine build loads config, trains from optimized datasets, folds thresholds.
-4. Runtime path:
-   - extractor emits raw selected features
-   - model engine scores raw features using folded trees
-   - threshold policy emits anomaly decision
+3. **Dataset quantization** (PC side, MCU pipeline):
+   - Quantize `benign_train_optimized.csv` → `benign_train_quantized.bin` + `pe_quantizer.bin`.
+   - Quantize val / test splits using the same quantizer.
+4. Model engine build:
+   - Trains Isolation Forest on `benign_train_quantized.bin` (integer features).
+   - All tree thresholds are bin-index integers; no float folding needed.
+   - Bundles `pe_quantizer.bin` into the deployable engine.
+5. Runtime path:
+   - extractor emits **raw** selected features (float).
+   - quantizer converts float vector → integer bin-index vector.
+   - Isolation Forest scores integer vector using compact integer-threshold trees.
+   - threshold policy emits anomaly decision.
 
 ---
 
@@ -166,3 +256,10 @@ Validated in this iteration:
 - Extractor smoke test succeeded (`parse_ok=true` on benign sample).
 
 This confirms the renamed artifact contract and embedding handoff are operational.
+
+**Planned (not yet implemented)**:
+
+- Dataset quantization step using MCU library pipeline (§ 4.4).
+- Model engine C++ implementation trained on quantized data (§ 4.4.2).
+- Parity harness comparing Python float-model scores vs C++ quantized-model
+  scores (§ 7.2).
