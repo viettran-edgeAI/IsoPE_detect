@@ -100,6 +100,7 @@ embedded_phase/src/model_engine/clean: embedded_phase/src/model_engine/test/clea
 
 # Recursive "all" directory target.
 embedded_phase/src/model_engine/app/all: embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/all
+embedded_phase/src/model_engine/app/all: embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/all
 .PHONY : embedded_phase/src/model_engine/app/all
 
 # Recursive "preinstall" directory target.
@@ -108,6 +109,7 @@ embedded_phase/src/model_engine/app/preinstall:
 
 # Recursive "clean" directory target.
 embedded_phase/src/model_engine/app/clean: embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/clean
+embedded_phase/src/model_engine/app/clean: embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/clean
 .PHONY : embedded_phase/src/model_engine/app/clean
 
 #=============================================================================
@@ -173,7 +175,7 @@ embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine.dir/clean:
 embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/all: embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine.dir/all
 	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/depend
 	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/viettran/Documents/visual_code/EDR_AGENT/.cmake-debug/CMakeFiles --progress-num=3,4 "Built target pe_model_engine_cli"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/viettran/Documents/visual_code/EDR_AGENT/.cmake-debug/CMakeFiles --progress-num=5,6 "Built target pe_model_engine_cli"
 .PHONY : embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/all
 
 # Build rule for subdir invocation for target.
@@ -193,13 +195,39 @@ embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/clean:
 .PHONY : embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/clean
 
 #=============================================================================
+# Target rules for target embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir
+
+# All Build rule for target.
+embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/all: embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine.dir/all
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/depend
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/viettran/Documents/visual_code/EDR_AGENT/.cmake-debug/CMakeFiles --progress-num=3,4 "Built target pe_model_engine_benchmark_cli"
+.PHONY : embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/all
+
+# Build rule for subdir invocation for target.
+embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/viettran/Documents/visual_code/EDR_AGENT/.cmake-debug/CMakeFiles 4
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/viettran/Documents/visual_code/EDR_AGENT/.cmake-debug/CMakeFiles 0
+.PHONY : embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/rule
+
+# Convenience name for target.
+pe_model_engine_benchmark_cli: embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/rule
+.PHONY : pe_model_engine_benchmark_cli
+
+# clean rule for target.
+embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/clean:
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/clean
+.PHONY : embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/clean
+
+#=============================================================================
 # Target rules for target embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir
 
 # All Build rule for target.
 embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/all: embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine.dir/all
 	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/build.make embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/depend
 	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/build.make embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/viettran/Documents/visual_code/EDR_AGENT/.cmake-debug/CMakeFiles --progress-num=5,6 "Built target pe_model_engine_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/viettran/Documents/visual_code/EDR_AGENT/.cmake-debug/CMakeFiles --progress-num=7,8 "Built target pe_model_engine_tests"
 .PHONY : embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/all
 
 # Build rule for subdir invocation for target.

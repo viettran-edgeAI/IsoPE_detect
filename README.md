@@ -228,6 +228,41 @@ The slight FPR increase on the test split (+0.012) is within the `val_fpr_delta 
 
 Full report: `embedded_phase/src/model_engine/results/if_evaluation_summary.json`
 
+### Embedding benchmark report (10 benign + 10 malware)
+
+Measured per file:
+- File size
+- Feature extraction time from `lief_feature_extractor` (`processing_time_ms`)
+- Model inference time including standardization + quantization + IF scoring
+- RAM usage (process RSS in MB)
+
+| Split | File | File Size (KB) | Feature Extraction Time (ms) | Inference Time (ms) | RAM Usage (MB RSS) | Score | Verdict |
+|---|---|---:|---:|---:|---:|---:|---|
+| benign_test | 000d...ec00.dll | 2956.031 | 39.926 | 0.144 | 18.656 | -0.124 | anomaly |
+| benign_test | 000de8f56588e1a54bbd2d07cd2dff3e9967fcc42bc55a9fb476fedf66e4d9c2.dll | 60.305 | 2.909 | 0.148 | 18.781 | -0.097 | anomaly |
+| benign_test | 000e...8243.dll | 84.305 | 2.754 | 0.151 | 18.781 | -0.106 | anomaly |
+| benign_test | 000f...431e.dll | 53.969 | 2.735 | 0.155 | 18.781 | -0.100 | anomaly |
+| benign_test | 0016...1fb2.dll | 8.500 | 0.547 | 0.138 | 18.781 | -0.114 | anomaly |
+| benign_test | 001d...f521.dll | 226.500 | 2.172 | 0.160 | 18.781 | -0.079 | anomaly |
+| benign_test | 001d...d75c.dll | 75.603 | 1.423 | 0.177 | 18.781 | -0.108 | anomaly |
+| benign_test | 002a...3a58.exe | 21.000 | 0.745 | 0.215 | 18.781 | -0.123 | anomaly |
+| benign_test | 0034...8089.exe | 33.828 | 2.814 | 0.195 | 18.781 | -0.092 | anomaly |
+| benign_test | 003d...e0fe.dll | 19.070 | 1.614 | 0.213 | 18.781 | -0.108 | anomaly |
+| malware_test | 0005...f6a0.exe | 116.000 | 1.674 | 0.192 | 18.781 | -0.132 | anomaly |
+| malware_test | 0009...552dc.exe | 5258.000 | 43.971 | 0.116 | 18.781 | -0.136 | anomaly |
+| malware_test | 0019...2460.exe | 5266.500 | 42.526 | 0.114 | 18.781 | -0.136 | anomaly |
+| malware_test | 0049...8403.exe | 3194.000 | 17.572 | 0.118 | 18.781 | -0.125 | anomaly |
+| malware_test | 0065...2e6c.exe | 4426.500 | 31.674 | 0.135 | 18.781 | -0.117 | anomaly |
+| malware_test | 0066...6752.exe | 10240.000 | 58.208 | 0.151 | 18.781 | -0.108 | anomaly |
+| malware_test | 0075...cd6e.exe | 7070.400 | 52.863 | 0.151 | 18.781 | -0.113 | anomaly |
+| malware_test | 0089...1a1c.exe | 8.000 | 0.542 | 0.118 | 18.781 | -0.125 | anomaly |
+| malware_test | 00a1...3aab.exe | 45289.000 | 241.279 | 0.164 | 18.781 | -0.095 | anomaly |
+| malware_test | 00a2...8092.exe | 10025.500 | 49.368 | 0.127 | 18.781 | -0.125 | anomaly |
+
+- Average feature extraction time: `29.866 ms`
+- Average inference time (standardization + quantization + inference): `0.154 ms`
+- Peak observed RSS during benchmark loop: `18.781 MB`
+
 ### Unit tests
 
 ```
