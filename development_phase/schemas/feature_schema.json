@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0",
+  "model_name": "iforest",
   "total_raw_features": 623,
   "feature_columns": [
     "file_size",

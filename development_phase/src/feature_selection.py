@@ -9,11 +9,11 @@ Usage:
     python feature_selection.py [--config PATH] [--corr-threshold X] [--variance-threshold X]
 
 Outputs:
-    ../data/cleaned/benign_train_clean.parquet
-    ../data/cleaned/benign_val_clean.parquet
-    ../data/cleaned/benign_test_clean.parquet
-    ../data/cleaned/malware_val_clean.parquet
-    ../data/cleaned/malware_test_clean.parquet
+    ../data/cleaned/<model_name>_benign_train_clean.parquet
+    ../data/cleaned/<model_name>_benign_val_clean.parquet
+    ../data/cleaned/<model_name>_benign_test_clean.parquet
+    ../data/cleaned/<model_name>_malware_val_clean.parquet
+    ../data/cleaned/<model_name>_malware_test_clean.parquet
     ../schemas/feature_schema_selected.json
     ../reports/feature_selection_report.md
 """
@@ -607,8 +607,17 @@ def _resolve_path(config_path: Path, raw_path: str) -> Path:
     return config_path.parent / path
 
 
+def _sanitize_model_name(raw_name: str) -> str:
+    cleaned = "".join(ch if (ch.isalnum() or ch in "_-") else "_" for ch in str(raw_name).strip())
+    return cleaned or "iforest"
+
+
+def _render_model_name(path_template: str, model_name: str) -> str:
+    return str(path_template).replace("{model_name}", model_name)
+
+
 def _validate_config(cfg: dict) -> None:
-    required_top = ["data", "filtering", "outputs"]
+    required_top = ["filtering"]
     missing = [k for k in required_top if k not in cfg]
     if missing:
         raise ValueError(f"Missing config sections: {', '.join(missing)}")
@@ -933,22 +942,31 @@ def main():
     cfg = _load_config(config_path)
     _validate_config(cfg)
 
-    data_cfg = cfg["data"]
-    train_path = _resolve_path(config_path, data_cfg["train_benign_path"])
-    val_path = _resolve_path(config_path, data_cfg["val_benign_path"])
-    test_b_path = _resolve_path(config_path, data_cfg["test_benign_path"])
-    test_m_path = _resolve_path(config_path, data_cfg["test_malware_path"])
-    val_m_path = _resolve_path(config_path, data_cfg["val_malware_path"])
+    # Load pipeline config (sibling to stage config)
+    pipeline_cfg_path = (config_path.parent / "pipeline_config.json").resolve()
+    pipeline_cfg = _load_config(pipeline_cfg_path) if pipeline_cfg_path.is_file() else {}
+    paths_cfg = pipeline_cfg.get("paths", {})
+
+    model_name_raw = str(pipeline_cfg.get("model_name", "iforest"))
+    model_name = _sanitize_model_name(model_name_raw)
+    if model_name != model_name_raw:
+        print(f"Warning: model_name sanitized from '{model_name_raw}' to '{model_name}'")
+
+    raw_data_dir = _resolve_path(pipeline_cfg_path, paths_cfg.get("raw_data_dir", "../data/raw"))
+    train_path  = raw_data_dir / f"{model_name}_benign_train_raw.parquet"
+    val_path    = raw_data_dir / f"{model_name}_benign_val_raw.parquet"
+    test_b_path = raw_data_dir / f"{model_name}_benign_test_raw.parquet"
+    test_m_path = raw_data_dir / f"{model_name}_malware_test_raw.parquet"
+    val_m_path  = raw_data_dir / f"{model_name}_malware_val_raw.parquet"
 
     filt_cfg = cfg["filtering"]
     variance_threshold = args.variance_threshold if args.variance_threshold is not None else float(filt_cfg.get("variance_threshold", 0.0))
     corr_threshold = args.corr_threshold if args.corr_threshold is not None else float(filt_cfg.get("corr_threshold", 0.95))
     norm_var_threshold = args.norm_var_threshold if args.norm_var_threshold is not None else float(filt_cfg.get("norm_var_threshold", 1e-7))
 
-    outputs_cfg = cfg["outputs"]
-    cleaned_dir = _resolve_path(config_path, outputs_cfg.get("cleaned_data_dir", "../data/cleaned"))
-    schema_dir = _resolve_path(config_path, outputs_cfg.get("schema_dir", "../schemas"))
-    report_dir = _resolve_path(config_path, outputs_cfg.get("report_dir", "../reports"))
+    cleaned_dir = _resolve_path(pipeline_cfg_path, paths_cfg.get("cleaned_data_dir", "../data/cleaned"))
+    schema_dir  = _resolve_path(pipeline_cfg_path, paths_cfg.get("schema_dir", "../schemas"))
+    report_dir  = _resolve_path(pipeline_cfg_path, paths_cfg.get("report_dir", "../reports"))
 
     separation_cfg = cfg.get("separation", {})
     malware_val_ratio = float(separation_cfg.get("malware_val_ratio_to_benign_val", 0.03))
@@ -956,10 +974,7 @@ def main():
     malware_val_min_samples = int(separation_cfg.get("malware_val_min_samples", 500))
     audit_cfg = cfg.get("independence_audit", {})
     audit_mode = "enforce"
-    manifest_out_path = _resolve_path(
-        config_path,
-        audit_cfg.get("manifest_path", "../reports/malware_val_test_independence_manifest_stage2.json"),
-    )
+    manifest_out_path = report_dir / "malware_val_test_independence_manifest_stage2.json"
     knn_k_list = [int(x) for x in audit_cfg.get("knn_k_list", [1, 5, 10])]
     knn_sample_size = int(audit_cfg.get("knn_sample_size_per_split", 2000))
     knn_seed = int(audit_cfg.get("knn_seed", 42))
@@ -971,7 +986,7 @@ def main():
 
     projected_top_k_raw = audit_cfg.get("projected_top_k_list")
     if projected_top_k_raw is None:
-        model_cfg_path = _resolve_path(config_path, audit_cfg.get("model_config_path", "model_config.json"))
+        model_cfg_path = config_path.parent / "model_config.json"
         projected_top_k_raw = [20, 25, 40, 100]
         if model_cfg_path.exists():
             try:
@@ -997,6 +1012,7 @@ def main():
     print("=" * 70)
     print("STAGE 2: FEATURE FILTERING & SELECTION")
     print("=" * 70)
+    print(f"Model name: {model_name}")
     print(
         f"Configuration: variance_threshold={variance_threshold}, "
         f"corr_threshold={corr_threshold}, norm_var_threshold={norm_var_threshold}"
@@ -1189,7 +1205,7 @@ def main():
     for name, df in dfs_raw.items():
         df_clean = apply_transforms(df, selected_features, log_transform_cols)
         cleaned_outputs[name] = df_clean
-        out_path = cleaned_dir / f"{name}_clean.parquet"
+        out_path = cleaned_dir / f"{model_name}_{name}_clean.parquet"
         df_clean.to_parquet(out_path, engine="pyarrow", compression="snappy")
         print(f"  Saved {name}: {df_clean.shape} -> {out_path}")
 
@@ -1219,7 +1235,7 @@ def main():
         )
         cleaned_outputs["malware_val"] = malware_val_pruned
 
-        malware_val_out_path = cleaned_dir / "malware_val_clean.parquet"
+        malware_val_out_path = cleaned_dir / f"{model_name}_malware_val_clean.parquet"
         malware_val_pruned.to_parquet(malware_val_out_path, engine="pyarrow", compression="snappy")
 
         print(f"  top-k list: {projected_top_k_list}")

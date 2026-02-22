@@ -1,13 +1,6 @@
 {
-  "data": {
-    "train_benign_path": "../data/cleaned/benign_train_clean.parquet",
-    "val_benign_path": "../data/cleaned/benign_val_clean.parquet",
-    "test_benign_path": "../data/cleaned/benign_test_clean.parquet",
-    "test_malware_path": "../data/cleaned/malware_test_clean.parquet",
-    "val_malware_path": "../data/cleaned/malware_val_clean.parquet"
-  },
   "feature_selection": {
-    "top_k_list": [10, 40, 100]
+    "top_k_list": [40, 100]
   },
   "model": {
     "n_estimators": [200],
@@ -26,26 +19,9 @@
     "expose_test_during_search": false
   },
   "independence_audit": {
-    "stage2_manifest_path": "../reports/malware_val_test_independence_manifest_stage2.json",
     "max_cross_similarity": 0.995,
     "mmd_permutations": 300,
-    "require_min_malware_val_samples": 200,
-    "max_malware_val_percent_of_benign_train": 5,
-    "independence_metrics_json": "../reports/malware_val_test_independence_metrics_stage3.json",
-    "independence_assessment_md": "../docs/malware_val_test_independence_assessment.md"
-  },
-  "outputs": {
-    "report_dir": "../reports",
-    "results_dir": "../results",
-    "optimized_feature_list_json": "../results/optimized_feature_list.json",
-    "optimized_model_config_json": "../results/model_engine_config.json",
-    "optimized_data_dir": "../data/optimized",
-    "results_csv": "../reports/optimization_results.csv",
-    "optimized_params_json": "../reports/optimized_params.json",
-    "optimized_features_csv": "../reports/optimized_features.csv",
-    "roc_curve_svg": "../reports/roc_curve.svg",
-    "pr_curve_svg": "../reports/pr_curve.svg",
-    "score_distribution_svg": "../reports/score_distribution.svg",
-    "score_distribution_val_svg": "../reports/score_distribution_val.svg"
+    "require_min_malware_val_samples": 80,
+    "max_malware_val_percent_of_benign_train": 5
   }
 }

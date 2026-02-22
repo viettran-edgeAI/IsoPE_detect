@@ -8,12 +8,5 @@
     "imp_dll": 64,
     "exp_name": 32,
     "sec_name": 32
-  },
-  "dataset_dirs": {
-    "benign_train": "../../datasets/BENIGN_TRAIN_DATASET",
-    "benign_val": "../../datasets/BENIGN_VALIDATION_DATASET",
-    "benign_test": "../../datasets/BENIGN_TEST_DATASET",
-    "malware_val": "../../datasets/MALWARE_VALIDATION_DATASET",
-    "malware_test": "../../datasets/MALWARE_TEST_DATASET"
   }
 }

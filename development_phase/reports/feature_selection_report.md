@@ -1,6 +1,6 @@
 # Feature Selection Report
 
-**Date**: 2026-02-21 00:41
+**Date**: 2026-02-23 01:14
 
 ## Summary
 
@@ -571,7 +571,7 @@
 
 ## Independence Manifest
 
-- Run ID: **fc08958d6f52e542**
+- Run ID: **7c621bb10254e403**
 - Manifest path: **/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../reports/malware_val_test_independence_manifest_stage2.json**
 - Hard gates passed: **True**
 
@@ -579,8 +579,8 @@
 
 - Enabled: **True**
 - Threshold: **0.9950**
-- malware_val before/after: **473 / 298**
-- Removed by projected pruning: **175**
+- malware_val before/after: **473 / 401**
+- Removed by projected pruning: **72**
 - All top-k constraints pass: **True**
 
 ## Malware Validation Size Control

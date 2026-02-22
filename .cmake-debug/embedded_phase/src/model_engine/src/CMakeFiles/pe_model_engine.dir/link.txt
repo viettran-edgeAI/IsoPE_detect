@@ -1,0 +1,2 @@
+/usr/bin/ar qc libpe_model_engine.a CMakeFiles/pe_model_engine.dir/model_engine.cpp.o
+/usr/bin/ranlib libpe_model_engine.a

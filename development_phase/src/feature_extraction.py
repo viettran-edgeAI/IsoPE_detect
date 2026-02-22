@@ -9,11 +9,11 @@ Usage:
     python feature_extraction.py [--config PATH] [--workers N]
 
 Outputs:
-    ../data/raw/benign_train_raw.parquet
-    ../data/raw/benign_val_raw.parquet
-    ../data/raw/benign_test_raw.parquet
-    ../data/raw/malware_val_raw.parquet
-    ../data/raw/malware_test_raw.parquet
+    ../data/raw/<model_name>_benign_train_raw.parquet
+    ../data/raw/<model_name>_benign_val_raw.parquet
+    ../data/raw/<model_name>_benign_test_raw.parquet
+    ../data/raw/<model_name>_malware_val_raw.parquet
+    ../data/raw/<model_name>_malware_test_raw.parquet
     ../schemas/feature_group_mapping.json
     ../schemas/feature_schema.json
 """
@@ -37,6 +37,11 @@ from scipy.stats import kurtosis as sp_kurtosis
 SEED = 42
 PARSE_TIMEOUT = 60
 MAX_SECTIONS = 10
+
+
+def _sanitize_model_name(raw_name: str) -> str:
+    cleaned = "".join(ch if (ch.isalnum() or ch in "_-") else "_" for ch in str(raw_name).strip())
+    return cleaned or "iforest"
 
 HASH_SIZES = {
     "imp_func": 256,
@@ -927,19 +932,32 @@ def main():
     else:
         print(f"No config file found at {config_path}, using defaults and CLI args")
 
-    base_dir = script_dir.parent.parent
+    # Load pipeline config (sibling to stage config)
+    pipeline_cfg_path = (config_path.parent / "pipeline_config.json").resolve()
+    pipeline_cfg = {}
+    if pipeline_cfg_path.is_file():
+        try:
+            with open(pipeline_cfg_path, "r") as pf:
+                pipeline_cfg = json.load(pf)
+        except Exception as e:
+            print(f"Warning: Failed to parse pipeline config {pipeline_cfg_path}: {e}")
+    paths_cfg = pipeline_cfg.get("paths", {})
 
-    dataset_dirs_cfg = config.get("dataset_dirs")
+    model_name_raw = str(pipeline_cfg.get("model_name", "iforest"))
+    model_name = _sanitize_model_name(model_name_raw)
+    if model_name != model_name_raw:
+        print(f"Warning: model_name sanitized from '{model_name_raw}' to '{model_name}'")
+
+    dataset_dirs_cfg = paths_cfg.get("dataset_dirs")
     if isinstance(dataset_dirs_cfg, dict):
-        # Config paths are relative to the script directory (where config file is)
-        dataset_dirs = OrderedDict([(k, (script_dir / v).resolve()) for k, v in dataset_dirs_cfg.items()])
+        dataset_dirs = OrderedDict([(k, (pipeline_cfg_path.parent / v).resolve()) for k, v in dataset_dirs_cfg.items()])
     else:
         dataset_dirs = OrderedDict([
-            ("benign_train", base_dir / "BENIGN_TRAIN_DATASET"),
-            ("benign_val", base_dir / "BENIGN_VALIDATION_DATASET"),
-            ("benign_test", base_dir / "BENIGN_TEST_DATASET"),
-            ("malware_val", base_dir / "MALWARE_VALIDATION_DATASET"),
-            ("malware_test", base_dir / "MALWARE_TEST_DATASET"),
+            ("benign_train", script_dir / "../../datasets/BENIGN_TRAIN_DATASET"),
+            ("benign_val",   script_dir / "../../datasets/BENIGN_VALIDATION_DATASET"),
+            ("benign_test",  script_dir / "../../datasets/BENIGN_TEST_DATASET"),
+            ("malware_val",  script_dir / "../../datasets/MALWARE_VALIDATION_DATASET"),
+            ("malware_test", script_dir / "../../datasets/MALWARE_TEST_DATASET"),
         ])
 
     # Merge CLI args with config (CLI overrides config)
@@ -951,10 +969,13 @@ def main():
     if "hash_sizes" in config and isinstance(config["hash_sizes"], dict):
         HASH_SIZES.update(config["hash_sizes"])
 
-    print(f"Configuration: workers={workers}, parse_timeout={PARSE_TIMEOUT}, max_sections={MAX_SECTIONS}")
+    print(
+        f"Configuration: model_name={model_name}, workers={workers}, "
+        f"parse_timeout={PARSE_TIMEOUT}, max_sections={MAX_SECTIONS}"
+    )
 
-    data_raw_dir = script_dir.parent / "data" / "raw"
-    schema_dir = script_dir.parent / "schemas"
+    data_raw_dir = (pipeline_cfg_path.parent / paths_cfg.get("raw_data_dir", "../data/raw")).resolve()
+    schema_dir   = (pipeline_cfg_path.parent / paths_cfg.get("schema_dir", "../schemas")).resolve()
     for d in [data_raw_dir, schema_dir]:
         d.mkdir(parents=True, exist_ok=True)
 
@@ -984,7 +1005,7 @@ def main():
     for name, df in dfs_raw.items():
         df_aligned = _align_dataframe(df, feature_cols)
         dfs_raw[name] = df_aligned
-        out_path = data_raw_dir / f"{name}_raw.parquet"
+        out_path = data_raw_dir / f"{model_name}_{name}_raw.parquet"
         df_aligned.to_parquet(out_path, engine="pyarrow", compression="snappy")
         print(f"Saved {name}: {df_aligned.shape} -> {out_path}")
 
@@ -994,6 +1015,7 @@ def main():
 
     schema = {
         "schema_version": "1.0",
+        "model_name": model_name,
         "total_raw_features": len(feature_cols),
         "feature_columns": feature_cols,
         "group_mapping": group_mapping,

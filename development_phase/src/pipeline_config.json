@@ -1,0 +1,20 @@
+{
+  "model_name": "iforest",
+  "paths": {
+    "dataset_dirs": {
+      "benign_train": "../../datasets/BENIGN_TRAIN_DATASET",
+      "benign_val":   "../../datasets/BENIGN_VALIDATION_DATASET",
+      "benign_test":  "../../datasets/BENIGN_TEST_DATASET",
+      "malware_val":  "../../datasets/MALWARE_VALIDATION_DATASET",
+      "malware_test": "../../datasets/MALWARE_TEST_DATASET"
+    },
+    "raw_data_dir":       "../data/raw",
+    "cleaned_data_dir":   "../data/cleaned",
+    "optimized_data_dir": "../data/optimized",
+    "results_dir":        "../results",
+    "report_dir":         "../reports",
+    "schema_dir":         "../schemas",
+    "docs_dir":           "../docs",
+    "dp_txt_path":        "../../embedded_phase/tools/data_quantization/quantized_datasets/{model_name}_dp.txt"
+  }
+}

@@ -1,11 +1,4 @@
 {
-  "data": {
-    "train_benign_path": "../data/raw/benign_train_raw.parquet",
-    "val_benign_path": "../data/raw/benign_val_raw.parquet",
-    "test_benign_path": "../data/raw/benign_test_raw.parquet",
-    "test_malware_path": "../data/raw/malware_test_raw.parquet",
-    "val_malware_path": "../data/raw/malware_val_raw.parquet"
-  },
   "filtering": {
     "variance_threshold": 0.008,
     "norm_var_threshold": 1e-7,
@@ -18,19 +11,12 @@
     "max_cross_similarity": 0.995
   },
   "independence_audit": {
-    "manifest_path": "../reports/malware_val_test_independence_manifest_stage2.json",
     "knn_k_list": [1, 5, 10],
     "knn_sample_size_per_split": 2000,
     "knn_seed": 42,
     "similarity_profile_thresholds": [0.99, 0.995, 0.999],
     "require_min_malware_val_after_audit": 200,
     "projected_similarity_threshold": 0.995,
-    "projected_max_iterations": 8,
-    "model_config_path": "model_config.json"
-  },
-  "outputs": {
-    "cleaned_data_dir": "../data/cleaned",
-    "schema_dir": "../schemas",
-    "report_dir": "../reports"
+    "projected_max_iterations": 8
   }
 }

@@ -21,8 +21,8 @@ Outputs:
     ../reports/malware_val_test_independence_metrics_stage3.json
     ../reports/score_distribution.svg
     ../docs/malware_val_test_independence_assessment.md
-    ../results/optimized_feature_list.json
-    ../results/model_engine_config.json
+    ../results/<model_name>_optimized_features.json
+    ../results/<model_name>_optimized_config.json
 """
 
 import argparse
@@ -353,8 +353,94 @@ def _resolve_path(config_path, raw_path):
     return config_path.parent / path
 
 
+def _sanitize_model_name(raw_name: str) -> str:
+    cleaned = "".join(ch if (ch.isalnum() or ch in "_-") else "_" for ch in str(raw_name).strip())
+    return cleaned or "iforest"
+
+
+def _render_model_name(path_template: str, model_name: str) -> str:
+    return str(path_template).replace("{model_name}", model_name)
+
+
+def _desired_bits(value: int) -> int:
+    return int(value).bit_length() if value > 0 else 0
+
+
+def _parse_dp_txt_params(dp_txt_path: Path) -> dict[str, int]:
+    if not dp_txt_path.exists():
+        return {}
+
+    parsed: dict[str, int] = {}
+    with open(dp_txt_path, "r", encoding="utf-8") as f:
+        for idx, line in enumerate(f):
+            row = line.strip()
+            if not row:
+                continue
+            if idx == 0 and row == "parameter,value":
+                continue
+            if "," not in row:
+                continue
+
+            key, value = row.split(",", 1)
+            key = key.strip()
+            value = value.strip()
+            try:
+                parsed[key] = int(float(value))
+            except ValueError:
+                continue
+
+    return parsed
+
+
+def _compute_node_resource_params(
+    *,
+    num_features: int,
+    num_samples: int,
+    quantization_bits: int,
+    max_samples: Union[int, float, Literal["auto"]],
+    max_depth: int = 16,
+) -> dict[str, int]:
+    quant_bits = max(1, min(8, int(quantization_bits)))
+    resolved_features = max(1, int(num_features))
+    resolved_samples = max(1, int(num_samples))
+
+    if isinstance(max_samples, str):
+        max_samples_per_tree = resolved_samples
+    else:
+        max_samples_float = float(max_samples)
+        if max_samples_float <= 1.0:
+            max_samples_per_tree = int(np.ceil(max_samples_float * float(resolved_samples)))
+        else:
+            max_samples_per_tree = int(np.ceil(max_samples_float))
+    max_samples_per_tree = max(1, max_samples_per_tree)
+
+    resolved_max_depth = max(1, int(max_depth))
+    nodes_by_depth = (1 << (resolved_max_depth + 1)) - 1 if resolved_max_depth < 31 else (2**32 - 1)
+    nodes_by_samples = 1 if resolved_samples <= 1 else min(2**32 - 1, resolved_samples * 2 - 1)
+    max_nodes_per_tree = max(1, min(nodes_by_depth, nodes_by_samples))
+
+    feature_bits = max(1, _desired_bits(resolved_features - 1))
+    child_bits = max(1, _desired_bits(max_nodes_per_tree - 1))
+    leaf_size_bits = max(1, _desired_bits(max_samples_per_tree))
+    depth_bits = max(1, _desired_bits(resolved_max_depth))
+
+    return {
+        "quantization_bits": int(quant_bits),
+        "threshold_bits": int(quant_bits),
+        "feature_bits": int(feature_bits),
+        "child_bits": int(child_bits),
+        "leaf_size_bits": int(leaf_size_bits),
+        "depth_bits": int(depth_bits),
+        "max_depth": int(resolved_max_depth),
+        "max_nodes_per_tree": int(max_nodes_per_tree),
+        "max_samples_per_tree": int(max_samples_per_tree),
+        "num_features": int(resolved_features),
+        "num_samples": int(resolved_samples),
+    }
+
+
 def _validate_config(cfg):
-    required_top = ["data", "feature_selection", "model", "thresholding", "outputs"]
+    required_top = ["feature_selection", "model", "thresholding"]
     missing = [k for k in required_top if k not in cfg]
     if missing:
         raise ValueError(f"Missing config sections: {', '.join(missing)}")
@@ -526,8 +612,11 @@ def _run_malware_split_analysis(
     from sklearn.metrics import silhouette_score
     import umap
 
-    val_opt_path = optimized_data_dir / "malware_val_optimized.parquet"
-    test_opt_path = optimized_data_dir / "malware_test_optimized.parquet"
+    # Filenames use model_name prefix (resolved by caller or by glob fallback)
+    val_candidates = sorted(optimized_data_dir.glob("*malware_val_optimized.parquet"))
+    test_candidates = sorted(optimized_data_dir.glob("*malware_test_optimized.parquet"))
+    val_opt_path = val_candidates[0] if val_candidates else optimized_data_dir / "malware_val_optimized.parquet"
+    test_opt_path = test_candidates[0] if test_candidates else optimized_data_dir / "malware_test_optimized.parquet"
 
     if not val_opt_path.exists() or not test_opt_path.exists():
         raise FileNotFoundError("Optimized malware datasets not found. Run optimization first.")
@@ -805,7 +894,8 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
                    val_fpr_target, val_fpr_delta,
                    val_fpr, val_tpr, val_auc_value, test_fpr, test_tpr, auc_value, best_params,
                    group_mapping, results_dir, feature_names_path, model_config_path,
-                   threshold_strategy="fpr", f_beta=1.0):
+                   threshold_strategy="fpr", f_beta=1.0,
+                   model_name="iforest", node_resource=None, dp_txt_path=None):
     """Export exactly two embedding artifacts: selected feature names and model-engine config."""
     results_dir.mkdir(parents=True, exist_ok=True)
     feature_names_path.parent.mkdir(parents=True, exist_ok=True)
@@ -836,6 +926,7 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
         "n_features": int(scaler.n_features_in_),
     }
     consolidated = {
+        "model_name": str(model_name),
         "model_type": "IsolationForest",
         "optimized_feature_set": {
             "source_file": str(feature_names_path),
@@ -845,6 +936,10 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
         },
         "preprocessing": {
             "scaler": scaler_export,
+            "quantization": {
+                "dp_txt_path": str(dp_txt_path) if dp_txt_path else None,
+                "derived_from_dp_txt": bool(dp_txt_path and Path(dp_txt_path).exists()),
+            },
         },
         "deployment_scaling": {
             "runtime_normalization": "disabled",
@@ -883,6 +978,7 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
                 "roc_auc": float(auc_value),
             },
         },
+        "node_resource": node_resource or {},
         "notes": [
             "Consolidated artifact for embedded model engine rebuild.",
             "Model trees are not serialized; C++ model engine should rebuild from optimized parameters.",
@@ -946,14 +1042,27 @@ def main():
     _validate_config(cfg)
 
     config_path = config_path.resolve()
+    # Load pipeline config (sibling to stage config)
+    pipeline_cfg_path = (config_path.parent / "pipeline_config.json").resolve()
+    pipeline_cfg = _load_config(pipeline_cfg_path) if pipeline_cfg_path.is_file() else {}
+    paths_cfg = pipeline_cfg.get("paths", {})
 
-    data_cfg = cfg["data"]
-    train_path = _resolve_path(config_path, data_cfg["train_benign_path"])
-    val_path = _resolve_path(config_path, data_cfg["val_benign_path"])
-    test_b_path = _resolve_path(config_path, data_cfg["test_benign_path"])
-    test_m_path = _resolve_path(config_path, data_cfg["test_malware_path"])
-    val_m_raw = data_cfg.get("val_malware_path")
-    val_m_path = _resolve_path(config_path, val_m_raw) if val_m_raw else None
+    model_name_raw = str(pipeline_cfg.get("model_name", "iforest"))
+    model_name = _sanitize_model_name(model_name_raw)
+    if model_name != model_name_raw:
+        print(f"Warning: model_name sanitized from '{model_name_raw}' to '{model_name}'")
+
+    # Resolve all directories from pipeline config
+    cleaned_data_dir = _resolve_path(pipeline_cfg_path, paths_cfg.get("cleaned_data_dir", "../data/cleaned"))
+    report_dir       = _resolve_path(pipeline_cfg_path, paths_cfg.get("report_dir", "../reports"))
+    results_dir      = _resolve_path(pipeline_cfg_path, paths_cfg.get("results_dir", "../results"))
+    docs_dir         = _resolve_path(pipeline_cfg_path, paths_cfg.get("docs_dir", "../docs"))
+
+    train_path  = cleaned_data_dir / f"{model_name}_benign_train_clean.parquet"
+    val_path    = cleaned_data_dir / f"{model_name}_benign_val_clean.parquet"
+    test_b_path = cleaned_data_dir / f"{model_name}_benign_test_clean.parquet"
+    test_m_path = cleaned_data_dir / f"{model_name}_malware_test_clean.parquet"
+    val_m_path  = cleaned_data_dir / f"{model_name}_malware_val_clean.parquet"
 
     if val_path.resolve() == test_b_path.resolve():
         raise ValueError("val_benign_path and test_benign_path must be different (sealed test requirement)")
@@ -1013,17 +1122,14 @@ def main():
 
     independence_cfg = cfg.get("independence_audit", {})
     audit_mode = "enforce"
-    stage2_manifest_path = _resolve_path(
-        config_path,
-        independence_cfg.get("stage2_manifest_path", "../reports/malware_val_test_independence_manifest_stage2.json"),
-    )
+    stage2_manifest_path       = report_dir / "malware_val_test_independence_manifest_stage2.json"
     audit_similarity_threshold = float(independence_cfg.get("max_cross_similarity", 0.995))
     audit_similarity_profile_thresholds = [float(args.audit_similarity_profile_threshold)]
-    audit_knn_k_list = [int(args.audit_distribution_diagnostic_k)]
-    audit_knn_seed = 42
-    audit_split_auc_folds = int(args.audit_split_auc_classifier_folds)
-    audit_mmd_permutations = int(independence_cfg.get("mmd_permutations", 300))
-    audit_min_malware_val = int(independence_cfg.get("require_min_malware_val_samples", 300))
+    audit_knn_k_list           = [int(args.audit_distribution_diagnostic_k)]
+    audit_knn_seed             = 42
+    audit_split_auc_folds      = int(args.audit_split_auc_classifier_folds)
+    audit_mmd_permutations     = int(independence_cfg.get("mmd_permutations", 300))
+    audit_min_malware_val      = int(independence_cfg.get("require_min_malware_val_samples", 300))
     audit_max_malware_val_pct_raw = float(
         independence_cfg.get("max_malware_val_percent_of_benign_train", 5.0)
     )
@@ -1036,42 +1142,26 @@ def main():
         raise ValueError(
             "independence_audit.max_malware_val_percent_of_benign_train must be in (0, 100]"
         )
-    audit_require_imphash_disjoint = True
-    independence_metrics_json_path = _resolve_path(
-        config_path,
-        independence_cfg.get("independence_metrics_json", "../reports/malware_val_test_independence_metrics_stage3.json"),
-    )
-    independence_assessment_md_path = _resolve_path(
-        config_path,
-        independence_cfg.get("independence_assessment_md", "../docs/malware_val_test_independence_assessment.md"),
-    )
+    audit_require_imphash_disjoint  = True
+    independence_metrics_json_path  = report_dir / "malware_val_test_independence_metrics_stage3.json"
+    independence_assessment_md_path = docs_dir / "malware_val_test_independence_assessment.md"
 
-    outputs_cfg = cfg["outputs"]
-    report_dir = _resolve_path(config_path, outputs_cfg.get("report_dir", "../reports"))
-    results_dir = _resolve_path(config_path, outputs_cfg.get("results_dir", "../results"))
-    optimized_features_json_raw = outputs_cfg.get("optimized_feature_list_json")
-    if optimized_features_json_raw is None:
-        optimized_features_json_raw = outputs_cfg.get("optimized_features_json")
-    optimized_model_config_json_raw = outputs_cfg.get("optimized_model_config_json")
-    optimized_features_json = (
-        _resolve_path(config_path, optimized_features_json_raw)
-        if optimized_features_json_raw
-        else results_dir / "optimized_feature_list.json"
+    # Output paths derived from pipeline_cfg dirs and model_name
+    optimized_features_json     = results_dir / f"{model_name}_optimized_features.json"
+    optimized_model_config_json = results_dir / f"{model_name}_optimized_config.json"
+    optimized_data_dir = _resolve_path(pipeline_cfg_path, paths_cfg.get("optimized_data_dir", "../data/optimized"))
+    results_csv   = report_dir / "optimization_results.csv"
+    params_json   = report_dir / "optimized_params.json"
+    features_csv  = report_dir / "optimized_features.csv"
+    roc_svg       = report_dir / "roc_curve.svg"
+    pr_svg        = report_dir / "pr_curve.svg"
+    score_svg     = report_dir / "score_distribution.svg"
+    val_score_svg = report_dir / "score_distribution_val.svg"
+    dp_txt_raw = paths_cfg.get(
+        "dp_txt_path",
+        "../../embedded_phase/tools/data_quantization/quantized_datasets/{model_name}_dp.txt",
     )
-    optimized_model_config_json = (
-        _resolve_path(config_path, optimized_model_config_json_raw)
-        if optimized_model_config_json_raw
-        else results_dir / "model_engine_config.json"
-    )
-    optimized_data_dir = _resolve_path(config_path, outputs_cfg.get("optimized_data_dir", "../data/optimized"))
-    results_csv = _resolve_path(config_path, outputs_cfg.get("results_csv", "../reports/optimization_results.csv"))
-    params_json = _resolve_path(config_path, outputs_cfg.get("optimized_params_json", "../reports/optimized_params.json"))
-    features_csv = _resolve_path(config_path, outputs_cfg.get("optimized_features_csv", "../reports/optimized_features.csv"))
-    roc_svg = _resolve_path(config_path, outputs_cfg.get("roc_curve_svg", "../reports/roc_curve.svg"))
-    pr_svg = _resolve_path(config_path, outputs_cfg.get("pr_curve_svg", "../reports/pr_curve.svg"))
-    score_svg = _resolve_path(config_path, outputs_cfg.get("score_distribution_svg", "../reports/score_distribution.svg"))
-    val_score_svg_raw = outputs_cfg.get("score_distribution_val_svg")
-    val_score_svg = _resolve_path(config_path, val_score_svg_raw) if val_score_svg_raw else None
+    dp_txt_path = _resolve_path(pipeline_cfg_path, _render_model_name(dp_txt_raw, model_name))
 
     report_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -1088,6 +1178,7 @@ def main():
     print("=" * 70)
     print("STAGE 3: MODEL TRAINING & OPTIMIZATION")
     print("=" * 70)
+    print(f"Model name: {model_name}")
 
     print("\nLoading training and validation data...")
     df_train = pd.read_parquet(train_path)
@@ -1567,6 +1658,23 @@ def main():
     # Build group mapping for selected features
     selected_group_mapping = {name: group_mapping.get(name, "unknown") for name in top_names}
 
+    dp_params = _parse_dp_txt_params(dp_txt_path)
+    if dp_txt_path.exists():
+        print(f"  Using dp metadata: {dp_txt_path}")
+    else:
+        print(f"  dp metadata not found (fallback defaults): {dp_txt_path}")
+    quantization_bits = int(dp_params.get("quantization_coefficient", 2))
+    dp_num_features = int(dp_params.get("num_features", len(top_names)))
+    dp_num_samples = int(dp_params.get("num_samples", len(df_train)))
+    node_resource_max_depth = int(cfg.get("node_resource_max_depth", 16))
+    node_resource_params = _compute_node_resource_params(
+        num_features=dp_num_features,
+        num_samples=dp_num_samples,
+        quantization_bits=quantization_bits,
+        max_samples=best_max_samples,
+        max_depth=node_resource_max_depth,
+    )
+
     export_results(
         model=model,
         scaler=scaler,
@@ -1588,6 +1696,9 @@ def main():
         model_config_path=optimized_model_config_json,
         threshold_strategy=threshold_strategy,
         f_beta=f_beta,
+        model_name=model_name,
+        node_resource=node_resource_params,
+        dp_txt_path=dp_txt_path,
     )
 
     # ── Save optimized datasets with best feature set ──
@@ -1609,9 +1720,9 @@ def main():
     
     for name, data in dataset_map.items():
         df_optimized = pd.DataFrame(data, columns=top_names)
-        out_path = optimized_data_dir / f"{name}_optimized.parquet"
+        out_path = optimized_data_dir / f"{model_name}_{name}_optimized.parquet"
         df_optimized.to_parquet(out_path, engine="pyarrow", compression="snappy")
-        csv_path = optimized_data_dir / f"{name}_optimized.csv"
+        csv_path = optimized_data_dir / f"{model_name}_{name}_optimized.csv"
         df_optimized.to_csv(csv_path, index=False)
         # print(f"  Saved {name}: {df_optimized.shape} -> {out_path} | {csv_path}")
 
