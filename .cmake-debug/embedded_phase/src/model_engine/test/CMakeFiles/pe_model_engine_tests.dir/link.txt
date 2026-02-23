@@ -1,1 +1,1 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/pe_model_engine_tests.dir/model_engine_tests.cpp.o -o pe_model_engine_tests  ../src/libpe_model_engine.a 
+/usr/bin/c++ -g CMakeFiles/pe_model_engine_tests.dir/model_engine_tests.cpp.o -o pe_model_engine_tests  ../src/libpe_model_engine.a 

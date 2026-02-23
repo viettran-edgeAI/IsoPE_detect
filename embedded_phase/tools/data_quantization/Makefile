@@ -1,30 +1,32 @@
-# Dataset Quantization Makefile (Isolation-focused)
+# Batch Dataset Quantization Makefile
+# Builds the orchestrator that processes all five optimized CSV splits.
+# The single-file quantization module is at tools/data_quantization/;
+# build it first with:  cd ../../../tools/data_quantization && make build
 
-CXX = g++
+CXX      = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -O2
-INCLUDES = -I../../src
-TARGET = processing_data
-SOURCE = processing_data.cpp
+TARGET   = processing_data
+SOURCE   = processing_data.cpp
 
 CONFIG ?= quantization_config.json
 OUTPUT_DIR = quantized_datasets
 
-.PHONY: all build setup-dirs process test clean clean-all help status
+.PHONY: all build process test clean clean-all help status
 
 all: build
 
 build:
-	@echo "🔧 Compiling $(TARGET)..."
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(TARGET) $(SOURCE)
+	@echo "🔧 Compiling $(TARGET) (orchestrator)..."
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SOURCE)
 	@echo "✅ Compilation successful"
 
 setup-dirs:
-	@echo "📁 Creating directories..."
-	mkdir -p datasets $(OUTPUT_DIR)
-	@echo "✅ Directories ready"
+	@echo "📁 Creating output directory..."
+	mkdir -p $(OUTPUT_DIR)
+	@echo "✅ Directory ready"
 
-process: build setup-dirs
-	@echo "🚀 Running quantization workflow..."
+process: build
+	@echo "🚀 Running batch quantization..."
 	chmod +x quantize_dataset.sh
 	./quantize_dataset.sh -c $(CONFIG)
 
@@ -53,13 +55,16 @@ status:
 	fi
 
 help:
-	@echo "Dataset Quantization Makefile"
-	@echo "============================"
-	@echo "make build                 Compile processing_data"
-	@echo "make process [CONFIG=...]  Run quantization script"
-	@echo "make test                  Build + run default workflow"
+	@echo "Batch Dataset Quantization Makefile"
+	@echo "===================================="
+	@echo "make build                 Compile the orchestrator"
+	@echo "make process [CONFIG=...]  Build + run batch quantization"
+	@echo "make test                  Alias for process"
 	@echo "make status                Show current status"
 	@echo "make clean                 Remove compiled binary"
-	@echo "make clean-all             Remove compiled binary and quantized outputs"
+	@echo "make clean-all             Remove binary and all quantized outputs"
+	@echo ""
+	@echo "Prerequisite: build the single-file processor first:"
+	@echo "  cd ../../../tools/data_quantization && make build"
 
 .DEFAULT_GOAL := help

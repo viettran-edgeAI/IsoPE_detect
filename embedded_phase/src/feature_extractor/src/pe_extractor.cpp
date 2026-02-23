@@ -18,6 +18,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 namespace {
 
@@ -31,6 +32,27 @@ using embedded_feature_config::kDataDirectorySlots;
 using embedded_feature_config::kDirectFeatureCount;
 
 constexpr size_t MAX_SECTIONS = static_cast<size_t>(EDR_PE_MAX_SECTIONS);
+
+const std::unordered_set<std::string> kSuspiciousApis = {
+  "virtualalloc", "virtualallocex", "virtualprotect", "virtualprotectex",
+  "createremotethread", "ntcreatethreadex",
+  "writeprocessmemory", "readprocessmemory", "openprocess",
+  "ntunmapviewofsection", "ntmapviewofsection",
+  "winexec", "shellexecutea", "shellexecutew", "shellexecuteex",
+  "urldownloadtofilea", "urldownloadtofilew",
+  "internetopena", "internetopenw", "internetopenurla",
+  "httpsendrequesta", "httpopenrequesta",
+  "cryptencrypt", "cryptdecrypt", "cryptgenkey",
+  "regsetvalueexa", "regsetvalueexw",
+  "regcreatekeyexa", "regcreatekeyexw",
+  "adjusttokenprivileges", "lookupprivilegevaluea",
+  "getasynckeystate", "setwindowshookexa", "setwindowshookexw",
+  "isdebuggerpresent", "checkremotedebuggerpresent",
+  "ntqueryinformationprocess", "ntsetinformationthread",
+  "loadlibrarya", "loadlibraryw", "loadlibraryexa",
+  "getprocaddress", "ldrloaddll",
+  "createservicea", "createservicew",
+};
 
 struct ExtractResult {
   bool parse_ok = false;
@@ -190,6 +212,7 @@ ExtractResult extract_row(const std::string& filepath) {
     } else {
       result.parse_ok = true;
       const auto& header = pe->header();
+      const auto& dos = pe->dos_header();
       const auto& opt = pe->optional_header();
 
       result.direct[embedded_feature_config::D_COFF_MACHINE] = static_cast<double>(static_cast<uint32_t>(header.machine()));
@@ -198,6 +221,8 @@ ExtractResult extract_row(const std::string& filepath) {
       result.direct[embedded_feature_config::D_COFF_SIZEOF_OPT_HEADER] = static_cast<double>(header.sizeof_optional_header());
       result.direct[embedded_feature_config::D_COFF_CHARACTERISTICS] = static_cast<double>(header.characteristics());
       result.direct[embedded_feature_config::D_OPT_SIZEOF_INIT_DATA] = static_cast<double>(opt.sizeof_initialized_data());
+      result.direct[embedded_feature_config::D_DOS_E_LFANEW] = static_cast<double>(dos.addressof_new_exeheader());
+      result.direct[embedded_feature_config::D_OPT_SIZEOF_HEADERS] = static_cast<double>(opt.sizeof_headers());
       result.direct[embedded_feature_config::D_OPT_CHECKSUM] = static_cast<double>(opt.checksum());
       result.direct[embedded_feature_config::D_OPT_SECTION_ALIGNMENT] = static_cast<double>(opt.section_alignment());
       result.direct[embedded_feature_config::D_OPT_IMAGEBASE] = static_cast<double>(opt.imagebase());
@@ -254,6 +279,7 @@ ExtractResult extract_row(const std::string& filepath) {
 
       result.direct[embedded_feature_config::D_HAS_RELOCATIONS] = pe->has_relocations() ? 1.0 : 0.0;
       result.direct[embedded_feature_config::D_HAS_DEBUG] = pe->has_debug() ? 1.0 : 0.0;
+      result.direct[embedded_feature_config::D_HAS_PDB] = (pe->codeview_pdb() != nullptr) ? 1.0 : 0.0;
 
       if (pe->has_debug()) {
         bool has_repro = false;
@@ -299,6 +325,7 @@ ExtractResult extract_row(const std::string& filepath) {
       if (pe->has_imports()) {
         size_t dll_count = 0;
         size_t import_func_count = 0;
+        size_t suspicious_import_count = 0;
         const size_t max_import_dlls = static_cast<size_t>(EDR_PE_MAX_IMPORT_DLLS);
         const size_t max_import_funcs_total = static_cast<size_t>(EDR_PE_MAX_IMPORT_FUNCS_TOTAL);
         for (const LIEF::PE::Import& imp : pe->imports()) {
@@ -320,6 +347,11 @@ ExtractResult extract_row(const std::string& filepath) {
               break;
             }
             if (!entry.is_ordinal() && !entry.name().empty()) {
+              const std::string lowered_name = lower_ascii(entry.name());
+              if (kSuspiciousApis.find(lowered_name) != kSuspiciousApis.end()) {
+                suspicious_import_count += 1;
+              }
+
               hash_budget_exhausted = false;
               hash_update(result.imp_func_hash, entry.name(), true, hash_updates, hash_budget_exhausted);
               if (hash_budget_exhausted) {
@@ -333,6 +365,8 @@ ExtractResult extract_row(const std::string& filepath) {
             break;
           }
         }
+
+        result.direct[embedded_feature_config::D_NUM_SUSPICIOUS_IMPORTS] = static_cast<double>(suspicious_import_count);
       }
 
       if (pe->has_signatures()) {

@@ -221,7 +221,8 @@ namespace model_engine {
 
     EvaluationSummary train_and_evaluate(const std::filesystem::path& model_engine_config,
                                          const std::filesystem::path& dp_txt,
-                                         const DatasetBundlePaths& dataset_paths) {
+                                         const DatasetBundlePaths& dataset_paths,
+                                         bool save_scores) {
         EvaluationSummary summary;
 
         IsolationForestModelEngine engine;
@@ -358,6 +359,11 @@ namespace model_engine {
         );
 
         summary.test = if_compute_metrics(test_b_scores, test_m_scores, summary.selected_threshold);
+
+        if (save_scores) {
+            summary.test_benign_scores = test_b_scores;
+            summary.test_malware_scores = test_m_scores;
+        }
 
         if (!load_development_metrics(model_engine_config, summary.development, &err)) {
             summary.message = err;

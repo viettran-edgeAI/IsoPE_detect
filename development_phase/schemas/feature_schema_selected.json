@@ -486,7 +486,6 @@
     "opt_sizeof_init_data",
     "opt_sizeof_uninit_data",
     "opt_entrypoint",
-    "opt_imagebase",
     "opt_file_alignment",
     "opt_minor_os_ver",
     "opt_sizeof_image",
@@ -961,7 +960,7 @@
       "stage": "stability_filter"
     },
     "opt_imagebase": {
-      "status": "selected_log_transform",
+      "status": "selected",
       "stage": "passed_all"
     },
     "opt_section_alignment": {

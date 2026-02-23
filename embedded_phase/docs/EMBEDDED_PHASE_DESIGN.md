@@ -102,21 +102,21 @@ embedded_phase/
 │   └── LIEF/                          # Vendored LIEF PE parsing library (C++ source)
 │
 └── tools/
-    └── data_quantization/             # Dataset quantization tool
+    └── data_quantization/             # Batch quantization orchestrator
         ├── Makefile
-        ├── processing_data.cpp        # C++ quantizer: reads CSV, writes nml.bin + dp.txt
-        ├── quantize_dataset.sh        # Shell driver: runs quantizer on all five splits
-        ├── quantization_config.json   # Bits-per-feature, outlier sigma, split paths
+        ├── processing_data.cpp        # Orchestrator: finds 5 CSVs, calls tools/data_quantization/
+        ├── quantize_dataset.sh        # Shell driver: builds + runs orchestrator
+        ├── quantization_config.json   # model_name, input_dir, bits-per-feature, etc.
         ├── dataset_workflow.md        # Quantization pipeline documentation
-        └── quantized_datasets/        # Generated artifacts (one set per split)
-            ├── benign_train_optimized_nml.bin
-            ├── benign_train_optimized_dp.txt
-            ├── benign_train_optimized_qtz.bin
-            ├── benign_train_optimized_nml.csv
-            ├── benign_val_optimized_*
-            ├── benign_test_optimized_*
-            ├── malware_val_optimized_*
-            └── malware_test_optimized_*
+        └── quantized_datasets/        # Generated artifacts (4 files × 5 splits)
+            ├── <model>_ben_train_nml.bin
+            ├── <model>_ben_train_nml.csv
+            ├── <model>_ben_train_qtz.bin
+            ├── <model>_ben_train_dp.txt
+            ├── <model>_ben_val_*
+            ├── <model>_ben_test_*
+            ├── <model>_mal_val_*
+            └── <model>_mal_test_*
 ```
 
 ---
@@ -303,10 +303,22 @@ At 2-bit quantization a 40-feature sample occupies 10 bytes instead of 160 bytes
 
 ### 5.5 Build and run
 
+The quantization pipeline is split across two modules:
+
+```sh
+# Step 1 — build the single-file quantization module (EDR root level)
+cd tools/data_quantization && make build && cd -
+
+# Step 2 — build and run the batch orchestrator
+cd embedded_phase/tools/data_quantization
+make process           # compiles orchestrator + quantizes all five splits
+```
+
+Alternatively via shell script:
+
 ```sh
 cd embedded_phase/tools/data_quantization
-make                   # compiles processing_data
-./quantize_dataset.sh  # quantizes all five splits using quantization_config.json
+./quantize_dataset.sh  # auto-builds both tiers if needed
 ```
 
 ---

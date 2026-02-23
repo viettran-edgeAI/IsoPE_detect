@@ -30,6 +30,10 @@ DIRECT_FEATURES = {
     "overlay_entropy": 21,
     "num_certificates": 22,
     "sig_verified": 23,
+    "dos_e_lfanew": 24,
+    "opt_sizeof_headers": 25,
+    "num_suspicious_imports": 26,
+    "has_pdb": 27,
 }
 
 COFF_CHAR_FLAGS = {

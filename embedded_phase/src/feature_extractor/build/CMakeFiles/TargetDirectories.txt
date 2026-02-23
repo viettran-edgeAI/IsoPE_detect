@@ -1,0 +1,8 @@
+/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/build/CMakeFiles/edit_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/build/CMakeFiles/rebuild_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/build/src/CMakeFiles/pe_feature_extractor.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/build/src/CMakeFiles/edit_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/build/src/CMakeFiles/rebuild_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/build/app/CMakeFiles/lief_feature_extractor.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/build/app/CMakeFiles/edit_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/build/app/CMakeFiles/rebuild_cache.dir

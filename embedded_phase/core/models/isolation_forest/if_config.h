@@ -273,77 +273,7 @@ namespace eml {
 
             return true;
         }
-
-        bool load_dp_bin(const std::filesystem::path& dp_path) {
-            // IFDP v1 binary format used by IF tools/build pipeline:
-            // [magic:'IFDP'(4)][version:u8]
-            // [quant_bits:u8][num_features:u16][num_samples:u32][num_labels:u16]
-            // [problem_type:u8][max_depth:u16][label_counts:u32 * num_labels]
-            std::ifstream fin(dp_path, std::ios::binary);
-            if (!fin.is_open()) {
-                eml_debug(0, "❌ IF config: failed to open dp bin: ", dp_path.string().c_str());
-                return false;
-            }
-
-            char magic[4] = {0, 0, 0, 0};
-            if (!if_config_detail::read_exact(fin, magic, sizeof(magic))) {
-                return false;
-            }
-            if (!(magic[0] == 'I' && magic[1] == 'F' && magic[2] == 'D' && magic[3] == 'P')) {
-                eml_debug(1, "⚠️ IF config: dp bin magic mismatch (expected IFDP)");
-                return false;
-            }
-
-            uint8_t version = 0;
-            uint8_t problem_u8 = 0;
-            uint16_t max_depth_local = 0;
-
-            if (!if_config_detail::read_exact(fin, &version, sizeof(version)) ||
-                !if_config_detail::read_exact(fin, &quantization_bits, sizeof(quantization_bits)) ||
-                !if_config_detail::read_exact(fin, &num_features, sizeof(num_features)) ||
-                !if_config_detail::read_exact(fin, &num_samples, sizeof(num_samples)) ||
-                !if_config_detail::read_exact(fin, &num_labels, sizeof(num_labels)) ||
-                !if_config_detail::read_exact(fin, &problem_u8, sizeof(problem_u8)) ||
-                !if_config_detail::read_exact(fin, &max_depth_local, sizeof(max_depth_local))) {
-                eml_debug(0, "❌ IF config: failed to read dp bin header");
-                return false;
-            }
-
-            if (version != 1) {
-                eml_debug(1, "⚠️ IF config: unknown dp bin version: ", static_cast<int>(version));
-            }
-
-            problem = static_cast<problem_type>(problem_u8);
-            if (problem == problem_type::UNKNOWN) {
-                problem = problem_type::ISOLATION;
-            }
-
-            if (max_depth_local > 0) {
-                max_depth = max_depth_local;
-            }
-
-            samples_per_label.clear();
-            samples_per_label.resize(num_labels, 0);
-            for (uint16_t i = 0; i < num_labels; ++i) {
-                uint32_t count = 0;
-                if (!if_config_detail::read_exact(fin, &count, sizeof(count))) {
-                    eml_debug(0, "❌ IF config: failed to read dp bin label counts");
-                    return false;
-                }
-                samples_per_label[i] = static_cast<sample_idx_type>(count);
-            }
-
-            if (quantization_bits < 1) quantization_bits = 1;
-            if (quantization_bits > 8) quantization_bits = 8;
-
-            if (num_features == 0) {
-                eml_debug(0, "❌ IF config: invalid dp bin (num_features=0)");
-                return false;
-            }
-
-            return true;
-        }
-
+        
         bool load_model_engine_config(const std::filesystem::path& config_file) {
             std::string json;
             if (!if_config_detail::read_text_file(config_file, json)) {
@@ -428,7 +358,38 @@ namespace eml {
                 return false;
             }
 
-            return recompute_node_layout_bits();
+            if (!recompute_node_layout_bits()) {
+                return false;
+            }
+
+            threshold_bits = quantization_bits;
+
+            size_t node_resource_pos = json.find("\"node_resource\"");
+            if (node_resource_pos != std::string::npos) {
+                if (if_config_detail::extract_number(json, "feature_bits", value, node_resource_pos) && value > 0.0) {
+                    feature_bits = static_cast<uint8_t>(std::max(1.0, std::min(63.0, value)));
+                }
+                if (if_config_detail::extract_number(json, "child_bits", value, node_resource_pos) && value > 0.0) {
+                    child_bits = static_cast<uint8_t>(std::max(1.0, std::min(63.0, value)));
+                }
+                if (if_config_detail::extract_number(json, "leaf_size_bits", value, node_resource_pos) && value > 0.0) {
+                    leaf_size_bits = static_cast<uint8_t>(std::max(1.0, std::min(63.0, value)));
+                }
+                if (if_config_detail::extract_number(json, "depth_bits", value, node_resource_pos) && value > 0.0) {
+                    depth_bits = static_cast<uint8_t>(std::max(1.0, std::min(63.0, value)));
+                }
+                if (if_config_detail::extract_number(json, "max_depth", value, node_resource_pos) && value > 0.0) {
+                    max_depth = static_cast<uint16_t>(std::max(1.0, std::min(65535.0, value)));
+                }
+                if (if_config_detail::extract_number(json, "max_nodes_per_tree", value, node_resource_pos) && value > 0.0) {
+                    max_nodes_per_tree = static_cast<uint32_t>(std::max(1.0, std::min(static_cast<double>(std::numeric_limits<uint32_t>::max()), value)));
+                }
+                if (if_config_detail::extract_number(json, "max_samples_per_tree", value, node_resource_pos) && value > 0.0) {
+                    max_samples_per_tree = static_cast<uint32_t>(std::max(1.0, std::min(static_cast<double>(std::numeric_limits<uint32_t>::max()), value)));
+                }
+            }
+
+            return true;
         }
 
     public:
@@ -581,11 +542,7 @@ namespace eml {
 
             bool dp_ok = false;
             const std::string ext = dp_file.extension().string();
-            if (ext == ".bin") {
-                dp_ok = load_dp_bin(dp_file);
-            } else {
-                dp_ok = load_dp_txt(dp_file);
-            }
+            dp_ok = load_dp_txt(dp_file);
 
             if (!dp_ok) {
                 return false;
@@ -609,14 +566,6 @@ namespace eml {
 
             std::filesystem::path dp_path;
             bool dp_ok = false;
-
-            if (base_ptr->dp_bin_exists()) {
-                dp_path = base_ptr->get_dp_bin_path();
-                dp_ok = load_dp_bin(dp_path);
-                if (!dp_ok) {
-                    eml_debug(1, "⚠️ IF config: failed to parse _dp.bin, trying _dp.txt fallback");
-                }
-            }
 
             if (!dp_ok && base_ptr->dp_txt_exists()) {
                 dp_path = base_ptr->get_dp_txt_path();

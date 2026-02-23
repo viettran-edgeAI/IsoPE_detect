@@ -1,0 +1,2 @@
+/usr/bin/ar qc libpe_feature_extractor.a CMakeFiles/pe_feature_extractor.dir/pe_extractor.cpp.o
+/usr/bin/ranlib libpe_feature_extractor.a

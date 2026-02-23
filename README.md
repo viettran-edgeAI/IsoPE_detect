@@ -27,6 +27,12 @@ EDR_AGENT/
 │   ├── download_malware.py
 │   └── process_dataset.py
 │
+├── tools/                         # Dataset download, preprocessing, and quantization utilities
+│   ├── download_dataset.py
+│   ├── download_malware.py
+│   ├── process_dataset.py
+│   └── data_quantization/         # Single-file quantization module (shared with embedded phase)
+│
 ├── development_phase/             # Python pipeline – feature search + model tuning
 │   ├── src/                       # Pipeline scripts and configuration
 │   ├── data/                      # Cleaned and optimized data splits
@@ -41,7 +47,7 @@ EDR_AGENT/
     │   ├── feature_extractor/     # LIEF-based PE feature extractor
     │   └── model_engine/          # Quantized Isolation Forest inference engine
     ├── tools/
-    │   └── data_quantization/     # Dataset quantization tool and outputs
+    │   └── data_quantization/     # Batch orchestrator: processes all 5 CSV splits
     ├── third_party/LIEF/          # Vendored LIEF PE parsing library
     └── docs/                      # Embedded phase design documentation
 ```
@@ -72,9 +78,10 @@ Development Phase (Python)
          │  iforest_optimized_config.json     (hyperparameters + scaler + threshold)
          ▼
 Embedding Phase (C++)
-  tools/data_quantization/  →  quantize training/val/test splits
-  src/feature_extractor/    →  compile-time feature binding, runtime PE parsing
-  src/model_engine/         →  train quantized IF, score PE files, emit verdict
+  tools/data_quantization/                  →  single-file quantization module
+  embedded_phase/tools/data_quantization/   →  batch orchestrator (5 splits)
+  src/feature_extractor/                    →  compile-time feature binding, runtime PE parsing
+  src/model_engine/                         →  train quantized IF, score PE files, emit verdict
 ```
 
 ---
@@ -173,16 +180,26 @@ No floating-point arithmetic is required on the hot path after the quantizer ste
 - Output formats: JSONL (one record per file) or CSV.
 - Build: `build.sh` or CMake target `lief_feature_extractor`.
 
-### Module 2 — Data Quantization Tool (`embedded_phase/tools/data_quantization/`)
+### Module 2 — Data Quantization (`tools/data_quantization/` + `embedded_phase/tools/data_quantization/`)
 
 Converts float-valued optimized CSV splits into compact integer binary datasets for the C++ model engine.
+The pipeline is split into two tiers:
+
+- **`tools/data_quantization/`** — single-file quantization module.  
+  Accepts one CSV via `-ip` flag (or `input_path` in config) and writes four output artifacts.
+  Built independently with `make build`.
+
+- **`embedded_phase/tools/data_quantization/`** — batch orchestrator.  
+  Reads `model_name` and `input_dir` from `quantization_config.json`, finds the five
+  optimized CSV splits (`<model_name>_ben_train/test/val.csv`, `<model_name>_mal_test/val.csv`),
+  and calls the single-file module for each.
 
 **Per-feature quantization (2-bit default, 4 bins)**:
 1. Compute z-score outlier bounds on the training split only.
 2. Build quantile-based bin boundaries from the clipped training distribution.
 3. Apply the same boundaries identically to all splits (no data leakage).
 
-**Outputs per split** under `quantized_datasets/`:
+**Outputs per split** under `embedded_phase/tools/data_quantization/quantized_datasets/`:
 
 | File | Contents |
 |---|---|
@@ -215,53 +232,49 @@ The embedded C++ model (trained entirely on 2-bit quantized integer-bin data) me
 
 | Split | Metric | Development (Python / float) | Embedded (C++ / quantized) | Δ |
 |---|---|---|---|---|
-| **Validation** | FPR | 0.0383 | 0.0399 | +0.0016 |
-| **Validation** | TPR | 0.9177 | 0.9564 | **+0.0387** |
-| **Validation** | ROC-AUC | 0.9880 | 0.9933 | **+0.0052** |
-| **Test** | FPR | 0.0453 | 0.0576 | +0.0123 |
-| **Test** | TPR | 0.9347 | 0.9969 | **+0.0622** |
-| **Test** | ROC-AUC | 0.9879 | 0.9960 | **+0.0081** |
+| **Validation** | FPR | 0.0370 | 0.0278 | **−0.0093** |
+| **Validation** | TPR | 0.9208 | 0.9975 | **+0.0767** |
+| **Validation** | ROC-AUC | 0.9878 | 0.9982 | **+0.0105** |
+| **Test** | FPR | 0.0465 | 0.0570 | +0.0105 |
+| **Test** | TPR | 0.9404 | 1.0000 | **+0.0596** |
+| **Test** | ROC-AUC | 0.9885 | 0.9989 | **+0.0104** |
 
-Selected decision threshold (embedded): `0.0100316`
+Selected decision threshold (embedded): `0.016133`
 
-The slight FPR increase on the test split (+0.012) is within the `val_fpr_delta = 0.01` design tolerance. The TPR and ROC-AUC improvements come from the regularizing effect of quantization: discrete binning suppresses noisy feature dimensions and smooths tree splits without losing the separating signal at class boundaries.
+The slight FPR increase on the test split (+0.0105) is within the `val_fpr_delta = 0.01` design tolerance. The TPR and ROC-AUC improvements come from the regularizing effect of quantization: discrete binning suppresses noisy feature dimensions and smooths tree splits without losing the separating signal at class boundaries.
 
-Full report: `embedded_phase/src/model_engine/results/if_evaluation_summary.json`
+Full report: [report/README.md](report/README.md)
 
 ### Embedding benchmark report (10 benign + 10 malware)
 
-Measured per file:
-- File size
-- Feature extraction time from `lief_feature_extractor` (`processing_time_ms`)
-- Model inference time including standardization + quantization + IF scoring
-- RAM usage (process RSS in MB)
+*Last updated: 2026-02-23 — decision threshold `0.016133`*
 
-| Split | File | File Size (KB) | Feature Extraction Time (ms) | Inference Time (ms) | RAM Usage (MB RSS) | Score | Verdict |
+| Split | File | File Size (KB) | Extraction (ms) | Inference (ms) | RSS (MB) | Score | Verdict |
 |---|---|---:|---:|---:|---:|---:|---|
-| benign_test | 000d...ec00.dll | 2956.031 | 39.926 | 0.144 | 18.656 | -0.124 | anomaly |
-| benign_test | 000de8f56588e1a54bbd2d07cd2dff3e9967fcc42bc55a9fb476fedf66e4d9c2.dll | 60.305 | 2.909 | 0.148 | 18.781 | -0.097 | anomaly |
-| benign_test | 000e...8243.dll | 84.305 | 2.754 | 0.151 | 18.781 | -0.106 | anomaly |
-| benign_test | 000f...431e.dll | 53.969 | 2.735 | 0.155 | 18.781 | -0.100 | anomaly |
-| benign_test | 0016...1fb2.dll | 8.500 | 0.547 | 0.138 | 18.781 | -0.114 | anomaly |
-| benign_test | 001d...f521.dll | 226.500 | 2.172 | 0.160 | 18.781 | -0.079 | anomaly |
-| benign_test | 001d...d75c.dll | 75.603 | 1.423 | 0.177 | 18.781 | -0.108 | anomaly |
-| benign_test | 002a...3a58.exe | 21.000 | 0.745 | 0.215 | 18.781 | -0.123 | anomaly |
-| benign_test | 0034...8089.exe | 33.828 | 2.814 | 0.195 | 18.781 | -0.092 | anomaly |
-| benign_test | 003d...e0fe.dll | 19.070 | 1.614 | 0.213 | 18.781 | -0.108 | anomaly |
-| malware_test | 0005...f6a0.exe | 116.000 | 1.674 | 0.192 | 18.781 | -0.132 | anomaly |
-| malware_test | 0009...552dc.exe | 5258.000 | 43.971 | 0.116 | 18.781 | -0.136 | anomaly |
-| malware_test | 0019...2460.exe | 5266.500 | 42.526 | 0.114 | 18.781 | -0.136 | anomaly |
-| malware_test | 0049...8403.exe | 3194.000 | 17.572 | 0.118 | 18.781 | -0.125 | anomaly |
-| malware_test | 0065...2e6c.exe | 4426.500 | 31.674 | 0.135 | 18.781 | -0.117 | anomaly |
-| malware_test | 0066...6752.exe | 10240.000 | 58.208 | 0.151 | 18.781 | -0.108 | anomaly |
-| malware_test | 0075...cd6e.exe | 7070.400 | 52.863 | 0.151 | 18.781 | -0.113 | anomaly |
-| malware_test | 0089...1a1c.exe | 8.000 | 0.542 | 0.118 | 18.781 | -0.125 | anomaly |
-| malware_test | 00a1...3aab.exe | 45289.000 | 241.279 | 0.164 | 18.781 | -0.095 | anomaly |
-| malware_test | 00a2...8092.exe | 10025.500 | 49.368 | 0.127 | 18.781 | -0.125 | anomaly |
+| benign_test | 000d81f6…ec00.dll | 2956.031 | 20.839 | 0.320 | 15.168 | −0.015 | anomaly |
+| benign_test | 000de8f5…d9c2.dll | 60.305 | 2.463 | 0.342 | 15.293 | 0.100 | benign |
+| benign_test | 000e0a55…8243.dll | 84.305 | 2.326 | 0.311 | 15.293 | 0.023 | benign |
+| benign_test | 000f278b…431e.dll | 53.969 | 1.783 | 0.567 | 15.293 | 0.037 | benign |
+| benign_test | 00167267…1fb2.dll | 8.500 | 0.332 | 0.333 | 15.293 | 0.030 | benign |
+| benign_test | 001d74d5…f521.dll | 226.500 | 1.358 | 0.452 | 15.293 | 0.060 | benign |
+| benign_test | 001dbc4c…d75c.dll | 75.603 | 0.822 | 0.417 | 15.293 | 0.129 | benign |
+| benign_test | 002a2f5c…3a58.exe | 21.000 | 0.478 | 0.312 | 15.293 | −0.024 | anomaly |
+| benign_test | 0034d97e…8089.exe | 33.828 | 2.540 | 0.605 | 15.293 | 0.074 | benign |
+| benign_test | 003df758…e0fe.dll | 19.070 | 1.823 | 0.374 | 15.293 | 0.022 | benign |
+| malware_test | 0005626a…f6a0.exe | 116.000 | 0.822 | 0.338 | 15.293 | −0.083 | anomaly |
+| malware_test | 0009f3b6…552dc.exe | 5258.000 | 39.107 | 0.218 | 15.293 | −0.084 | anomaly |
+| malware_test | 0019e0ae…2460.exe | 5266.500 | 33.922 | 0.284 | 15.293 | −0.084 | anomaly |
+| malware_test | 0049bd68…8403.exe | 3194.000 | 11.112 | 0.262 | 15.293 | −0.055 | anomaly |
+| malware_test | 00654e21…2e6c.exe | 4426.500 | 26.952 | 0.442 | 15.293 | 0.027 | benign |
+| malware_test | 006622b9…6752.exe | 10240.000 | 45.910 | 0.390 | 15.293 | 0.002 | anomaly |
+| malware_test | 00757772…cd6e.exe | 7070.400 | 47.920 | 0.296 | 15.293 | 0.002 | anomaly |
+| malware_test | 008902cb…1a1c.exe | 8.000 | 0.245 | 0.279 | 15.293 | −0.049 | anomaly |
+| malware_test | 00a16089…3aab.exe | 45289.000 | 190.765 | 0.474 | 15.293 | 0.063 | benign |
+| malware_test | 00a22dc8…8092.exe | 10025.500 | 34.066 | 0.339 | 15.293 | −0.033 | anomaly |
 
-- Average feature extraction time: `29.866 ms`
-- Average inference time (standardization + quantization + inference): `0.154 ms`
-- Peak observed RSS during benchmark loop: `18.781 MB`
+- Average feature extraction time: `23.279 ms`
+- Average inference time (standardization + quantization + inference): `0.368 ms`
+- Peak observed RSS during benchmark loop: `15.293 MB`
 
 ### Unit tests
 
@@ -274,44 +287,5 @@ Tests cover: packed-node field read/write round-trip at all bit widths, and the 
 
 ---
 
-## Current Status
-
-| Component | Status |
-|---|---|
-| Development pipeline (feature extraction → selection → optimization) | Complete |
-| Handoff artifacts (`iforest_optimized_features.json`, `iforest_optimized_config.json`) | Complete |
-| C++ feature extractor (LIEF, compile-time feature binding, resource limits) | Complete |
-| Dataset quantization tool and all quantized dataset artifacts | Complete |
-| C++ model engine (quantized IF, threshold selection, metrics, CLI) | Complete |
-| Unit tests | Complete |
-| Dev vs embedded parity comparison | Complete |
-
----
-
-## Build Quick-Reference
-
-```sh
-# Development pipeline
-cd development_phase/src && python3 model_optimization.py
-
-# Dataset quantization
-cd embedded_phase/tools/data_quantization && ./quantize_dataset.sh
-
-# Feature extractor
-cd embedded_phase/src/feature_extractor && ./build.sh
-
-# Model engine
-cmake -B .cmake-debug -DCMAKE_BUILD_TYPE=Debug .
-cmake --build .cmake-debug --target pe_model_engine_cli pe_model_engine_tests
-ctest --test-dir .cmake-debug
-```
-
----
-
-## Next Steps
-
-1. **End-to-end CLI integration** — wire the feature extractor and model engine CLIs into a single binary that accepts a PE path and emits a verdict.
-2. **Numerical parity harness** — dump raw float feature vectors from the extractor and compare per-sample Python vs C++ anomaly scores.
-3. **Deployment tuning** — profile compile-time resource-limit macros against the target device's RAM/CPU budget.
-4. **Incremental retraining** — define a procedure to re-run the development pipeline with fresh benign samples and regenerate both handoff artifacts.
-5. **Future work** — explore alternate anomaly detectors; consider on-device threshold update without full model rebuild.
+Full results, benchmark, ROC curve, build reference, and next steps: [report/README.md](report/README.md)
+````

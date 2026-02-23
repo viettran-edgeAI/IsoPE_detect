@@ -358,9 +358,25 @@ int main(int argc, char** argv) {
     std::string err;
     eml::model_engine::IsolationForestModelEngine engine;
     const std::filesystem::path dp_path = args.quantized_dir / "benign_train_optimized_dp.txt";
+
+    eml::model_engine::DatasetBundlePaths datasets;
+    datasets.benign_train = args.quantized_dir / "benign_train_optimized_nml.bin";
+    datasets.benign_val = args.quantized_dir / "benign_val_optimized_nml.bin";
+    datasets.benign_test = args.quantized_dir / "benign_test_optimized_nml.bin";
+    datasets.malware_val = args.quantized_dir / "malware_val_optimized_nml.bin";
+    datasets.malware_test = args.quantized_dir / "malware_test_optimized_nml.bin";
+
+    const eml::model_engine::EvaluationSummary eval_summary =
+        eml::model_engine::train_and_evaluate(args.config_path, dp_path, datasets);
+    if (!eval_summary.ok) {
+        std::cerr << "Failed to compute calibrated threshold: " << eval_summary.message << "\n";
+        return 2;
+    }
+    const float decision_threshold = eval_summary.selected_threshold;
+
     if (!engine.load_config(args.config_path, dp_path, &err)) {
         std::cerr << "Failed to load model config: " << err << "\n";
-        return 2;
+        return 3;
     }
 
     std::vector<uint8_t> train_matrix;
@@ -373,32 +389,32 @@ int main(int argc, char** argv) {
             n_train,
             &err)) {
         std::cerr << "Failed to load train dataset: " << err << "\n";
-        return 3;
+        return 4;
     }
 
     if (!engine.train_on_quantized_matrix(train_matrix, n_train, &err)) {
         std::cerr << "Failed to train model: " << err << "\n";
-        return 4;
+        return 5;
     }
 
     eml::If_scaler_transform scaler;
     if (!scaler.init(engine.config())) {
         std::cerr << "Failed to initialize scaler\n";
-        return 5;
+        return 6;
     }
 
     eml::eml_quantizer<eml::problem_type::ISOLATION> quantizer;
     const std::filesystem::path quantizer_path = args.quantized_dir / "benign_train_optimized_qtz.bin";
     if (!quantizer.loadQuantizer(quantizer_path.string().c_str())) {
         std::cerr << "Failed to load quantizer: " << quantizer_path << "\n";
-        return 6;
+        return 7;
     }
 
     const auto benign_files = collect_sample_files(args.benign_dir, args.samples_per_class);
     const auto malware_files = collect_sample_files(args.malware_dir, args.samples_per_class);
     if (benign_files.size() < args.samples_per_class || malware_files.size() < args.samples_per_class) {
         std::cerr << "Not enough samples. benign=" << benign_files.size() << ", malware=" << malware_files.size() << "\n";
-        return 7;
+        return 8;
     }
 
     std::vector<SampleBenchmark> rows;
@@ -463,20 +479,20 @@ int main(int argc, char** argv) {
         row.inference_ms = inference_ms;
         row.ram_rss_mb = rss_mb;
         row.score = score;
-        row.anomaly = (score < 0.0f);
+        row.anomaly = (score < decision_threshold);
         rows.push_back(row);
         return true;
     };
 
     for (const auto& path : benign_files) {
         if (!process_one(path, "benign_test")) {
-            return 8;
+            return 9;
         }
     }
 
     for (const auto& path : malware_files) {
         if (!process_one(path, "malware_test")) {
-            return 9;
+            return 10;
         }
     }
 
@@ -486,7 +502,7 @@ int main(int argc, char** argv) {
     std::ofstream fout(args.output_md, std::ios::out | std::ios::trunc);
     if (!fout.is_open()) {
         std::cerr << "Failed to open output file: " << args.output_md << "\n";
-        return 10;
+        return 11;
     }
 
     fout << "# Embedded Inference Benchmark Report\n\n";
@@ -496,6 +512,7 @@ int main(int argc, char** argv) {
     fout << "- Feature extraction time from `lief_feature_extractor` (`processing_time_ms`)\n";
     fout << "- Model inference time: standardization + quantization + IF scoring\n";
     fout << "- RAM usage (current process RSS in MB)\n\n";
+    fout << "Decision threshold used for verdict: `" << decision_threshold << "`\n\n";
     fout << table_md;
     fout.close();
 

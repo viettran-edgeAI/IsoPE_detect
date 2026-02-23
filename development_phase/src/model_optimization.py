@@ -358,49 +358,17 @@ def _sanitize_model_name(raw_name: str) -> str:
     return cleaned or "iforest"
 
 
-def _render_model_name(path_template: str, model_name: str) -> str:
-    return str(path_template).replace("{model_name}", model_name)
-
-
 def _desired_bits(value: int) -> int:
     return int(value).bit_length() if value > 0 else 0
 
 
-def _parse_dp_txt_params(dp_txt_path: Path) -> dict[str, int]:
-    if not dp_txt_path.exists():
-        return {}
-
-    parsed: dict[str, int] = {}
-    with open(dp_txt_path, "r", encoding="utf-8") as f:
-        for idx, line in enumerate(f):
-            row = line.strip()
-            if not row:
-                continue
-            if idx == 0 and row == "parameter,value":
-                continue
-            if "," not in row:
-                continue
-
-            key, value = row.split(",", 1)
-            key = key.strip()
-            value = value.strip()
-            try:
-                parsed[key] = int(float(value))
-            except ValueError:
-                continue
-
-    return parsed
-
-
 def _compute_node_resource_params(
     *,
+    model: IsolationForest,
     num_features: int,
     num_samples: int,
-    quantization_bits: int,
     max_samples: Union[int, float, Literal["auto"]],
-    max_depth: int = 16,
 ) -> dict[str, int]:
-    quant_bits = max(1, min(8, int(quantization_bits)))
     resolved_features = max(1, int(num_features))
     resolved_samples = max(1, int(num_samples))
 
@@ -414,26 +382,43 @@ def _compute_node_resource_params(
             max_samples_per_tree = int(np.ceil(max_samples_float))
     max_samples_per_tree = max(1, max_samples_per_tree)
 
-    resolved_max_depth = max(1, int(max_depth))
-    nodes_by_depth = (1 << (resolved_max_depth + 1)) - 1 if resolved_max_depth < 31 else (2**32 - 1)
-    nodes_by_samples = 1 if resolved_samples <= 1 else min(2**32 - 1, resolved_samples * 2 - 1)
-    max_nodes_per_tree = max(1, min(nodes_by_depth, nodes_by_samples))
+    observed_max_depth = 1
+    observed_max_nodes = 1
+    observed_max_leaf_size = 1
+
+    for estimator in getattr(model, "estimators_", []):
+        tree = getattr(estimator, "tree_", None)
+        if tree is None:
+            continue
+
+        observed_max_depth = max(observed_max_depth, max(1, int(getattr(tree, "max_depth", 1))))
+        observed_max_nodes = max(observed_max_nodes, max(1, int(getattr(tree, "node_count", 1))))
+
+        children_left = getattr(tree, "children_left", None)
+        children_right = getattr(tree, "children_right", None)
+        n_node_samples = getattr(tree, "n_node_samples", None)
+        if children_left is None or children_right is None or n_node_samples is None:
+            continue
+
+        leaf_mask = (children_left == -1) & (children_right == -1)
+        if np.any(leaf_mask):
+            max_leaf_samples = int(np.max(n_node_samples[leaf_mask]))
+            observed_max_leaf_size = max(observed_max_leaf_size, max(1, max_leaf_samples))
 
     feature_bits = max(1, _desired_bits(resolved_features - 1))
-    child_bits = max(1, _desired_bits(max_nodes_per_tree - 1))
-    leaf_size_bits = max(1, _desired_bits(max_samples_per_tree))
-    depth_bits = max(1, _desired_bits(resolved_max_depth))
+    child_bits = max(1, _desired_bits(observed_max_nodes - 1))
+    leaf_size_bits = max(1, _desired_bits(observed_max_leaf_size))
+    depth_bits = max(1, _desired_bits(observed_max_depth))
 
     return {
-        "quantization_bits": int(quant_bits),
-        "threshold_bits": int(quant_bits),
         "feature_bits": int(feature_bits),
         "child_bits": int(child_bits),
         "leaf_size_bits": int(leaf_size_bits),
         "depth_bits": int(depth_bits),
-        "max_depth": int(resolved_max_depth),
-        "max_nodes_per_tree": int(max_nodes_per_tree),
+        "max_depth": int(observed_max_depth),
+        "max_nodes_per_tree": int(observed_max_nodes),
         "max_samples_per_tree": int(max_samples_per_tree),
+        "max_leaf_samples_per_node": int(observed_max_leaf_size),
         "num_features": int(resolved_features),
         "num_samples": int(resolved_samples),
     }
@@ -613,10 +598,10 @@ def _run_malware_split_analysis(
     import umap
 
     # Filenames use model_name prefix (resolved by caller or by glob fallback)
-    val_candidates = sorted(optimized_data_dir.glob("*malware_val_optimized.parquet"))
-    test_candidates = sorted(optimized_data_dir.glob("*malware_test_optimized.parquet"))
-    val_opt_path = val_candidates[0] if val_candidates else optimized_data_dir / "malware_val_optimized.parquet"
-    test_opt_path = test_candidates[0] if test_candidates else optimized_data_dir / "malware_test_optimized.parquet"
+    val_candidates = sorted(optimized_data_dir.glob("*mal_val.parquet"))
+    test_candidates = sorted(optimized_data_dir.glob("*mal_test.parquet"))
+    val_opt_path = val_candidates[0] if val_candidates else optimized_data_dir / "mal_val.parquet"
+    test_opt_path = test_candidates[0] if test_candidates else optimized_data_dir / "mal_test.parquet"
 
     if not val_opt_path.exists() or not test_opt_path.exists():
         raise FileNotFoundError("Optimized malware datasets not found. Run optimization first.")
@@ -895,7 +880,7 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
                    val_fpr, val_tpr, val_auc_value, test_fpr, test_tpr, auc_value, best_params,
                    group_mapping, results_dir, feature_names_path, model_config_path,
                    threshold_strategy="fpr", f_beta=1.0,
-                   model_name="iforest", node_resource=None, dp_txt_path=None):
+                   model_name="iforest", node_resource=None):
     """Export exactly two embedding artifacts: selected feature names and model-engine config."""
     results_dir.mkdir(parents=True, exist_ok=True)
     feature_names_path.parent.mkdir(parents=True, exist_ok=True)
@@ -936,10 +921,6 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
         },
         "preprocessing": {
             "scaler": scaler_export,
-            "quantization": {
-                "dp_txt_path": str(dp_txt_path) if dp_txt_path else None,
-                "derived_from_dp_txt": bool(dp_txt_path and Path(dp_txt_path).exists()),
-            },
         },
         "deployment_scaling": {
             "runtime_normalization": "disabled",
@@ -1157,11 +1138,6 @@ def main():
     pr_svg        = report_dir / "pr_curve.svg"
     score_svg     = report_dir / "score_distribution.svg"
     val_score_svg = report_dir / "score_distribution_val.svg"
-    dp_txt_raw = paths_cfg.get(
-        "dp_txt_path",
-        "../../embedded_phase/tools/data_quantization/quantized_datasets/{model_name}_dp.txt",
-    )
-    dp_txt_path = _resolve_path(pipeline_cfg_path, _render_model_name(dp_txt_raw, model_name))
 
     report_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -1658,21 +1634,11 @@ def main():
     # Build group mapping for selected features
     selected_group_mapping = {name: group_mapping.get(name, "unknown") for name in top_names}
 
-    dp_params = _parse_dp_txt_params(dp_txt_path)
-    if dp_txt_path.exists():
-        print(f"  Using dp metadata: {dp_txt_path}")
-    else:
-        print(f"  dp metadata not found (fallback defaults): {dp_txt_path}")
-    quantization_bits = int(dp_params.get("quantization_coefficient", 2))
-    dp_num_features = int(dp_params.get("num_features", len(top_names)))
-    dp_num_samples = int(dp_params.get("num_samples", len(df_train)))
-    node_resource_max_depth = int(cfg.get("node_resource_max_depth", 16))
     node_resource_params = _compute_node_resource_params(
-        num_features=dp_num_features,
-        num_samples=dp_num_samples,
-        quantization_bits=quantization_bits,
+        model=model,
+        num_features=len(top_names),
+        num_samples=len(df_train),
         max_samples=best_max_samples,
-        max_depth=node_resource_max_depth,
     )
 
     export_results(
@@ -1698,7 +1664,6 @@ def main():
         f_beta=f_beta,
         model_name=model_name,
         node_resource=node_resource_params,
-        dp_txt_path=dp_txt_path,
     )
 
     # ── Save optimized datasets with best feature set ──
@@ -1709,20 +1674,20 @@ def main():
     # Reconstruct scaled datasets with the best features from the already-processed data
     # We already have X_train, X_val, X_test_b, X_test_m with best features and scaling
     dataset_map = {
-        "benign_train": X_train_scaled,
-        "benign_val": X_val_scaled,
-        "benign_test": X_test_b_scaled,
-        "malware_test": X_test_m_scaled,
+        "ben_train": X_train_scaled,
+        "ben_val": X_val_scaled,
+        "ben_test": X_test_b_scaled,
+        "mal_test": X_test_m_scaled,
     }
 
     if val_m_path:
-        dataset_map["malware_val"] = X_val_m_full_scaled
+        dataset_map["mal_val"] = X_val_m_full_scaled
     
     for name, data in dataset_map.items():
         df_optimized = pd.DataFrame(data, columns=top_names)
-        out_path = optimized_data_dir / f"{model_name}_{name}_optimized.parquet"
+        out_path = optimized_data_dir / f"{model_name}_{name}.parquet"
         df_optimized.to_parquet(out_path, engine="pyarrow", compression="snappy")
-        csv_path = optimized_data_dir / f"{model_name}_{name}_optimized.csv"
+        csv_path = optimized_data_dir / f"{model_name}_{name}.csv"
         df_optimized.to_csv(csv_path, index=False)
         # print(f"  Saved {name}: {df_optimized.shape} -> {out_path} | {csv_path}")
 

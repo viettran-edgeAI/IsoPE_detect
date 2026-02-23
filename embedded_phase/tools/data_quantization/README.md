@@ -1,71 +1,83 @@
-# Dataset Quantization Tool (Isolation-Focused)
+# Dataset Quantization Tool — Batch Orchestrator
 
-Quantize PE static-feature CSV datasets for endpoint anomaly detection workflows.
-This version is focused on `problem_type = isolation` and does not include clustering/PCA plotting.
+Quantize all five optimized CSV splits for a given model in one command.
+Focused on `problem_type = isolation` (anomaly-detection workflow).
 
-## What it does
+## Architecture
 
-- Reads CSV datasets from `datasets/`
-- Quantizes features with configurable bit width (`1-8`)
-- Exports quantized artifacts for embedding/retraining
-- Writes all outputs to `quantized_datasets/`
+Two-tier design:
 
-## Output files
-
-For input `<name>.csv`, generated files are:
-
-- `quantized_datasets/<name>_nml.csv` (quantized CSV)
-- `quantized_datasets/<name>_nml.bin` (packed binary dataset)
-- `quantized_datasets/<name>_qtz.bin` (quantizer metadata)
-- `quantized_datasets/<name>_dp.txt` (dataset parameters)
-
-## Configuration
-
-Edit `quantization_config.json`.
-
-Supported fields:
-
-- `input_path` (required): CSV path
-- `model_name`: output basename override (`auto` uses input filename)
-- `header`: `auto | yes | no`
-- `problem_type`: `classification | regression | isolation`
-- `quantization_bits`: `1..8`
-- `remove_outliers`: `true | false`
-
-## Recommended isolation config
-
-```json
-{
-  "input_path": { "value": "datasets/benign_test_optimized.csv" },
-  "problem_type": { "value": "isolation" },
-  "quantization_bits": { "value": 2 },
-  "header": { "value": "auto" },
-  "model_name": { "value": "auto" },
-  "remove_outliers": { "value": false }
-}
+```
+embedded_phase/tools/data_quantization/processing_data  ← orchestrator (this module)
+        │  invokes 5 ×
+        ▼
+tools/data_quantization/processing_data                 ← single-file quantization module
 ```
 
-## Run
+The orchestrator reads `model_name` and `input_dir` from `quantization_config.json`,
+locates the five CSV splits, then calls the single-file module once per split.
+
+## Inputs
+
+Five optimized CSV files under `input_dir` (default `development_phase/data/optimized/`):
+
+| File | Role |
+|---|---|
+| `<model_name>_ben_train.csv` | Benign training split |
+| `<model_name>_ben_test.csv`  | Benign test split |
+| `<model_name>_ben_val.csv`   | Benign validation split |
+| `<model_name>_mal_test.csv`  | Malware test split |
+| `<model_name>_mal_val.csv`   | Malware validation split |
+
+## Output files (in `quantized_datasets/`)
+
+For each split `<name>.csv` the single-file module produces:
+
+| File | Contents |
+|---|---|
+| `<name>_nml.csv` | Quantized CSV (human-readable) |
+| `<name>_nml.bin` | Bit-packed binary dataset |
+| `<name>_qtz.bin` | Quantizer metadata (bin boundaries) |
+| `<name>_dp.txt`  | Data profile (statistics, bit-width) |
+
+## Configuration (`quantization_config.json`)
+
+| Field | Default | Description |
+|---|---|---|
+| `model_name` | *(required)* | e.g. `"iforest"` |
+| `input_dir`  | *(required)* | Path to the five CSV splits |
+| `quantization_bits` | `2` | Bits per feature (1–8) |
+| `header` | `auto` | `auto \| yes \| no` |
+| `problem_type` | `isolation` | `isolation \| classification \| regression` |
+| `remove_outliers` | `false` | Z-score outlier clipping |
+
+## Prerequisites
+
+Build the single-file quantization module first:
 
 ```bash
+cd ../../../tools/data_quantization && make build
+```
+
+## Build & run
+
+```bash
+# Via Makefile
+make process
+
+# Via shell script
 ./quantize_dataset.sh
-```
 
-or with explicit config:
-
-```bash
+# Explicit config
 ./quantize_dataset.sh -c quantization_config.json
 ```
 
-## Build and test with Makefile
+## Makefile targets
 
 ```bash
-make build
-make process
-make status
+make build       # Compile the orchestrator
+make process     # Build + run batch quantization
+make status      # Show binary + output status
+make clean       # Remove orchestrator binary
+make clean-all   # Remove binary and quantized_datasets/
 ```
-
-## Notes
-
-- Clustering/visualization plotting scripts were removed because they target classification analysis and are not relevant to isolation workflows.
-- Output location is fixed to `quantized_datasets/` (next to the config file).

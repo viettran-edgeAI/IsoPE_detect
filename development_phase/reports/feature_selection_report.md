@@ -1,6 +1,6 @@
 # Feature Selection Report
 
-**Date**: 2026-02-23 01:14
+**Date**: 2026-02-23 17:14
 
 ## Summary
 
@@ -8,7 +8,7 @@
 - After variance filtering: **570** (removed 53)
 - After correlation pruning: **533** (removed 37)
 - After stability filtering: **475** (removed 58)
-- Log-transformed features: **381**
+- Log-transformed features: **380**
 - **Final selected: 475 features in 23 groups**
 
 ## Per-Group Summary
@@ -426,7 +426,7 @@
 - `opt_sizeof_init_data` [log1p]
 - `opt_sizeof_uninit_data` [log1p]
 - `opt_entrypoint` [log1p]
-- `opt_imagebase` [log1p]
+- `opt_imagebase`
 - `opt_section_alignment`
 - `opt_file_alignment` [log1p]
 - `opt_major_os_ver`
@@ -571,7 +571,7 @@
 
 ## Independence Manifest
 
-- Run ID: **7c621bb10254e403**
+- Run ID: **7f531cc08982be2b**
 - Manifest path: **/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../reports/malware_val_test_independence_manifest_stage2.json**
 - Hard gates passed: **True**
 
@@ -579,8 +579,8 @@
 
 - Enabled: **True**
 - Threshold: **0.9950**
-- malware_val before/after: **473 / 401**
-- Removed by projected pruning: **72**
+- malware_val before/after: **473 / 404**
+- Removed by projected pruning: **69**
 - All top-k constraints pass: **True**
 
 ## Malware Validation Size Control

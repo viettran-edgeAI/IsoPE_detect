@@ -37,6 +37,10 @@ namespace model_engine {
         If_binary_metrics test;
 
         DevelopmentMetrics development;
+
+        // Per-sample scores for the test splits (populated when save_scores=true)
+        std::vector<float> test_benign_scores;
+        std::vector<float> test_malware_scores;
     };
 
     class IsolationForestModelEngine {
@@ -81,7 +85,8 @@ namespace model_engine {
 
     EvaluationSummary train_and_evaluate(const std::filesystem::path& model_engine_config,
                                          const std::filesystem::path& dp_txt,
-                                         const DatasetBundlePaths& dataset_paths);
+                                         const DatasetBundlePaths& dataset_paths,
+                                         bool save_scores = false);
 
 } // namespace model_engine
 } // namespace eml

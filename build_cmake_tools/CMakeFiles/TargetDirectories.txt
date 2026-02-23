@@ -1,0 +1,8 @@
+/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/CMakeFiles/edit_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/CMakeFiles/rebuild_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/src/CMakeFiles/pe_feature_extractor.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/src/CMakeFiles/edit_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/src/CMakeFiles/rebuild_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/app/CMakeFiles/lief_feature_extractor.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/app/CMakeFiles/edit_cache.dir
+/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/app/CMakeFiles/rebuild_cache.dir

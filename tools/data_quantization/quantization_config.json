@@ -1,0 +1,29 @@
+{
+    "input_path": {
+        "value": "../../development_phase/data/optimized/iforest_ben_val.csv",
+        "description": "Path to the input CSV dataset file (required). Used when processing a single file directly."
+    },
+    "quantization_bits": {
+        "value": 2,
+        "description": "Quantization coefficient in bits per feature value (1-8). Higher values = more precision but larger file size."
+    },
+    "model_name": {
+        "value": "",
+        "description": "Model name for output filenames. If empty or `auto`, extracted from input filename."
+    },
+    "header": {
+        "value": "auto",
+        "options": ["auto", "yes", "no"],
+        "description": "CSV header handling: 'auto' = detect automatically, 'yes' = skip first line, 'no' = process all lines."
+    },
+    "problem_type": {
+        "value": "isolation",
+        "options": ["classification", "regression", "isolation"],
+        "description": "Problem mode for processing logic. Use 'isolation' for unlabeled anomaly-detection datasets."
+    },
+    "remove_outliers": {
+        "value": false,
+        "options": [true, false],
+        "description": "Apply Z-score outlier clipping during preprocessing. true = adapts to gradually changing data streams (removes outliers), false = adapts to suddenly fluctuating data streams (keeps all variations)."
+    }
+}

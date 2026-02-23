@@ -6,5 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/include -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/../../core
 
-CXX_FLAGS = -O3 -DNDEBUG -std=c++17
+CXX_FLAGS = -g -std=c++17
 

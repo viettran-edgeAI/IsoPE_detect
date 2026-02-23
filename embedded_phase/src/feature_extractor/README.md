@@ -30,7 +30,7 @@ The model integration path only needs this API surface.
 
 The selected feature list is generated into C++ at build time and fixed after compilation.
 
-- Source list: `development_phase/results/optimized_feature_list.json` (or another JSON list)
+- Source list: `development_phase/results/<model_name>_optimized_features.json` (or another JSON list)
 - Generated header: `embedded_phase/src/feature_extractor/compiled_feature_config.hpp`
 - Runtime: no `--feature-names` option, no runtime schema parsing
 
@@ -61,7 +61,7 @@ embedded_phase/src/feature_extractor/build.sh
 
 ```bash
 cd /home/viettran/Documents/visual_code/EDR_AGENT
-OPTIMIZED_FEATURE_LIST_PATH=/absolute/path/to/optimized_feature_list.json \
+OPTIMIZED_FEATURE_LIST_PATH=/absolute/path/to/iforest_optimized_features.json \
 embedded_phase/src/feature_extractor/build.sh
 ```
 

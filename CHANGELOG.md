@@ -2,7 +2,33 @@
 
 All notable changes to the EDR Agent model and optimization pipeline will be documented in this file. This project follows absolute metric tracking for model effectiveness.
 
-## [1.6.2] - 2026-02-14
+## [1.7.0] - 2026-02-23
+
+### Changed
+
+#### Dataset naming
+- `development_phase/data/optimized/`: confirmed file naming convention uses `<model>_ben/mal_train/test/val.{csv,parquet}` — no `_optimized` suffix. Any legacy references to `*_optimized.csv` in config files have been removed.
+
+#### Data quantization — two-tier refactor
+- **`tools/data_quantization/`** is now a first-class, standalone *single-file quantization module*:
+  - `processing_data.cpp` — single-file C++ quantizer (processes one CSV per invocation via `-ip` flag or `input_path` config key). Include paths updated to reference `embedded_phase/core/` correctly (`../../embedded_phase/core/`).
+  - `quantization_config.json` — new config copy with `input_path` field pointing to example optimized CSV.
+  - `Makefile` — new build system for the standalone module.
+  - `README.md` — new documentation describing the module's role and usage.
+
+- **`embedded_phase/tools/data_quantization/`** is now a *batch orchestrator*:
+  - `processing_data.cpp` — completely rewritten as an orchestrator that reads `model_name` + `input_dir` from config, locates the five optimized CSV splits (`<model>_ben_train/test/val.csv`, `<model>_mal_test/val.csv`), and calls the single-file module (at `tools/data_quantization/processing_data`) for each.
+  - `quantization_config.json` — `input_path` removed, `model_name` promoted to first field, `input_dir` added (default: `../../../development_phase/data/optimized`).
+  - `quantize_dataset.sh` — rewritten to auto-build both tiers and run the orchestrator; `input_path` references removed.
+  - `Makefile` — updated: `INCLUDES` removed (orchestrator has no ML headers), `setup-dirs` dependency removed from `process` target.
+  - `README.md` — updated to describe the two-tier architecture and batch workflow.
+  - `dataset_workflow.md` — updated to match new run procedure.
+
+#### Documentation
+- `embedded_phase/docs/EMBEDDED_PHASE_DESIGN.md`: directory structure and build/run sections updated for the two-tier quantization architecture; quantized artifact filenames updated to `<model>_ben/mal_*` convention.
+- `README.md`: repository layout, Module 2 description, two-phase architecture diagram, Build Quick-Reference, and Current Status table updated.
+
+
 
 ### Changed
 - Hardcoded 4 mandatory leak-prevention layers (no config on/off toggles): exact overlap removal/check, imphash-family disjointness, projected top-k cosine pruning, and Stage-2↔Stage-3 fingerprint consistency enforcement.

@@ -8,7 +8,17 @@ LIEF_DIR="${ROOT_DIR}/embedded_phase/third_party/LIEF"
 LIEF_BUILD_DIR="${LIEF_DIR}/build"
 
 OUT="${SCRIPT_DIR}/lief_feature_extractor"
-OPTIMIZED_FEATURE_LIST_PATH="${OPTIMIZED_FEATURE_LIST_PATH:-${FEATURE_NAMES_PATH:-${ROOT_DIR}/development_phase/results/optimized_feature_list.json}}"
+MODEL_NAME="${MODEL_NAME:-iforest}"
+DEFAULT_FEATURE_LIST_PATH="${ROOT_DIR}/development_phase/results/${MODEL_NAME}_optimized_features.json"
+LEGACY_FEATURE_LIST_PATH="${ROOT_DIR}/development_phase/results/optimized_feature_list.json"
+OPTIMIZED_FEATURE_LIST_PATH="${OPTIMIZED_FEATURE_LIST_PATH:-${FEATURE_NAMES_PATH:-}}"
+if [[ -z "${OPTIMIZED_FEATURE_LIST_PATH}" ]]; then
+  if [[ -f "${DEFAULT_FEATURE_LIST_PATH}" ]]; then
+    OPTIMIZED_FEATURE_LIST_PATH="${DEFAULT_FEATURE_LIST_PATH}"
+  else
+    OPTIMIZED_FEATURE_LIST_PATH="${LEGACY_FEATURE_LIST_PATH}"
+  fi
+fi
 COMPILED_CFG="${SCRIPT_DIR}/compiled_feature_config.hpp"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 BUILD_DIR="${SCRIPT_DIR}/build"

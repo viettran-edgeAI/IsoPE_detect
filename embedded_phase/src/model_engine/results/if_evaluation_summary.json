@@ -1,15 +1,15 @@
 {
-  "selected_threshold": 0.0100316,
+  "selected_threshold": 0.016133,
   "embedded": {
-    "validation": {"fpr": 0.0398631, "tpr": 0.956376, "roc_auc": 0.993272},
-    "test": {"fpr": 0.057599, "tpr": 0.9969, "roc_auc": 0.996045}
+    "validation": {"fpr": 0.0277834, "tpr": 0.997525, "roc_auc": 0.998243},
+    "test": {"fpr": 0.0569927, "tpr": 1, "roc_auc": 0.998941}
   },
   "development": {
-    "validation": {"fpr": 0.0382525, "tpr": 0.917706, "roc_auc": 0.988023},
-    "test": {"fpr": 0.0452708, "tpr": 0.934669, "roc_auc": 0.987899}
+    "validation": {"fpr": 0.0370445, "tpr": 0.920792, "roc_auc": 0.98776},
+    "test": {"fpr": 0.0464834, "tpr": 0.940391, "roc_auc": 0.988512}
   },
   "delta": {
-    "validation": {"fpr": 0.00161063, "tpr": 0.0386701, "roc_auc": 0.00524914},
-    "test": {"fpr": 0.0123282, "tpr": 0.0622317, "roc_auc": 0.00814569}
+    "validation": {"fpr": -0.00926113, "tpr": 0.0767326, "roc_auc": 0.0104835},
+    "test": {"fpr": 0.0105093, "tpr": 0.0596089, "roc_auc": 0.0104284}
   }
 }

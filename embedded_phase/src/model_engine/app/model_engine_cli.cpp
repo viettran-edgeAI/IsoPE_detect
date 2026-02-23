@@ -18,7 +18,25 @@ namespace {
 
     void print_usage() {
         std::cout
-            << "Usage: pe_model_engine_cli [--config PATH] [--dp PATH] [--quantized-dir PATH] [--output PATH]\n";
+            << "Usage: pe_model_engine_cli [--config PATH] [--dp PATH] [--quantized-dir PATH] [--model-name NAME] [--output PATH] [--save-scores PATH]\n";
+    }
+
+    std::string infer_model_name(const std::filesystem::path& config_path) {
+        const std::string stem = config_path.stem().string();
+        const std::string suffix = "_optimized_config";
+        if (stem.size() > suffix.size() &&
+            stem.compare(stem.size() - suffix.size(), suffix.size(), suffix) == 0) {
+            return stem.substr(0, stem.size() - suffix.size());
+        }
+        return "iforest";
+    }
+
+    std::filesystem::path pick_existing_or_default(const std::filesystem::path& preferred,
+                                                   const std::filesystem::path& fallback) {
+        if (std::filesystem::exists(preferred)) {
+            return preferred;
+        }
+        return fallback;
     }
 
 } // namespace
@@ -46,11 +64,24 @@ int main(int argc, char** argv) {
         "embedded_phase/tools/data_quantization/quantized_datasets"
     );
 
+    const std::string model_name = get_arg_value(
+        argc,
+        argv,
+        "--model-name",
+        infer_model_name(config_path)
+    );
+
+    const std::filesystem::path default_dp_path =
+        pick_existing_or_default(
+            quantized_dir / (model_name + "_dp.txt"),
+            quantized_dir / "benign_train_optimized_dp.txt"
+        );
+
     const std::filesystem::path dp_path = get_arg_value(
         argc,
         argv,
         "--dp",
-        (quantized_dir / "benign_train_optimized_dp.txt").string()
+        default_dp_path.string()
     );
 
     const std::filesystem::path output_path = get_arg_value(
@@ -60,15 +91,33 @@ int main(int argc, char** argv) {
         "embedded_phase/src/model_engine/results/if_evaluation_summary.json"
     );
 
+    const std::string save_scores_path = get_arg_value(argc, argv, "--save-scores", "");
+    const bool do_save_scores = !save_scores_path.empty();
+
     eml::model_engine::DatasetBundlePaths datasets;
-    datasets.benign_train = quantized_dir / "benign_train_optimized_nml.bin";
-    datasets.benign_val = quantized_dir / "benign_val_optimized_nml.bin";
-    datasets.benign_test = quantized_dir / "benign_test_optimized_nml.bin";
-    datasets.malware_val = quantized_dir / "malware_val_optimized_nml.bin";
-    datasets.malware_test = quantized_dir / "malware_test_optimized_nml.bin";
+    datasets.benign_train = pick_existing_or_default(
+        quantized_dir / (model_name + "_ben_train_nml.bin"),
+        quantized_dir / "benign_train_optimized_nml.bin"
+    );
+    datasets.benign_val = pick_existing_or_default(
+        quantized_dir / (model_name + "_ben_val_nml.bin"),
+        quantized_dir / "benign_val_optimized_nml.bin"
+    );
+    datasets.benign_test = pick_existing_or_default(
+        quantized_dir / (model_name + "_ben_test_nml.bin"),
+        quantized_dir / "benign_test_optimized_nml.bin"
+    );
+    datasets.malware_val = pick_existing_or_default(
+        quantized_dir / (model_name + "_mal_val_nml.bin"),
+        quantized_dir / "malware_val_optimized_nml.bin"
+    );
+    datasets.malware_test = pick_existing_or_default(
+        quantized_dir / (model_name + "_mal_test_nml.bin"),
+        quantized_dir / "malware_test_optimized_nml.bin"
+    );
 
     const eml::model_engine::EvaluationSummary summary =
-        eml::model_engine::train_and_evaluate(config_path, dp_path, datasets);
+        eml::model_engine::train_and_evaluate(config_path, dp_path, datasets, do_save_scores);
 
     if (!summary.ok) {
         std::cerr << "model_engine evaluation failed: " << summary.message << "\n";
@@ -110,6 +159,32 @@ int main(int argc, char** argv) {
     fout << "  }\n";
     fout << "}\n";
     fout.close();
+
+    // Optionally write per-sample test scores for ROC curve plotting
+    if (do_save_scores) {
+        std::filesystem::create_directories(
+            std::filesystem::path(save_scores_path).parent_path());
+        std::ofstream sfout(save_scores_path, std::ios::out | std::ios::trunc);
+        if (sfout.is_open()) {
+            sfout << "{\n";
+            sfout << "  \"threshold\": " << summary.selected_threshold << ",\n";
+            sfout << "  \"benign_test_scores\": [";
+            for (size_t i = 0; i < summary.test_benign_scores.size(); ++i) {
+                if (i > 0) sfout << ", ";
+                sfout << summary.test_benign_scores[i];
+            }
+            sfout << "],\n";
+            sfout << "  \"malware_test_scores\": [";
+            for (size_t i = 0; i < summary.test_malware_scores.size(); ++i) {
+                if (i > 0) sfout << ", ";
+                sfout << summary.test_malware_scores[i];
+            }
+            sfout << "]\n";
+            sfout << "}\n";
+            sfout.close();
+            std::cout << "  scores: " << save_scores_path << "\n";
+        }
+    }
 
     std::cout << "Embedded IF evaluation complete\n";
     std::cout << "  threshold: " << summary.selected_threshold << "\n";

@@ -14,7 +14,6 @@
     "results_dir":        "../results",
     "report_dir":         "../reports",
     "schema_dir":         "../schemas",
-    "docs_dir":           "../docs",
-    "dp_txt_path":        "../../embedded_phase/tools/data_quantization/quantized_datasets/{model_name}_dp.txt"
+    "docs_dir":           "../docs"
   }
 }

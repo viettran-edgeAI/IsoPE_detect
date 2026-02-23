@@ -11,14 +11,13 @@ namespace eml {
 
     typedef enum If_base_flags : uint16_t {
         IF_BASE_DATA_EXIST      = 1u << 0,
-        IF_DP_BIN_EXIST         = 1u << 1,
-        IF_DP_TXT_EXIST         = 1u << 2,
-        IF_QTZ_FILE_EXIST       = 1u << 3,
-        IF_CONFIG_FILE_EXIST    = 1u << 4,
-        IF_MODEL_FILE_EXIST     = 1u << 5,
-        IF_ABLE_TO_INFERENCE    = 1u << 6,
-        IF_ABLE_TO_TRAINING     = 1u << 7,
-        IF_SCANNED              = 1u << 8
+        IF_DP_TXT_EXIST         = 1u << 1,
+        IF_QTZ_FILE_EXIST       = 1u << 2,
+        IF_CONFIG_FILE_EXIST    = 1u << 3,
+        IF_MODEL_FILE_EXIST     = 1u << 4,
+        IF_ABLE_TO_INFERENCE    = 1u << 5,
+        IF_ABLE_TO_TRAINING     = 1u << 6,
+        IF_SCANNED              = 1u << 7
     } If_base_flags;
 
     class If_base {
@@ -74,19 +73,13 @@ namespace eml {
                 eml_debug(1, "⚠️ IF base dataset not found: ", nml_path.string().c_str());
             }
 
-            const auto dp_bin_path = get_dp_bin_path();
-            if (std::filesystem::exists(dp_bin_path)) {
-                set_flag(IF_DP_BIN_EXIST);
-                eml_debug(2, "✅ Found IF data params (bin): ", dp_bin_path.string().c_str());
-            }
-
             const auto dp_txt_path = get_dp_txt_path();
             if (std::filesystem::exists(dp_txt_path)) {
                 set_flag(IF_DP_TXT_EXIST);
                 eml_debug(2, "✅ Found IF data params (txt): ", dp_txt_path.string().c_str());
             }
 
-            if (!has_flag(IF_DP_BIN_EXIST) && !has_flag(IF_DP_TXT_EXIST)) {
+            if (!has_flag(IF_DP_TXT_EXIST)) {
                 eml_debug(1, "⚠️ IF data params file not found (_dp.bin or _dp.txt)");
             }
 
@@ -116,7 +109,7 @@ namespace eml {
             }
 
             if (has_flag(IF_BASE_DATA_EXIST) && has_flag(IF_QTZ_FILE_EXIST) &&
-                (has_flag(IF_DP_BIN_EXIST) || has_flag(IF_DP_TXT_EXIST)) && has_flag(IF_CONFIG_FILE_EXIST)) {
+                 has_flag(IF_DP_TXT_EXIST) && has_flag(IF_CONFIG_FILE_EXIST)) {
                 set_flag(IF_ABLE_TO_TRAINING);
             }
 
@@ -220,7 +213,6 @@ namespace eml {
         bool ready_to_use() const { return model_name[0] != '\0' && has_flag(IF_SCANNED); }
         bool nml_exists() const { return has_flag(IF_BASE_DATA_EXIST); }
         bool qtz_exists() const { return has_flag(IF_QTZ_FILE_EXIST); }
-        bool dp_bin_exists() const { return has_flag(IF_DP_BIN_EXIST); }
         bool dp_txt_exists() const { return has_flag(IF_DP_TXT_EXIST); }
         bool config_exists() const { return has_flag(IF_CONFIG_FILE_EXIST); }
         bool model_exists() const { return has_flag(IF_MODEL_FILE_EXIST); }
