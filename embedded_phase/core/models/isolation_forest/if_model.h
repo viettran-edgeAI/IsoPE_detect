@@ -291,6 +291,7 @@ namespace eml {
         float threshold_offset_ = 0.0f;
         bool trained_ = false;
 
+        // Determine the number of samples to draw for each tree based on the config and total sample count.
         static uint32_t resolve_samples_per_tree(const If_config& cfg, size_t num_samples) {
             if (num_samples == 0u) {
                 return 1u;
@@ -313,6 +314,7 @@ namespace eml {
             return resolved;
         }
 
+        // Sample indices for building a tree, with optional bootstrapping.
         static std::vector<uint32_t> sample_indices(size_t num_samples,
                                                     uint32_t sample_size,
                                                     bool bootstrap,

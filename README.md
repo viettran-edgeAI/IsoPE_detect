@@ -21,11 +21,9 @@ Primary output artifacts are generated in `development_phase/results/` and are i
 
 The `embedded_phase` contains the C++ implementation for endpoint use:
 
-- Runtime PE feature extraction.
-- Embedded model inference and scoring.
-- Ongoing refactor toward:
-  - **Task 1**: a clear, reusable core model library.
-  - **Task 2**: `model_engine` packaging and runtime integration.
+- **Task 1** — Core model library (`core/models/isolation_forest/`): C++ developer-focused headers and APIs. No cross-platform CMake. Exposes `IsoForest` lifecycle (load/train/save/infer) and `If_tree`/`If_tree_container` primitives.
+- **Task 2** — Model engine runtime (`src/model_engine/`): Production packaging with CMake. Thin integration layer over Task 1. Handles deployment-oriented loading, versioning, and cross-platform artifact management.
+- Supporting components: PE feature extraction, embedded scoring, diagnostics.
 
 This phase consumes the artifacts produced by `development_phase`.
 
