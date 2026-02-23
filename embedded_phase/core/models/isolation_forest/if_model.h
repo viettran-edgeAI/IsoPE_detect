@@ -1,17 +1,23 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <numeric>
 #include <random>
 #include <string>
 #include <vector>
 
+#include "if_base.h"
 #include "if_config.h"
 #include "if_node_resource.h"
+#include "if_scaler_transform.h"
+#include "../../ml/eml_predict_result.h"
 
 namespace eml {
 
@@ -245,6 +251,32 @@ namespace eml {
             return 0.0f;
         }
 
+        bool load_serialized(const If_node_resource& resource,
+                             const uint64_t* packed_nodes,
+                             size_t node_count,
+                             uint16_t depth) {
+            if (!resource.valid() || !packed_nodes || node_count == 0u) {
+                return false;
+            }
+
+            resource_ = resource;
+            nodes_.clear();
+            nodes_.reserve(node_count);
+            for (size_t i = 0; i < node_count; ++i) {
+                IsoNode node;
+                node.packed_data = packed_nodes[i];
+                nodes_.push_back(node);
+            }
+
+            depth_ = depth;
+            is_loaded_ = true;
+            return true;
+        }
+
+        const std::vector<IsoNode>& nodes() const {
+            return nodes_;
+        }
+
         size_t node_count() const { return nodes_.size(); }
         uint16_t depth() const { return depth_; }
         bool loaded() const { return is_loaded_; }
@@ -384,10 +416,374 @@ namespace eml {
             return decision_function(quantized_features, num_features) < threshold;
         }
 
+        bool save_model_binary(const std::filesystem::path& file_path) const {
+            if (!trained_ || trees_.empty() || !resource_.valid()) {
+                return false;
+            }
+
+            const std::filesystem::path parent = file_path.parent_path();
+            if (!parent.empty()) {
+                std::filesystem::create_directories(parent);
+            }
+            std::ofstream fout(file_path, std::ios::binary | std::ios::trunc);
+            if (!fout.is_open()) {
+                return false;
+            }
+
+            const auto write_exact = [&fout](const void* src, size_t bytes) -> bool {
+                fout.write(reinterpret_cast<const char*>(src), static_cast<std::streamsize>(bytes));
+                return static_cast<bool>(fout);
+            };
+
+            const char magic[4] = {'I', 'F', 'R', '1'};
+            const uint16_t version = 1u;
+            const uint32_t tree_count = static_cast<uint32_t>(trees_.size());
+
+            if (!write_exact(magic, sizeof(magic))) return false;
+            if (!write_exact(&version, sizeof(version))) return false;
+
+            const uint8_t threshold_bits = resource_.threshold_bits();
+            const uint8_t feature_bits = resource_.feature_bits();
+            const uint8_t child_bits = resource_.child_bits();
+            const uint8_t leaf_size_bits = resource_.leaf_size_bits();
+            const uint8_t depth_bits = resource_.depth_bits();
+
+            if (!write_exact(&threshold_bits, sizeof(threshold_bits))) return false;
+            if (!write_exact(&feature_bits, sizeof(feature_bits))) return false;
+            if (!write_exact(&child_bits, sizeof(child_bits))) return false;
+            if (!write_exact(&leaf_size_bits, sizeof(leaf_size_bits))) return false;
+            if (!write_exact(&depth_bits, sizeof(depth_bits))) return false;
+
+            if (!write_exact(&samples_per_tree_, sizeof(samples_per_tree_))) return false;
+            if (!write_exact(&threshold_offset_, sizeof(threshold_offset_))) return false;
+            if (!write_exact(&tree_count, sizeof(tree_count))) return false;
+
+            for (const IsoTree& tree : trees_) {
+                const uint16_t tree_depth = tree.depth();
+                const uint32_t node_count = static_cast<uint32_t>(tree.node_count());
+                if (!write_exact(&tree_depth, sizeof(tree_depth))) return false;
+                if (!write_exact(&node_count, sizeof(node_count))) return false;
+                const std::vector<IsoNode>& nodes = tree.nodes();
+                for (const IsoNode& node : nodes) {
+                    if (!write_exact(&node.packed_data, sizeof(node.packed_data))) return false;
+                }
+            }
+
+            return true;
+        }
+
+        bool load_model_binary(const std::filesystem::path& file_path) {
+            std::ifstream fin(file_path, std::ios::binary);
+            if (!fin.is_open()) {
+                return false;
+            }
+
+            const auto read_exact = [&fin](void* dst, size_t bytes) -> bool {
+                fin.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(bytes));
+                return static_cast<size_t>(fin.gcount()) == bytes;
+            };
+
+            char magic[4] = {0, 0, 0, 0};
+            uint16_t version = 0u;
+            if (!read_exact(magic, sizeof(magic)) ||
+                !read_exact(&version, sizeof(version))) {
+                return false;
+            }
+            if (magic[0] != 'I' || magic[1] != 'F' || magic[2] != 'R' || magic[3] != '1' || version != 1u) {
+                return false;
+            }
+
+            uint8_t threshold_bits = 0u;
+            uint8_t feature_bits = 0u;
+            uint8_t child_bits = 0u;
+            uint8_t leaf_size_bits = 0u;
+            uint8_t depth_bits = 0u;
+            if (!read_exact(&threshold_bits, sizeof(threshold_bits))) return false;
+            if (!read_exact(&feature_bits, sizeof(feature_bits))) return false;
+            if (!read_exact(&child_bits, sizeof(child_bits))) return false;
+            if (!read_exact(&leaf_size_bits, sizeof(leaf_size_bits))) return false;
+            if (!read_exact(&depth_bits, sizeof(depth_bits))) return false;
+
+            if (!resource_.set_bits(threshold_bits, feature_bits, child_bits, leaf_size_bits, depth_bits)) {
+                return false;
+            }
+
+            if (!read_exact(&samples_per_tree_, sizeof(samples_per_tree_))) return false;
+            if (!read_exact(&threshold_offset_, sizeof(threshold_offset_))) return false;
+
+            uint32_t tree_count = 0u;
+            if (!read_exact(&tree_count, sizeof(tree_count))) return false;
+
+            trees_.clear();
+            trees_.reserve(tree_count);
+
+            for (uint32_t i = 0; i < tree_count; ++i) {
+                uint16_t tree_depth = 0u;
+                uint32_t node_count = 0u;
+                if (!read_exact(&tree_depth, sizeof(tree_depth))) return false;
+                if (!read_exact(&node_count, sizeof(node_count))) return false;
+                if (node_count == 0u) {
+                    return false;
+                }
+
+                std::vector<uint64_t> packed_nodes(node_count, 0ull);
+                for (uint32_t n = 0u; n < node_count; ++n) {
+                    if (!read_exact(&packed_nodes[n], sizeof(uint64_t))) {
+                        return false;
+                    }
+                }
+
+                IsoTree tree;
+                if (!tree.load_serialized(resource_, packed_nodes.data(), packed_nodes.size(), tree_depth)) {
+                    return false;
+                }
+                trees_.push_back(tree);
+            }
+
+            trained_ = !trees_.empty();
+            return trained_;
+        }
+
         size_t num_trees() const { return trees_.size(); }
         uint32_t samples_per_tree() const { return samples_per_tree_; }
         bool trained() const { return trained_; }
         float threshold_offset() const { return threshold_offset_; }
+    };
+
+    class IsoForest {
+    public:
+        using InferenceResult = eml_isolation_result_t;
+
+    private:
+        If_base base_{};
+        If_config config_{};
+        If_scaler_transform scaler_{};
+        eml_quantizer<problem_type::ISOLATION> quantizer_{};
+        QuantizedIsolationForest tree_container_{};
+        uint16_t num_features_ = 0u;
+        bool loaded_ = false;
+
+        static bool read_exact(std::ifstream& fin, void* dst, size_t bytes) {
+            fin.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(bytes));
+            return static_cast<size_t>(fin.gcount()) == bytes;
+        }
+
+        static bool load_quantized_nml_dataset(const std::filesystem::path& nml_path,
+                                               uint16_t expected_num_features,
+                                               uint8_t quantization_bits,
+                                               std::vector<uint8_t>& out_matrix,
+                                               size_t& out_num_samples) {
+            out_matrix.clear();
+            out_num_samples = 0u;
+
+            std::ifstream fin(nml_path, std::ios::binary);
+            if (!fin.is_open()) {
+                return false;
+            }
+
+            uint32_t num_samples_u32 = 0u;
+            uint16_t num_features_u16 = 0u;
+            if (!read_exact(fin, &num_samples_u32, sizeof(num_samples_u32)) ||
+                !read_exact(fin, &num_features_u16, sizeof(num_features_u16))) {
+                return false;
+            }
+
+            if (num_features_u16 != expected_num_features) {
+                return false;
+            }
+
+            if (quantization_bits < 1u || quantization_bits > 8u) {
+                return false;
+            }
+
+            const uint16_t packed_feature_bytes = static_cast<uint16_t>(
+                (static_cast<uint32_t>(num_features_u16) * quantization_bits + 7u) / 8u
+            );
+            const uint8_t feature_mask = quantization_bits == 8u
+                ? 0xFFu
+                : static_cast<uint8_t>((1u << quantization_bits) - 1u);
+
+            out_num_samples = static_cast<size_t>(num_samples_u32);
+            out_matrix.resize(out_num_samples * static_cast<size_t>(num_features_u16), 0u);
+
+            std::vector<uint8_t> packed(packed_feature_bytes, 0u);
+            for (size_t row = 0; row < out_num_samples; ++row) {
+                uint8_t label = 0u;
+                if (!read_exact(fin, &label, sizeof(label))) {
+                    return false;
+                }
+                (void)label;
+
+                if (!read_exact(fin, packed.data(), packed.size())) {
+                    return false;
+                }
+
+                uint8_t* out_row = &out_matrix[row * static_cast<size_t>(num_features_u16)];
+                for (uint16_t col = 0; col < num_features_u16; ++col) {
+                    const uint32_t bit_pos = static_cast<uint32_t>(col) * quantization_bits;
+                    const uint32_t byte_index = bit_pos / 8u;
+                    const uint8_t bit_offset = static_cast<uint8_t>(bit_pos % 8u);
+
+                    uint8_t value = 0u;
+                    if (bit_offset + quantization_bits <= 8u) {
+                        value = static_cast<uint8_t>((packed[byte_index] >> bit_offset) & feature_mask);
+                    } else {
+                        const uint8_t bits_first = static_cast<uint8_t>(8u - bit_offset);
+                        const uint8_t bits_second = static_cast<uint8_t>(quantization_bits - bits_first);
+                        const uint8_t low = static_cast<uint8_t>((packed[byte_index] >> bit_offset) & ((1u << bits_first) - 1u));
+                        const uint8_t high = static_cast<uint8_t>(packed[byte_index + 1u] & ((1u << bits_second) - 1u));
+                        value = static_cast<uint8_t>(low | (high << bits_first));
+                    }
+                    out_row[col] = value;
+                }
+            }
+
+            return true;
+        }
+
+    public:
+        IsoForest() = default;
+
+        explicit IsoForest(const std::string& model_name,
+                           const std::filesystem::path& dir_path = std::filesystem::path(".")) {
+            init(model_name, dir_path);
+        }
+
+        void init(const std::string& model_name,
+                  const std::filesystem::path& dir_path = std::filesystem::path(".")) {
+            base_.init(model_name.c_str(), dir_path);
+            config_.init(&base_);
+            loaded_ = false;
+            num_features_ = 0u;
+        }
+
+        bool load() {
+            base_.update_resource_status();
+            config_.set_base(&base_);
+            if (!config_.load_from_base()) {
+                return false;
+            }
+
+            if (!scaler_.init(config_)) {
+                return false;
+            }
+
+            const std::string qtz_path = base_.get_qtz_path().string();
+            if (!quantizer_.loadQuantizer(qtz_path.c_str())) {
+                return false;
+            }
+
+            if (!tree_container_.load_model_binary(base_.get_model_path())) {
+                return false;
+            }
+
+            num_features_ = config_.num_features;
+            loaded_ = true;
+            return true;
+        }
+
+        bool train_from_quantized_dataset() {
+            config_.set_base(&base_);
+            if (!config_.isLoaded && !config_.load_from_base()) {
+                return false;
+            }
+
+            std::vector<uint8_t> matrix;
+            size_t num_samples = 0u;
+            if (!load_quantized_nml_dataset(
+                    base_.get_nml_path(),
+                    config_.num_features,
+                    config_.quantization_bits,
+                    matrix,
+                    num_samples)) {
+                return false;
+            }
+
+            if (!tree_container_.train(matrix.data(), num_samples, config_.num_features, config_)) {
+                return false;
+            }
+
+            num_features_ = config_.num_features;
+            loaded_ = true;
+            return true;
+        }
+
+        bool save_model() const {
+            return tree_container_.save_model_binary(base_.get_iforest_bin_path());
+        }
+
+        float decision_function(const uint8_t* quantized_features,
+                                uint16_t feature_count) const {
+            return tree_container_.decision_function(quantized_features, feature_count);
+        }
+
+        bool is_anomaly(const uint8_t* quantized_features,
+                        uint16_t feature_count,
+                        float threshold) const {
+            return tree_container_.is_anomaly(quantized_features, feature_count, threshold);
+        }
+
+        InferenceResult infer_quantized(const uint8_t* quantized_features,
+                                        uint16_t feature_count,
+                                        float threshold = 0.0f) const {
+            InferenceResult result;
+            const auto start = std::chrono::steady_clock::now();
+
+            if (!loaded_ || !quantized_features || feature_count == 0u) {
+                result.success = false;
+                return result;
+            }
+
+            result.anomaly_score = decision_function(quantized_features, feature_count);
+            result.threshold = threshold;
+            result.is_anomaly = result.anomaly_score < threshold;
+            result.success = true;
+
+            const auto end = std::chrono::steady_clock::now();
+            result.prediction_time = static_cast<size_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+            return result;
+        }
+
+        InferenceResult infer_raw(const float* raw_features,
+                                  uint16_t feature_count,
+                                  float threshold = 0.0f) const {
+            InferenceResult result;
+            const auto start = std::chrono::steady_clock::now();
+
+            if (!loaded_ || !raw_features || feature_count != num_features_) {
+                result.success = false;
+                return result;
+            }
+
+            std::vector<float> scaled(feature_count, 0.0f);
+            if (!scaler_.transform(raw_features, feature_count, scaled.data())) {
+                result.success = false;
+                return result;
+            }
+
+            packed_vector<8> quantized;
+            quantized.resize(feature_count, 0u);
+            (void)quantizer_.quantizeFeatures(scaled.data(), quantized, nullptr, nullptr);
+
+            std::vector<uint8_t> dense_quantized(feature_count, 0u);
+            for (uint16_t i = 0; i < feature_count; ++i) {
+                dense_quantized[i] = quantized[i];
+            }
+
+            result = infer_quantized(dense_quantized.data(), feature_count, threshold);
+            const auto end = std::chrono::steady_clock::now();
+            result.prediction_time = static_cast<size_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+            return result;
+        }
+
+        bool loaded() const { return loaded_; }
+        uint16_t num_features() const { return num_features_; }
+
+        const If_base& base() const { return base_; }
+        const If_config& config() const { return config_; }
+        const QuantizedIsolationForest& tree_container() const { return tree_container_; }
     };
 
     struct If_threshold_result {

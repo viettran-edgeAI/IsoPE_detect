@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <array>
 
 #include "../../base/eml_base.h"
 
@@ -25,11 +26,8 @@ namespace eml {
         uint16_t flags = 0;
         char model_name[EML_PATH_BUFFER] = {0};
 
-        std::filesystem::path resource_dir =
-            std::filesystem::path("embedded_phase/tools/data_quantization/quantized_datasets");
-        // config_path is derived from model_name at init() when left empty (default).
-        // Format: development_phase/results/{model_name}_optimized_config.json
-        std::filesystem::path config_path;
+        std::filesystem::path dir_path = std::filesystem::path(".");
+        std::filesystem::path config_path_override;
 
         inline void set_flag(If_base_flags f) {
             flags |= static_cast<uint16_t>(f);
@@ -43,7 +41,16 @@ namespace eml {
             if (model_name[0] == '\0') {
                 return {};
             }
-            return resource_dir / (std::string(model_name) + suffix);
+            return dir_path / (std::string(model_name) + suffix);
+        }
+
+        static std::filesystem::path first_existing(const std::array<std::filesystem::path, 2>& candidates) {
+            for (const auto& p : candidates) {
+                if (!p.empty() && std::filesystem::exists(p)) {
+                    return p;
+                }
+            }
+            return candidates[0];
         }
 
         static void write_path_to_buffer(const std::filesystem::path& p,
@@ -91,11 +98,12 @@ namespace eml {
                 eml_debug(1, "⚠️ IF quantizer not found: ", qtz_path.string().c_str());
             }
 
-            if (!config_path.empty() && std::filesystem::exists(config_path)) {
+            const auto cfg_path = get_config_path();
+            if (!cfg_path.empty() && std::filesystem::exists(cfg_path)) {
                 set_flag(IF_CONFIG_FILE_EXIST);
-                eml_debug(2, "✅ Found model engine config: ", config_path.string().c_str());
+                eml_debug(2, "✅ Found model engine config: ", cfg_path.string().c_str());
             } else {
-                eml_debug(1, "⚠️ optimized_config.json not found: ", config_path.string().c_str());
+                eml_debug(1, "⚠️ optimized_config.json not found: ", cfg_path.string().c_str());
             }
 
             const auto model_path = get_model_path();
@@ -120,15 +128,13 @@ namespace eml {
         If_base() = default;
 
         explicit If_base(const char* model_name_input,
-                         const std::filesystem::path& resource_dir_input =
-                             std::filesystem::path("embedded_phase/tools/data_quantization/quantized_datasets"),
+                         const std::filesystem::path& dir_path_input = std::filesystem::path("."),
                          const std::filesystem::path& config_path_input = {}) {
-            init(model_name_input, resource_dir_input, config_path_input);
+            init(model_name_input, dir_path_input, config_path_input);
         }
 
         void init(const char* model_name_input,
-                  const std::filesystem::path& resource_dir_input =
-                      std::filesystem::path("embedded_phase/tools/data_quantization/quantized_datasets"),
+                  const std::filesystem::path& dir_path_input = std::filesystem::path("."),
                   const std::filesystem::path& config_path_input = {}) {
             if (!model_name_input || std::strlen(model_name_input) == 0) {
                 model_name[0] = '\0';
@@ -140,27 +146,25 @@ namespace eml {
             std::strncpy(model_name, model_name_input, EML_PATH_BUFFER - 1);
             model_name[EML_PATH_BUFFER - 1] = '\0';
 
-            resource_dir = resource_dir_input;
-            // Derive config path from model_name when caller uses default (empty path)
-            if (config_path_input.empty()) {
-                config_path = std::filesystem::path("development_phase/results/")
-                              / (std::string(model_name) + "_optimized_config.json");
-            } else {
-                config_path = config_path_input;
-            }
+            dir_path = dir_path_input;
+            config_path_override = config_path_input;
 
             scan_current_resource();
         }
 
-        void set_resource_dir(const std::filesystem::path& dir) {
-            resource_dir = dir;
+        void set_dir_path(const std::filesystem::path& dir) {
+            dir_path = dir;
             if (model_name[0] != '\0') {
                 scan_current_resource();
             }
         }
 
+        void set_resource_dir(const std::filesystem::path& dir) {
+            set_dir_path(dir);
+        }
+
         void set_config_path(const std::filesystem::path& path) {
-            config_path = path;
+            config_path_override = path;
             if (model_name[0] != '\0') {
                 scan_current_resource();
             }
@@ -177,9 +181,35 @@ namespace eml {
         std::filesystem::path get_qtz_path() const { return build_model_artifact_path("_qtz.bin"); }
         std::filesystem::path get_dp_bin_path() const { return build_model_artifact_path("_dp.bin"); }
         std::filesystem::path get_dp_txt_path() const { return build_model_artifact_path("_dp.txt"); }
-        std::filesystem::path get_model_path() const { return build_model_artifact_path("_if.bin"); }
-        const std::filesystem::path& get_config_path() const { return config_path; }
-        const std::filesystem::path& get_resource_dir() const { return resource_dir; }
+        std::filesystem::path get_model_path() const {
+            const std::array<std::filesystem::path, 2> candidates = {
+                build_model_artifact_path("_iforest.bin"),
+                build_model_artifact_path("_if.bin")
+            };
+            return first_existing(candidates);
+        }
+
+        std::filesystem::path get_iforest_bin_path() const {
+            return build_model_artifact_path("_iforest.bin");
+        }
+
+        std::filesystem::path get_legacy_if_bin_path() const {
+            return build_model_artifact_path("_if.bin");
+        }
+
+        std::filesystem::path get_config_path() const {
+            if (!config_path_override.empty()) {
+                return config_path_override;
+            }
+            const std::array<std::filesystem::path, 2> candidates = {
+                build_model_artifact_path("_optimized_config.json"),
+                std::filesystem::path("development_phase/results") / (std::string(model_name) + "_optimized_config.json")
+            };
+            return first_existing(candidates);
+        }
+
+        const std::filesystem::path& get_resource_dir() const { return dir_path; }
+        const std::filesystem::path& get_dir_path() const { return dir_path; }
 
         void get_nml_path(char* buffer, size_t buffer_size) const {
             write_path_to_buffer(get_nml_path(), buffer, buffer_size);

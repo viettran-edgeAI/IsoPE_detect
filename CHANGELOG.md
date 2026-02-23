@@ -75,7 +75,64 @@ All notable changes to the EDR Agent model and optimization pipeline will be doc
 - `feature_selection_config.json` and `model_config.json`: removed leak-prevention enable/disable flags; retained only threshold/level controls.
 - `config_parameters.md`: documented that leak-prevention layers are hardcoded and only allowed thresholds/levels are configurable.
 
-## [1.6.1] - 2026-02-14
+## [1.9.0] - 2026-02-23
+
+### Investigation
+
+#### Runtime standardization / scaler audit
+- Audited whether the benchmark CLI applied runtime normalization inconsistently vs the development path.
+- Confirmed `deployment_scaling.runtime_normalization` is `"disabled"` in `iforest_optimized_config.json`.
+- Prior benchmark code always applied `If_scaler_transform`; patched benchmark CLI to parse config flag and skip scaler when disabled.
+- Reran eval CLI; confirmed metrics unchanged: threshold `0.0393511`, test FPR `0.0412288`, TPR `0.886028`, AUC `0.981318`.
+
+#### Full balanced benchmark run — 4221 benign + 4227 malware
+- Enabled resilient benchmark execution: benchmark CLI now continues past per-file extraction failures and tracks attempted/succeeded/failed counts per class.
+- Ran benchmark at 4227/class (chosen to match smaller malware class).
+- Coverage: benign 4221/4227 succeeded (6 parse failures), malware 4227/4227 succeeded.
+- Full results in `embedded_phase/src/model_engine/results/if_benchmark_report.md`.
+- Benchmark summary JSON: `embedded_phase/src/model_engine/results/if_benchmark_summary.json`.
+- Benchmark ROC/AUC: `embedded_phase/src/model_engine/results/if_benchmark_roc_summary.json`.
+- Benchmark ROC plot: `report/figures/benchmark_roc_fullset.svg` + `.png`.
+
+#### Root cause update: deployed feature schema is 40 (not 475)
+- Verified source-of-truth alignment for deployment artifacts:
+  - `development_phase/results/iforest_optimized_features.json` has 40 ordered features.
+  - `iforest_optimized_config.json` declares `optimized_feature_set.n_features = 40` and `node_resource.num_features = 40`.
+  - Quantized dataset headers (`*_nml.bin`) carry `num_features = 40`.
+  - `lief_feature_extractor` emits the same 40 feature names in the same order.
+- The prior 40/475 mismatch claim was based on comparing against `feature_schema_selected.json` (an intermediate development-stage selection space) instead of deployed optimized artifacts.
+- Full benchmark rates (FPR=1.0, TPR=1.0, AUC=0.7008) therefore represent a real end-to-end parity gap vs quantized-dataset evaluation, not a missing-feature-count blocker.
+- Timing metrics remain valid: 0.2446 ms/file, 4087 files/s, 0.07436 ms/MB.
+
+### Changed
+
+#### Benchmark CLI (`model_engine_benchmark_cli.cpp`)
+- Added config-driven runtime normalization check (`infer_runtime_normalization_enabled()`); scaler now skipped when disabled.
+- Benchmark loop now continues on per-file extraction failures instead of aborting.
+- `benign_failed` and `malware_failed` counters tracked and reported in output markdown header.
+- Markdown coverage header added to `if_benchmark_report.md` output.
+- Added name-based feature mapping using `optimized_feature_set.features` from config, with strict feature-count consistency checks against model `num_features`.
+
+#### Report (`report/README.md`)
+- Replaced 20-file spot-check benchmark section with full balanced corpus benchmark results.
+- Corrected root-cause section to reflect deployed 40-feature optimized schema and removed incorrect 40/475 blocker claim.
+- Added confusion matrix, FPR/TPR/FNR/TNR, benchmark AUC (0.7008), benchmark ROC plot.
+- Added inference timing table (per file and per MB).
+- Updated Current Status and Next Steps to focus on extractor↔model parity investigation.
+
+#### Parity harness (`embedded_phase/src/model_engine/parity_harness.py`)
+- Added a reproducible parity tool that compares C++ extractor JSONL vs Python extractor outputs on matched files.
+- Added score-delta analysis against benchmark C++ scores and a Python IF baseline rebuilt from optimized artifacts.
+- Emits machine-readable and human-readable artifacts:
+  - `embedded_phase/src/model_engine/results/parity/parity_summary.json`
+  - `embedded_phase/src/model_engine/results/parity/parity_samples.csv`
+  - `embedded_phase/src/model_engine/results/parity/parity_report.md`
+
+### ROC curves produced
+- `embedded_phase/src/model_engine/results/roc_curve_embedded_test.svg/png` — eval path (AUC=0.9813)
+- `report/figures/benchmark_roc_fullset.svg/png` — full benchmark run (AUC=0.7008, parity gap vs quantized-dataset path)
+
+
 
 ### Changed
 - `model_optimization.py`: Removed Stage 3 automatic deduplication; Stage 3 now expects pre-cleaned splits and raises on train/val/test overlap.

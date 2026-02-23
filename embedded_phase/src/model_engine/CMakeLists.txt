@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.18)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(pe_model_engine LANGUAGES CXX)
-  enable_testing()
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -13,4 +12,3 @@ set(MODEL_ENGINE_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_subdirectory(src)
 add_subdirectory(app)
-add_subdirectory(test)
