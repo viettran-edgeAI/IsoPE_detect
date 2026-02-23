@@ -15,7 +15,8 @@ tools/data_quantization/processing_data                 ← single-file quantiza
 ```
 
 The orchestrator reads `model_name` and `input_dir` from `quantization_config.json`,
-locates the five CSV splits, then calls the single-file module once per split.
+fits a quantizer once on `<model_name>_ben_train.csv`, then transforms the other
+four splits with the same quantizer.
 
 ## Inputs
 
@@ -31,14 +32,22 @@ Five optimized CSV files under `input_dir` (default `development_phase/data/opti
 
 ## Output files (in `quantized_datasets/`)
 
-For each split `<name>.csv` the single-file module produces:
+Per split:
 
 | File | Contents |
 |---|---|
 | `<name>_nml.csv` | Quantized CSV (human-readable) |
 | `<name>_nml.bin` | Bit-packed binary dataset |
-| `<name>_qtz.bin` | Quantizer metadata (bin boundaries) |
 | `<name>_dp.txt`  | Data profile (statistics, bit-width) |
+
+Model-level (single shared artifacts):
+
+| File | Contents |
+|---|---|
+| `<model_name>_qtz.bin` | Shared quantizer metadata (fit on benign-train only) |
+| `<model_name>_nml.bin` | Alias to benign-train quantized dataset |
+| `<model_name>_nml.csv` | Alias to benign-train quantized CSV |
+| `<model_name>_dp.txt` | Alias to benign-train data profile |
 
 ## Configuration (`quantization_config.json`)
 

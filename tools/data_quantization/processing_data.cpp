@@ -201,6 +201,8 @@ struct FeatureStats {
     bool isDiscrete = false;
 };
 
+float clipOutlier(float value, float mean, float stdDev, float minVal, float maxVal);
+
 // Structure for building QTZ4 format (per-feature rules, includes per-feature min/max)
 class Rf_quantizer{
     uint16_t numFeatures = 0;
@@ -435,6 +437,30 @@ public:
         
         return result;
     }
+
+    // Quantize with optional training-stat-based outlier clipping.
+    vector<uint8_t> quantizeSampleWithTrainingStats(const vector<float>& sample) const {
+        vector<uint8_t> result;
+        result.reserve(numFeatures);
+
+        for (uint16_t i = 0; i < numFeatures && i < sample.size(); ++i) {
+            float value = sample[i];
+
+            if (removeOutliers && i < featureMeans.size() && i < featureStdDevs.size()) {
+                value = clipOutlier(
+                    value,
+                    featureMeans[i],
+                    featureStdDevs[i],
+                    features[i].minValue,
+                    features[i].maxValue
+                );
+            }
+
+            result.push_back(quantizeFeature(i, value));
+        }
+
+        return result;
+    }
     
     // Save quantizer to binary format for ESP32 transfer
     void saveQuantizer(const char* filename) const {
@@ -518,6 +544,126 @@ public:
         }
 
         fout.close();
+    }
+
+    // Load quantizer from QTZ4 binary format.
+    bool loadQuantizer(const char* filename) {
+        std::ifstream fin(filename, std::ios::binary);
+        if (!fin) {
+            return false;
+        }
+
+        char magic[4] = {0, 0, 0, 0};
+        fin.read(magic, 4);
+        if (!fin || std::strncmp(magic, "QTZ4", 4) != 0) {
+            return false;
+        }
+
+        uint16_t loadedNumFeatures = 0;
+        uint16_t loadedGroupsPerFeature = 0;
+        uint8_t numLabelsU8 = 0;
+        uint8_t outlierFlag = 0;
+
+        fin.read(reinterpret_cast<char*>(&loadedNumFeatures), sizeof(uint16_t));
+        fin.read(reinterpret_cast<char*>(&loadedGroupsPerFeature), sizeof(uint16_t));
+        fin.read(reinterpret_cast<char*>(&numLabelsU8), sizeof(uint8_t));
+        fin.read(reinterpret_cast<char*>(&outlierFlag), sizeof(uint8_t));
+        if (!fin) {
+            return false;
+        }
+
+        numFeatures = loadedNumFeatures;
+        groupsPerFeature = loadedGroupsPerFeature;
+        removeOutliers = (outlierFlag != 0);
+
+        features.clear();
+        features.resize(numFeatures);
+        labelMapping.clear();
+        featureMeans.clear();
+        featureStdDevs.clear();
+
+        if (removeOutliers) {
+            featureMeans.resize(numFeatures, 0.0f);
+            featureStdDevs.resize(numFeatures, 0.0f);
+            for (uint16_t i = 0; i < numFeatures; ++i) {
+                fin.read(reinterpret_cast<char*>(&featureMeans[i]), sizeof(float));
+                fin.read(reinterpret_cast<char*>(&featureStdDevs[i]), sizeof(float));
+                if (!fin) {
+                    return false;
+                }
+            }
+        }
+
+        for (uint8_t i = 0; i < numLabelsU8; ++i) {
+            uint8_t id = 0;
+            uint8_t labelLen = 0;
+            fin.read(reinterpret_cast<char*>(&id), sizeof(uint8_t));
+            fin.read(reinterpret_cast<char*>(&labelLen), sizeof(uint8_t));
+            if (!fin) {
+                return false;
+            }
+
+            std::string label;
+            label.resize(labelLen);
+            if (labelLen > 0) {
+                fin.read(&label[0], labelLen);
+                if (!fin) {
+                    return false;
+                }
+            }
+
+            labelMapping.push_back({label, id});
+        }
+
+        for (uint16_t i = 0; i < numFeatures; ++i) {
+            uint8_t typeU8 = 0;
+            fin.read(reinterpret_cast<char*>(&typeU8), sizeof(uint8_t));
+            fin.read(reinterpret_cast<char*>(&features[i].minValue), sizeof(float));
+            fin.read(reinterpret_cast<char*>(&features[i].maxValue), sizeof(float));
+            fin.read(reinterpret_cast<char*>(&features[i].baselineScaled), sizeof(int64_t));
+            fin.read(reinterpret_cast<char*>(&features[i].scaleFactor), sizeof(uint64_t));
+            if (!fin) {
+                return false;
+            }
+
+            if (typeU8 > static_cast<uint8_t>(FT_CU)) {
+                return false;
+            }
+            features[i].type = static_cast<FeatureType>(typeU8);
+
+            features[i].discreteValues.clear();
+            features[i].edgesScaled.clear();
+
+            if (features[i].type == FT_DC) {
+                uint8_t count = 0;
+                fin.read(reinterpret_cast<char*>(&count), sizeof(uint8_t));
+                if (!fin) {
+                    return false;
+                }
+                features[i].discreteValues.resize(count, 0.0f);
+                for (uint8_t k = 0; k < count; ++k) {
+                    fin.read(reinterpret_cast<char*>(&features[i].discreteValues[k]), sizeof(float));
+                    if (!fin) {
+                        return false;
+                    }
+                }
+            } else if (features[i].type == FT_CU) {
+                uint8_t edgeCount = 0;
+                fin.read(reinterpret_cast<char*>(&edgeCount), sizeof(uint8_t));
+                if (!fin) {
+                    return false;
+                }
+                features[i].edgesScaled.resize(edgeCount, 0);
+                for (uint8_t k = 0; k < edgeCount; ++k) {
+                    fin.read(reinterpret_cast<char*>(&features[i].edgesScaled[k]), sizeof(uint16_t));
+                    if (!fin) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
     }
     
     // Accessors
@@ -1019,6 +1165,113 @@ Rf_quantizer quantizeCSVFeatures(const char* inputFilePath,
     return ctg;
 }
 
+void quantizeCSVFeaturesWithLoadedQuantizer(const char* inputFilePath,
+                                            const char* outputFilePath,
+                                            const Rf_quantizer& quantizer,
+                                            const vector<pair<std::string, uint8_t>>& labelMapping,
+                                            bool skipHeader = false,
+                                            problem_type problemType = problem_type::ISOLATION) {
+    std::ifstream fin(inputFilePath);
+    if (!fin) {
+        throw std::runtime_error(std::string("Cannot open input file: ") + inputFilePath);
+    }
+
+    std::string firstLine;
+    std::getline(fin, firstLine);
+    auto cols = split(firstLine);
+    int n_cols = static_cast<int>(cols.size());
+    if ((problemType == problem_type::ISOLATION && n_cols < 1) ||
+        (problemType != problem_type::ISOLATION && n_cols < 2)) {
+        fin.close();
+        throw std::runtime_error(problemType == problem_type::ISOLATION
+            ? "Input CSV needs at least one feature column"
+            : "Input CSV needs at least one label + one feature");
+    }
+
+    const int featureStartColumn = (problemType == problem_type::ISOLATION) ? 0 : 1;
+    const int n_feats = n_cols - featureStartColumn;
+    if (n_feats != static_cast<int>(quantizer.getNumFeatures())) {
+        fin.close();
+        throw std::runtime_error("Feature count mismatch between input CSV and loaded quantizer");
+    }
+
+    vector<std::string> labels;
+    vector<vector<float>> data;
+
+    bool processFirstLine = !skipHeader;
+    if (processFirstLine && static_cast<int>(cols.size()) == n_cols) {
+        if (problemType != problem_type::ISOLATION) {
+            labels.push_back(cols[0]);
+        }
+        vector<float> feats;
+        feats.reserve(n_feats);
+        for (int j = featureStartColumn; j < n_cols; ++j) {
+            try {
+                feats.push_back(std::stof(cols[j]));
+            } catch (...) {
+                feats.push_back(0.0f);
+            }
+        }
+        data.push_back(std::move(feats));
+    }
+
+    std::string line;
+    while (std::getline(fin, line)) {
+        if (line.empty()) continue;
+        auto cells = split(line);
+        if (static_cast<int>(cells.size()) != n_cols) {
+            continue;
+        }
+        if (problemType != problem_type::ISOLATION) {
+            labels.push_back(cells[0]);
+        }
+
+        vector<float> feats;
+        feats.reserve(n_feats);
+        for (int j = featureStartColumn; j < n_cols; ++j) {
+            try {
+                feats.push_back(std::stof(cells[j]));
+            } catch (...) {
+                feats.push_back(0.0f);
+            }
+        }
+        data.push_back(std::move(feats));
+    }
+    fin.close();
+
+    const int n_samples = static_cast<int>(data.size());
+    if (n_samples == 0) {
+        throw std::runtime_error("No data rows found in file");
+    }
+
+    std::ofstream fout(outputFilePath);
+    if (!fout) {
+        throw std::runtime_error(std::string("Cannot open output file: ") + outputFilePath);
+    }
+
+    for (int i = 0; i < n_samples; ++i) {
+        const vector<uint8_t> encoded = quantizer.quantizeSampleWithTrainingStats(data[i]);
+
+        if (problemType == problem_type::ISOLATION) {
+            for (int j = 0; j < n_feats; ++j) {
+                if (j > 0) {
+                    fout << ",";
+                }
+                fout << static_cast<int>(encoded[j]);
+            }
+        } else {
+            uint8_t normalizedLabel = getNormalizedLabel(labels[i], labelMapping);
+            fout << static_cast<int>(normalizedLabel);
+            for (int j = 0; j < n_feats; ++j) {
+                fout << "," << static_cast<int>(encoded[j]);
+            }
+        }
+        fout << "\n";
+    }
+
+    fout.close();
+}
+
 // Dataset scanner to check features and collect labels
 struct DatasetInfo {
     int numFeatures;
@@ -1400,6 +1653,7 @@ void convertCSVToBinary(const std::string& inputCSV, const std::string& outputBi
 int main(int argc, char* argv[]) {
     try {
         std::string configPath = "quantization_config.json";
+        std::string existingQuantizerPath;
         
         // First pass: Find config path and check for help
         for (int i = 1; i < argc; ++i) {
@@ -1416,8 +1670,10 @@ int main(int argc, char* argv[]) {
                 std::cout << "  -pt, --problem_type <classification|regression|isolation> Problem mode (default: isolation)\n";
                 std::cout << "  -qb, --quantization_bits <1-8> Bits per feature (default: 2)\n";
                 std::cout << "  -ro, --remove_outliers <bool> Enable Z-score outlier clipping (default: true)\n";
+                std::cout << "  -qp, --quantizer_path <path> Reuse existing quantizer (transform mode; skips fitting/saving quantizer)\n";
                 std::cout << "\nExample usage:\n";
                 std::cout << "  " << argv[0] << " -ip dataset.csv -qb 4 -mn my_model\n";
+                std::cout << "  " << argv[0] << " -ip val.csv -mn iforest_ben_val -qp quantized_datasets/iforest_qtz.bin\n";
                 std::cout << "  " << argv[0] << " -c config.json -pt isolation -qb 2\n";
                 return 0;
             }
@@ -1449,6 +1705,10 @@ int main(int argc, char* argv[]) {
                 if (i + 1 < argc) {
                     std::string val = toLowerCopy(argv[++i]);
                     config.removeOutliers = (val == "true" || val == "1" || val == "yes");
+                }
+            } else if (arg == "-qp" || arg == "--quantizer_path") {
+                if (i + 1 < argc) {
+                    existingQuantizerPath = argv[++i];
                 }
             }
         }
@@ -1508,7 +1768,6 @@ int main(int argc, char* argv[]) {
         if (!std::filesystem::exists(resultDirPath)) {
             std::filesystem::create_directories(resultDirPath);
         }
-        std::string resultDir = resultDirPath.string();
         std::string quantizerFile = (resultDirPath / (baseName + "_qtz.bin")).string();
         std::string dataParamsFile = (resultDirPath / (baseName + "_dp.txt")).string();
         std::string normalizedFile = (resultDirPath / (baseName + "_nml.csv")).string();
@@ -1524,23 +1783,47 @@ int main(int argc, char* argv[]) {
             (void)hasHeader; // Header detection is silent for clean CLI output
         }
 
-        // Step 2: Quantize features with the dataset
-        Rf_quantizer test_ctg = quantizeCSVFeatures(inputFile.c_str(),
-                               normalizedFile.c_str(),
-                               getGroupsPerFeature(),
-                               datasetInfo.labelMapping,
-                               skipHeader,
-                               config.removeOutliers,
-                               datasetInfo.problemType);
+        uint16_t resolvedNumFeatures = static_cast<uint16_t>(datasetInfo.numFeatures);
 
-        // Save quantizer for ESP32 transfer
-        test_ctg.saveQuantizer(quantizerFile.c_str());
+        if (!existingQuantizerPath.empty()) {
+            Rf_quantizer loadedQuantizer;
+            if (!loadedQuantizer.loadQuantizer(existingQuantizerPath.c_str())) {
+                throw std::runtime_error(std::string("Failed to load quantizer: ") + existingQuantizerPath);
+            }
+            if (loadedQuantizer.getNumFeatures() != static_cast<uint16_t>(datasetInfo.numFeatures)) {
+                throw std::runtime_error("Loaded quantizer feature count does not match input dataset");
+            }
+
+            quantizeCSVFeaturesWithLoadedQuantizer(
+                inputFile.c_str(),
+                normalizedFile.c_str(),
+                loadedQuantizer,
+                datasetInfo.labelMapping,
+                skipHeader,
+                datasetInfo.problemType
+            );
+
+            resolvedNumFeatures = loadedQuantizer.getNumFeatures();
+        } else {
+            // Step 2: Fit quantizer on this dataset and quantize (fit mode)
+            Rf_quantizer fittedQuantizer = quantizeCSVFeatures(inputFile.c_str(),
+                                   normalizedFile.c_str(),
+                                   getGroupsPerFeature(),
+                                   datasetInfo.labelMapping,
+                                   skipHeader,
+                                   config.removeOutliers,
+                                   datasetInfo.problemType);
+
+            // Save quantizer for deployment/runtime transfer
+            fittedQuantizer.saveQuantizer(quantizerFile.c_str());
+            resolvedNumFeatures = fittedQuantizer.getNumFeatures();
+        }
 
         // Step 3: Generate dataset parameters TXT for ESP32 transfer
         generateDatasetParams(normalizedFile, datasetInfo, dataParamsFile.c_str());
 
         // Step 4: Convert CSV to binary format
-        convertCSVToBinary(normalizedFile, binaryFile, test_ctg.getNumFeatures(), datasetInfo.problemType);
+        convertCSVToBinary(normalizedFile, binaryFile, resolvedNumFeatures, datasetInfo.problemType);
 
         // Calculate file size compression ratio
         size_t inputFileSize = 0;
@@ -1559,10 +1842,15 @@ int main(int argc, char* argv[]) {
         std::cout << "\n=== Processing Complete ===\n";
         std::cout << "✅ Dataset quantized and compressed:\n";
         size_t numLabels = datasetInfo.problemType == problem_type::ISOLATION ? 1 : datasetInfo.labelMapping.size();
-        std::cout << "   📊 Samples: " << datasetInfo.numSamples << " | Features: " << test_ctg.getNumFeatures() 
+        std::cout << "   📊 Samples: " << datasetInfo.numSamples << " | Features: " << resolvedNumFeatures
               << " | Labels: " << numLabels << "\n";
         std::cout << "   🧩 Problem type: " << problemTypeToString(datasetInfo.problemType) << "\n";
         std::cout << "   🗜️  Quantization: " << static_cast<int>(quantization_coefficient) << std::endl;
+        if (!existingQuantizerPath.empty()) {
+            std::cout << "   🔁 Quantizer mode: transform-only (reused " << existingQuantizerPath << ")\n";
+        } else {
+            std::cout << "   🧪 Quantizer mode: fit-and-transform\n";
+        }
         
         if (inputFileSize > 0 && outputFileSize > 0) {
             float compressionRatio = static_cast<float>(inputFileSize) / static_cast<float>(outputFileSize);

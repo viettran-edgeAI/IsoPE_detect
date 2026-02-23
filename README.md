@@ -192,21 +192,21 @@ The pipeline is split into two tiers:
 - **`embedded_phase/tools/data_quantization/`** — batch orchestrator.  
   Reads `model_name` and `input_dir` from `quantization_config.json`, finds the five
   optimized CSV splits (`<model_name>_ben_train/test/val.csv`, `<model_name>_mal_test/val.csv`),
-  and calls the single-file module for each.
+  fits the quantizer **once** on `<model_name>_ben_train.csv`, then transforms the other four splits using that same quantizer.
 
 **Per-feature quantization (2-bit default, 4 bins)**:
 1. Compute z-score outlier bounds on the training split only.
 2. Build quantile-based bin boundaries from the clipped training distribution.
 3. Apply the same boundaries identically to all splits (no data leakage).
 
-**Outputs per split** under `embedded_phase/tools/data_quantization/quantized_datasets/`:
+**Outputs** under `embedded_phase/tools/data_quantization/quantized_datasets/`:
 
 | File | Contents |
 |---|---|
 | `*_nml.bin` | Bit-packed dataset: `[uint32 n_samples][uint16 n_features][{uint8 label, packed_bits}×n]` |
-| `*_qtz.bin` | Raw integer feature matrix (one byte per feature, unpacked) |
 | `*_nml.csv` | Human-readable version of the quantized dataset |
 | `*_dp.txt` | Data-profile: quantization bits, bin boundaries, outlier statistics |
+| `<model_name>_qtz.bin` | **Single shared quantizer metadata** (trained on benign-train only; reused for all splits) |
 
 At 2-bit quantization a 40-feature sample is 10 bytes versus 160 bytes (float32) — approximately 16× dataset compression.
 
@@ -228,53 +228,53 @@ Trains a C++ Isolation Forest entirely on integer bin-index data, selects the de
 
 ## Results — Development vs Embedded
 
-The embedded C++ model (trained entirely on 2-bit quantized integer-bin data) meets and exceeds the development-phase Python model on all three metrics.
+After enforcing a strict single-quantizer workflow (fit on benign-train once, transform all other splits), the embedded C++ model now reports more conservative and realistic metrics.
 
 | Split | Metric | Development (Python / float) | Embedded (C++ / quantized) | Δ |
 |---|---|---|---|---|
-| **Validation** | FPR | 0.0370 | 0.0278 | **−0.0093** |
-| **Validation** | TPR | 0.9208 | 0.9975 | **+0.0767** |
-| **Validation** | ROC-AUC | 0.9878 | 0.9982 | **+0.0105** |
-| **Test** | FPR | 0.0465 | 0.0570 | +0.0105 |
-| **Test** | TPR | 0.9404 | 1.0000 | **+0.0596** |
-| **Test** | ROC-AUC | 0.9885 | 0.9989 | **+0.0104** |
+| **Validation** | FPR | 0.0370 | 0.0354 | −0.0016 |
+| **Validation** | TPR | 0.9208 | 0.8936 | −0.0272 |
+| **Validation** | ROC-AUC | 0.9878 | 0.9781 | −0.0097 |
+| **Test** | FPR | 0.0465 | 0.0412 | **−0.0053** |
+| **Test** | TPR | 0.9404 | 0.8860 | −0.0544 |
+| **Test** | ROC-AUC | 0.9885 | 0.9813 | −0.0072 |
 
-Selected decision threshold (embedded): `0.016133`
+Selected decision threshold (embedded): `0.0393511`
 
-The slight FPR increase on the test split (+0.0105) is within the `val_fpr_delta = 0.01` design tolerance. The TPR and ROC-AUC improvements come from the regularizing effect of quantization: discrete binning suppresses noisy feature dimensions and smooths tree splits without losing the separating signal at class boundaries.
+Compared with the previous (over-optimistic) embedded report, these results remove split-specific quantization leakage and better reflect true generalization behavior.
 
 Full report: [report/README.md](report/README.md)
 
 ### Embedding benchmark report (10 benign + 10 malware)
 
-*Last updated: 2026-02-23 — decision threshold `0.016133`*
+*Last updated: 2026-02-23 — decision threshold `0.0393511`*
 
 | Split | File | File Size (KB) | Extraction (ms) | Inference (ms) | RSS (MB) | Score | Verdict |
 |---|---|---:|---:|---:|---:|---:|---|
-| benign_test | 000d81f6…ec00.dll | 2956.031 | 20.839 | 0.320 | 15.168 | −0.015 | anomaly |
-| benign_test | 000de8f5…d9c2.dll | 60.305 | 2.463 | 0.342 | 15.293 | 0.100 | benign |
-| benign_test | 000e0a55…8243.dll | 84.305 | 2.326 | 0.311 | 15.293 | 0.023 | benign |
-| benign_test | 000f278b…431e.dll | 53.969 | 1.783 | 0.567 | 15.293 | 0.037 | benign |
-| benign_test | 00167267…1fb2.dll | 8.500 | 0.332 | 0.333 | 15.293 | 0.030 | benign |
-| benign_test | 001d74d5…f521.dll | 226.500 | 1.358 | 0.452 | 15.293 | 0.060 | benign |
-| benign_test | 001dbc4c…d75c.dll | 75.603 | 0.822 | 0.417 | 15.293 | 0.129 | benign |
-| benign_test | 002a2f5c…3a58.exe | 21.000 | 0.478 | 0.312 | 15.293 | −0.024 | anomaly |
-| benign_test | 0034d97e…8089.exe | 33.828 | 2.540 | 0.605 | 15.293 | 0.074 | benign |
-| benign_test | 003df758…e0fe.dll | 19.070 | 1.823 | 0.374 | 15.293 | 0.022 | benign |
-| malware_test | 0005626a…f6a0.exe | 116.000 | 0.822 | 0.338 | 15.293 | −0.083 | anomaly |
-| malware_test | 0009f3b6…552dc.exe | 5258.000 | 39.107 | 0.218 | 15.293 | −0.084 | anomaly |
-| malware_test | 0019e0ae…2460.exe | 5266.500 | 33.922 | 0.284 | 15.293 | −0.084 | anomaly |
-| malware_test | 0049bd68…8403.exe | 3194.000 | 11.112 | 0.262 | 15.293 | −0.055 | anomaly |
-| malware_test | 00654e21…2e6c.exe | 4426.500 | 26.952 | 0.442 | 15.293 | 0.027 | benign |
-| malware_test | 006622b9…6752.exe | 10240.000 | 45.910 | 0.390 | 15.293 | 0.002 | anomaly |
-| malware_test | 00757772…cd6e.exe | 7070.400 | 47.920 | 0.296 | 15.293 | 0.002 | anomaly |
-| malware_test | 008902cb…1a1c.exe | 8.000 | 0.245 | 0.279 | 15.293 | −0.049 | anomaly |
-| malware_test | 00a16089…3aab.exe | 45289.000 | 190.765 | 0.474 | 15.293 | 0.063 | benign |
-| malware_test | 00a22dc8…8092.exe | 10025.500 | 34.066 | 0.339 | 15.293 | −0.033 | anomaly |
+| benign_test | 000d81f6…ec00.dll | 2956.031 | 20.296 | 0.274 | 15.055 | −0.015 | anomaly |
+| benign_test | 000de8f5…d9c2.dll | 60.305 | 2.553 | 0.328 | 15.180 | 0.100 | benign |
+| benign_test | 000e0a55…8243.dll | 84.305 | 2.313 | 0.295 | 15.180 | 0.023 | anomaly |
+| benign_test | 000f278b…431e.dll | 53.969 | 1.764 | 0.304 | 15.180 | 0.037 | anomaly |
+| benign_test | 00167267…1fb2.dll | 8.500 | 0.326 | 0.299 | 15.180 | 0.030 | anomaly |
+| benign_test | 001d74d5…f521.dll | 226.500 | 1.339 | 0.379 | 15.180 | 0.060 | benign |
+| benign_test | 001dbc4c…d75c.dll | 75.603 | 0.791 | 0.373 | 15.180 | 0.129 | benign |
+| benign_test | 002a2f5c…3a58.exe | 21.000 | 0.437 | 0.295 | 15.180 | −0.024 | anomaly |
+| benign_test | 0034d97e…8089.exe | 33.828 | 2.455 | 0.322 | 15.180 | 0.074 | benign |
+| benign_test | 003df758…e0fe.dll | 19.070 | 1.396 | 0.389 | 15.180 | 0.022 | anomaly |
+| malware_test | 0005626a…f6a0.exe | 116.000 | 0.767 | 0.235 | 15.180 | −0.083 | anomaly |
+| malware_test | 0009f3b6…552dc.exe | 5258.000 | 33.128 | 0.250 | 15.180 | −0.084 | anomaly |
+| malware_test | 0019e0ae…2460.exe | 5266.500 | 35.015 | 0.236 | 15.180 | −0.084 | anomaly |
+| malware_test | 0049bd68…8403.exe | 3194.000 | 11.557 | 0.239 | 15.180 | −0.055 | anomaly |
+| malware_test | 00654e21…2e6c.exe | 4426.500 | 24.475 | 0.367 | 15.180 | 0.027 | anomaly |
+| malware_test | 006622b9…6752.exe | 10240.000 | 38.145 | 0.280 | 15.180 | 0.002 | anomaly |
+| malware_test | 00757772…cd6e.exe | 7070.400 | 40.508 | 0.297 | 15.180 | 0.002 | anomaly |
+| malware_test | 008902cb…1a1c.exe | 8.000 | 0.301 | 0.253 | 15.180 | −0.049 | anomaly |
+| malware_test | 00a16089…3aab.exe | 45289.000 | 176.691 | 0.329 | 15.180 | 0.063 | benign |
+| malware_test | 00a22dc8…8092.exe | 10025.500 | 35.012 | 0.273 | 15.180 | −0.033 | anomaly |
 
-- Average feature extraction time: `23.279 ms`
-- Average inference time (standardization + quantization + inference): `0.368 ms`
-- Peak observed RSS during benchmark loop: `15.293 MB`
+- Average feature extraction time: `21.463 ms`
+- Average inference time (standardization + quantization + inference): `0.301 ms`
+- Peak observed RSS during benchmark loop: `15.180 MB`
 
 ### Unit tests
 

@@ -1,15 +1,15 @@
 {
-  "selected_threshold": 0.016133,
+  "selected_threshold": 0.0393511,
   "embedded": {
-    "validation": {"fpr": 0.0277834, "tpr": 0.997525, "roc_auc": 0.998243},
-    "test": {"fpr": 0.0569927, "tpr": 1, "roc_auc": 0.998941}
+    "validation": {"fpr": 0.0354339, "tpr": 0.893564, "roc_auc": 0.978103},
+    "test": {"fpr": 0.0412288, "tpr": 0.886028, "roc_auc": 0.981318}
   },
   "development": {
     "validation": {"fpr": 0.0370445, "tpr": 0.920792, "roc_auc": 0.98776},
     "test": {"fpr": 0.0464834, "tpr": 0.940391, "roc_auc": 0.988512}
   },
   "delta": {
-    "validation": {"fpr": -0.00926113, "tpr": 0.0767326, "roc_auc": 0.0104835},
-    "test": {"fpr": 0.0105093, "tpr": 0.0596089, "roc_auc": 0.0104284}
+    "validation": {"fpr": -0.00161063, "tpr": -0.0272278, "roc_auc": -0.00965655},
+    "test": {"fpr": -0.00525465, "tpr": -0.0543634, "roc_auc": -0.00719434}
   }
 }

@@ -31,14 +31,6 @@ namespace {
         return "iforest";
     }
 
-    std::filesystem::path pick_existing_or_default(const std::filesystem::path& preferred,
-                                                   const std::filesystem::path& fallback) {
-        if (std::filesystem::exists(preferred)) {
-            return preferred;
-        }
-        return fallback;
-    }
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -71,11 +63,7 @@ int main(int argc, char** argv) {
         infer_model_name(config_path)
     );
 
-    const std::filesystem::path default_dp_path =
-        pick_existing_or_default(
-            quantized_dir / (model_name + "_dp.txt"),
-            quantized_dir / "benign_train_optimized_dp.txt"
-        );
+    const std::filesystem::path default_dp_path = quantized_dir / (model_name + "_ben_train_dp.txt");
 
     const std::filesystem::path dp_path = get_arg_value(
         argc,
@@ -95,26 +83,11 @@ int main(int argc, char** argv) {
     const bool do_save_scores = !save_scores_path.empty();
 
     eml::model_engine::DatasetBundlePaths datasets;
-    datasets.benign_train = pick_existing_or_default(
-        quantized_dir / (model_name + "_ben_train_nml.bin"),
-        quantized_dir / "benign_train_optimized_nml.bin"
-    );
-    datasets.benign_val = pick_existing_or_default(
-        quantized_dir / (model_name + "_ben_val_nml.bin"),
-        quantized_dir / "benign_val_optimized_nml.bin"
-    );
-    datasets.benign_test = pick_existing_or_default(
-        quantized_dir / (model_name + "_ben_test_nml.bin"),
-        quantized_dir / "benign_test_optimized_nml.bin"
-    );
-    datasets.malware_val = pick_existing_or_default(
-        quantized_dir / (model_name + "_mal_val_nml.bin"),
-        quantized_dir / "malware_val_optimized_nml.bin"
-    );
-    datasets.malware_test = pick_existing_or_default(
-        quantized_dir / (model_name + "_mal_test_nml.bin"),
-        quantized_dir / "malware_test_optimized_nml.bin"
-    );
+    datasets.benign_train = quantized_dir / (model_name + "_ben_train_nml.bin");
+    datasets.benign_val = quantized_dir / (model_name + "_ben_val_nml.bin");
+    datasets.benign_test = quantized_dir / (model_name + "_ben_test_nml.bin");
+    datasets.malware_val = quantized_dir / (model_name + "_mal_val_nml.bin");
+    datasets.malware_test = quantized_dir / (model_name + "_mal_test_nml.bin");
 
     const eml::model_engine::EvaluationSummary summary =
         eml::model_engine::train_and_evaluate(config_path, dp_path, datasets, do_save_scores);

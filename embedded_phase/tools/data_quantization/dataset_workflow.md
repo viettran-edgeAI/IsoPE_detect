@@ -6,7 +6,7 @@ Batch pipeline for the embedding phase:
 
 1. Configure `quantization_config.json` with `model_name` and `input_dir`.
 2. Build the single-file quantization module (`tools/data_quantization/`).
-3. Run the orchestrator — it processes all five CSV splits sequentially.
+3. Run the orchestrator — it fits once on benign-train, then transforms the other four splits.
 4. Check artifacts in `quantized_datasets/`.
 
 ## Inputs
@@ -25,12 +25,18 @@ Default `input_dir`: `../../../development_phase/data/optimized`
 
 ## Outputs (always in `quantized_datasets/`)
 
-For every split four files are produced:
+Per split three files are produced:
 
 - `<name>_nml.csv`   quantized CSV
 - `<name>_nml.bin`   bit-packed binary
-- `<name>_qtz.bin`   quantizer metadata
 - `<name>_dp.txt`    data profile
+
+Model-level shared artifacts:
+
+- `<model_name>_qtz.bin`   single quantizer metadata (fit from benign-train)
+- `<model_name>_nml.bin`   benign-train alias
+- `<model_name>_nml.csv`   benign-train alias
+- `<model_name>_dp.txt`    benign-train alias
 
 ## Step-by-step run
 
@@ -55,4 +61,4 @@ cd embedded_phase/tools/data_quantization && make process
 ls -la embedded_phase/tools/data_quantization/quantized_datasets/
 ```
 
-Expect 20 files (4 artifacts × 5 splits).
+Expect 19 files (3 artifacts × 5 splits + 4 model-level aliases).

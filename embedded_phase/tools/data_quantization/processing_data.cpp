@@ -179,9 +179,11 @@ int main(int argc, char* argv[]) {
         const OrchestratorConfig cfg = loadConfig(configPath);
 
         // Resolve all paths relative to the config file's directory.
-        const std::filesystem::path cfgDir =
-            std::filesystem::absolute(
-                std::filesystem::path(configPath).parent_path());
+        std::filesystem::path cfgParent = std::filesystem::path(configPath).parent_path();
+        if (cfgParent.empty()) {
+            cfgParent = std::filesystem::current_path();
+        }
+        const std::filesystem::path cfgDir = std::filesystem::absolute(cfgParent);
         if (cfgDir.empty())
             throw std::runtime_error("Cannot determine config directory.");
 
@@ -209,12 +211,13 @@ int main(int argc, char* argv[]) {
 
         // ── Five CSV splits ───────────────────────────────────────────────
         const std::string& mn = cfg.modelName;
-        const std::vector<std::string> splits = {
-            mn + "_ben_train.csv",
-            mn + "_ben_test.csv",
-            mn + "_ben_val.csv",
-            mn + "_mal_test.csv",
-            mn + "_mal_val.csv",
+        const std::string trainStem = mn + "_ben_train";
+        const std::vector<std::string> splitStems = {
+            trainStem,
+            mn + "_ben_test",
+            mn + "_ben_val",
+            mn + "_mal_test",
+            mn + "_mal_val",
         };
 
         // Ensure output directory exists next to this config.
@@ -231,84 +234,112 @@ int main(int argc, char* argv[]) {
 
         int failures = 0;
 
-        for (size_t idx = 0; idx < splits.size(); ++idx) {
-            const std::filesystem::path inputPath = inputDirAbs / splits[idx];
-
-            std::cout << "[" << (idx + 1) << "/" << splits.size() << "]  "
-                      << splits[idx] << " ...\n";
-
-            if (!std::filesystem::exists(inputPath)) {
-                std::cerr << "  WARNING  File not found, skipping: "
-                          << inputPath.string() << "\n";
+        // Validate required inputs first.
+        for (const auto& stem : splitStems) {
+            const std::filesystem::path csvPath = inputDirAbs / (stem + ".csv");
+            if (!std::filesystem::exists(csvPath)) {
+                std::cerr << "  MISSING  " << csvPath.string() << "\n";
                 ++failures;
+            }
+        }
+        if (failures > 0) {
+            std::cout << "=== Batch Complete ===\n"
+                      << "  Processed : 0 / " << splitStems.size() << "\n"
+                      << "  Failures  : " << failures << "\n";
+            return 1;
+        }
+
+        // Remove stale per-split quantizer files to enforce one quantizer per model.
+        for (const auto& stem : splitStems) {
+            const std::filesystem::path staleQtz = outDir / (stem + "_qtz.bin");
+            if (std::filesystem::exists(staleQtz)) {
+                std::error_code ec;
+                std::filesystem::remove(staleQtz, ec);
+            }
+        }
+
+        // 1) Fit quantizer once on benign-train with model-level artifact names.
+        const std::filesystem::path trainCsvPath = inputDirAbs / (trainStem + ".csv");
+        std::cout << "[1/" << splitStems.size() << "]  " << trainStem << ".csv (fit quantizer once) ...\n";
+
+        const std::string fitCmd =
+            "cd " + shellQuote(cfgDir.string()) +
+            " && " + shellQuote(singleProcAbs.string()) +
+            " -ip " + shellQuote(trainCsvPath.string()) +
+            " -mn " + shellQuote(mn) +
+            " -qb " + std::to_string(cfg.quantBits) +
+            " -pt " + shellQuote(cfg.problemType) +
+            " -hd " + shellQuote(cfg.headerMode) +
+            " -ro " + (cfg.removeOutliers ? "true" : "false");
+
+        if (std::system(fitCmd.c_str()) != 0) {
+            std::cerr << "  FAILED  quantizer fit on benign train\n";
+            return 1;
+        }
+        std::cout << "  OK\n\n";
+
+        // Copy model-level train outputs to split-scoped train outputs for eval loaders.
+        const std::vector<std::pair<std::string, std::string>> trainCopies = {
+            {mn + "_nml.bin", trainStem + "_nml.bin"},
+            {mn + "_nml.csv", trainStem + "_nml.csv"},
+            {mn + "_dp.txt",  trainStem + "_dp.txt"},
+        };
+        for (const auto& [srcName, dstName] : trainCopies) {
+            const std::filesystem::path src = outDir / srcName;
+            const std::filesystem::path dst = outDir / dstName;
+            if (!std::filesystem::exists(src)) {
+                throw std::runtime_error("Missing train artifact: " + src.string());
+            }
+            std::filesystem::copy_file(src, dst, std::filesystem::copy_options::overwrite_existing);
+        }
+
+        const std::filesystem::path modelQuantizerPath = outDir / (mn + "_qtz.bin");
+        if (!std::filesystem::exists(modelQuantizerPath)) {
+            throw std::runtime_error("Expected model quantizer not found: " + modelQuantizerPath.string());
+        }
+
+        // 2) Transform remaining splits using the single fitted quantizer.
+        size_t progress = 2;
+        for (const auto& stem : splitStems) {
+            if (stem == trainStem) {
                 continue;
             }
 
-            // Derive output basename (filename without extension).
-            std::string baseName = splits[idx];
-            {
-                size_t dot = baseName.find_last_of('.');
-                if (dot != std::string::npos) baseName = baseName.substr(0, dot);
-            }
+            const std::filesystem::path inputPath = inputDirAbs / (stem + ".csv");
+            std::cout << "[" << progress << "/" << splitStems.size() << "]  "
+                      << stem << ".csv (transform with shared quantizer) ...\n";
 
-            // Build invocation:
-            //   cd <cfgDir>  &&  <singleProc>  -ip <abs>  -mn <base>
-            //                                  -qb <bits>  -pt <type>
-            //                                  -hd <hdr>   -ro <bool>
-            // Running from cfgDir ensures the fallback quantized_datasets/
-            // folder is created next to the embedded-phase config.
-            const std::string cmd =
+            const std::string transformCmd =
                 "cd " + shellQuote(cfgDir.string()) +
                 " && " + shellQuote(singleProcAbs.string()) +
                 " -ip " + shellQuote(inputPath.string()) +
-                " -mn " + shellQuote(baseName) +
+                " -mn " + shellQuote(stem) +
                 " -qb " + std::to_string(cfg.quantBits) +
                 " -pt " + shellQuote(cfg.problemType) +
                 " -hd " + shellQuote(cfg.headerMode) +
-                " -ro " + (cfg.removeOutliers ? "true" : "false");
+                " -ro " + (cfg.removeOutliers ? "true" : "false") +
+                " -qp " + shellQuote(modelQuantizerPath.string());
 
-            const int ret = std::system(cmd.c_str());
+            const int ret = std::system(transformCmd.c_str());
             if (ret != 0) {
                 std::cerr << "  FAILED  exit=" << ret
-                          << " for: " << splits[idx] << "\n";
+                          << " for: " << stem << ".csv\n";
                 ++failures;
             } else {
                 std::cout << "  OK\n";
             }
             std::cout << "\n";
+            ++progress;
         }
 
         // ── Summary ───────────────────────────────────────────────────────
-        const int processed = static_cast<int>(splits.size()) - failures;
+        const int processed = static_cast<int>(splitStems.size()) - failures;
         std::cout << "=== Batch Complete ===\n"
                   << "  Processed : " << processed
-                  << " / " << splits.size() << "\n";
+                  << " / " << splitStems.size() << "\n";
         if (failures > 0) {
             std::cout << "  Failures  : " << failures << "\n";
             return 1;
-        }
-
-        // Refresh canonical model-level aliases from the benign-train split.
-        // This keeps compatibility with components that load:
-        //   <model_name>_nml.bin, <model_name>_qtz.bin, <model_name>_dp.txt, <model_name>_nml.csv
-        const std::vector<std::pair<std::string, std::string>> alias_pairs = {
-            {mn + "_ben_train_nml.bin", mn + "_nml.bin"},
-            {mn + "_ben_train_qtz.bin", mn + "_qtz.bin"},
-            {mn + "_ben_train_dp.txt",  mn + "_dp.txt"},
-            {mn + "_ben_train_nml.csv", mn + "_nml.csv"},
-        };
-
-        for (const auto& [src_name, dst_name] : alias_pairs) {
-            const std::filesystem::path src = outDir / src_name;
-            const std::filesystem::path dst = outDir / dst_name;
-            if (!std::filesystem::exists(src)) {
-                throw std::runtime_error("Missing source artifact for alias refresh: " + src.string());
-            }
-            std::filesystem::copy_file(
-                src,
-                dst,
-                std::filesystem::copy_options::overwrite_existing
-            );
         }
 
         std::cout << "  Artifacts : " << outDir.string() << "\n";

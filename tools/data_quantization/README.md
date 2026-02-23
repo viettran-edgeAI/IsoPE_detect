@@ -43,6 +43,12 @@ A single CSV file whose path is supplied either via config or via the
 | `problem_type` | `isolation` | `isolation \| classification \| regression` |
 | `remove_outliers` | `false` | Z-score outlier clipping |
 
+Optional CLI-only field:
+
+| Flag | Description |
+|---|---|
+| `-qp`, `--quantizer_path` | Reuse an existing quantizer file and run transform-only quantization (no re-fit, no new quantizer export). |
+
 ## Build
 
 ```bash
@@ -59,4 +65,9 @@ g++ -std=c++17 -I../../embedded_phase/src -o processing_data processing_data.cpp
 
 # Inline override:
 ./processing_data -ip ../../development_phase/data/optimized/iforest_ben_train.csv -qb 2 -pt isolation
+
+# Transform-only mode using an existing quantizer:
+./processing_data -ip ../../development_phase/data/optimized/iforest_ben_val.csv \
+        -mn iforest_ben_val \
+        -qp ../../embedded_phase/tools/data_quantization/quantized_datasets/iforest_qtz.bin
 ```

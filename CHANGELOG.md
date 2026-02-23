@@ -28,6 +28,44 @@ All notable changes to the EDR Agent model and optimization pipeline will be doc
 - `embedded_phase/docs/EMBEDDED_PHASE_DESIGN.md`: directory structure and build/run sections updated for the two-tier quantization architecture; quantized artifact filenames updated to `<model>_ben/mal_*` convention.
 - `README.md`: repository layout, Module 2 description, two-phase architecture diagram, Build Quick-Reference, and Current Status table updated.
 
+## [1.8.0] - 2026-02-23
+
+### Changed
+
+#### Quantization pipeline hardening (no split leakage)
+- Refactored quantization to **fit once on benign-train only** and reuse that exact quantizer for all other splits.
+- Added transform-only mode in `tools/data_quantization/processing_data.cpp`:
+  - new CLI flag `-qp/--quantizer_path` to load an existing quantizer and quantize without re-fitting.
+- `embedded_phase/tools/data_quantization/processing_data.cpp` (orchestrator) now:
+  - fits quantizer once on `<model>_ben_train.csv` to produce `<model>_qtz.bin`,
+  - transforms `<model>_ben_test.csv`, `<model>_ben_val.csv`, `<model>_mal_test.csv`, `<model>_mal_val.csv` using that same quantizer,
+  - enforces **one quantizer per model** (no per-split `*_qtz.bin` outputs).
+
+#### Artifact naming standardization
+- Standardized model-engine loaders to use model-prefixed artifacts consistently (`iforest_*`) and removed implicit `*_optimized_*` fallback behavior in:
+  - `embedded_phase/src/model_engine/app/model_engine_cli.cpp`
+  - `embedded_phase/src/model_engine/app/model_engine_benchmark_cli.cpp`
+- Benchmark CLI now supports `--model-name` and loads shared model quantizer `<model>_qtz.bin`.
+
+#### Documentation updates
+- Updated:
+  - `README.md`
+  - `report/README.md`
+  - `embedded_phase/docs/EMBEDDED_PHASE_DESIGN.md`
+  - `embedded_phase/tools/data_quantization/README.md`
+  - `embedded_phase/tools/data_quantization/dataset_workflow.md`
+  - `tools/data_quantization/README.md`
+
+### Validation results (post-fix rerun)
+- Rebuilt quantization artifacts and reran evaluation + benchmark.
+- Embedded evaluation (`if_evaluation_summary.json`):
+  - Threshold: `0.0393511`
+  - Validation: FPR `0.0354339`, TPR `0.893564`, ROC-AUC `0.978103`
+  - Test: FPR `0.0412288`, TPR `0.886028`, ROC-AUC `0.981318`
+- 20-file benchmark spot check (`if_benchmark_report.md`):
+  - Confusion counts: FP `6`, FN `1` (TP `9`, TN `4`)
+  - Avg extraction `21.463 ms`, avg inference `0.301 ms`, peak RSS `15.180 MB`
+
 
 
 ### Changed

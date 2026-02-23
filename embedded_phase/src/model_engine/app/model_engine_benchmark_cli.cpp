@@ -32,6 +32,7 @@ struct Args {
     std::filesystem::path extractor_bin = "embedded_phase/src/feature_extractor/lief_feature_extractor";
     std::filesystem::path output_md = "embedded_phase/src/model_engine/results/if_benchmark_report.md";
     size_t samples_per_class = 10;
+    std::string model_name = "iforest";
 };
 
 struct SampleBenchmark {
@@ -91,6 +92,11 @@ bool parse_args(int argc, char** argv, Args& args) {
             if (!require_value(args.extractor_bin)) return false;
         } else if (key == "--output") {
             if (!require_value(args.output_md)) return false;
+        } else if (key == "--model-name") {
+            if (i + 1 >= argc) {
+                return false;
+            }
+            args.model_name = argv[++i];
         } else if (key == "--samples-per-class") {
             if (i + 1 >= argc) {
                 return false;
@@ -108,7 +114,7 @@ bool parse_args(int argc, char** argv, Args& args) {
 
 void print_usage() {
     std::cout
-        << "Usage: pe_model_engine_benchmark_cli [--config PATH] [--quantized-dir PATH] [--benign-dir PATH] [--malware-dir PATH] [--extractor-bin PATH] [--samples-per-class N] [--output PATH]\n";
+    << "Usage: pe_model_engine_benchmark_cli [--config PATH] [--quantized-dir PATH] [--model-name NAME] [--benign-dir PATH] [--malware-dir PATH] [--extractor-bin PATH] [--samples-per-class N] [--output PATH]\n";
 }
 
 bool read_text_file(const std::filesystem::path& path, std::string& out) {
@@ -357,14 +363,14 @@ int main(int argc, char** argv) {
 
     std::string err;
     eml::model_engine::IsolationForestModelEngine engine;
-    const std::filesystem::path dp_path = args.quantized_dir / "benign_train_optimized_dp.txt";
+    const std::filesystem::path dp_path = args.quantized_dir / (args.model_name + "_ben_train_dp.txt");
 
     eml::model_engine::DatasetBundlePaths datasets;
-    datasets.benign_train = args.quantized_dir / "benign_train_optimized_nml.bin";
-    datasets.benign_val = args.quantized_dir / "benign_val_optimized_nml.bin";
-    datasets.benign_test = args.quantized_dir / "benign_test_optimized_nml.bin";
-    datasets.malware_val = args.quantized_dir / "malware_val_optimized_nml.bin";
-    datasets.malware_test = args.quantized_dir / "malware_test_optimized_nml.bin";
+    datasets.benign_train = args.quantized_dir / (args.model_name + "_ben_train_nml.bin");
+    datasets.benign_val = args.quantized_dir / (args.model_name + "_ben_val_nml.bin");
+    datasets.benign_test = args.quantized_dir / (args.model_name + "_ben_test_nml.bin");
+    datasets.malware_val = args.quantized_dir / (args.model_name + "_mal_val_nml.bin");
+    datasets.malware_test = args.quantized_dir / (args.model_name + "_mal_test_nml.bin");
 
     const eml::model_engine::EvaluationSummary eval_summary =
         eml::model_engine::train_and_evaluate(args.config_path, dp_path, datasets);
@@ -382,7 +388,7 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> train_matrix;
     size_t n_train = 0;
     if (!eml::model_engine::load_quantized_nml_dataset(
-            args.quantized_dir / "benign_train_optimized_nml.bin",
+            args.quantized_dir / (args.model_name + "_ben_train_nml.bin"),
             engine.config().num_features,
             engine.config().quantization_bits,
             train_matrix,
@@ -404,7 +410,7 @@ int main(int argc, char** argv) {
     }
 
     eml::eml_quantizer<eml::problem_type::ISOLATION> quantizer;
-    const std::filesystem::path quantizer_path = args.quantized_dir / "benign_train_optimized_qtz.bin";
+    const std::filesystem::path quantizer_path = args.quantized_dir / (args.model_name + "_qtz.bin");
     if (!quantizer.loadQuantizer(quantizer_path.string().c_str())) {
         std::cerr << "Failed to load quantizer: " << quantizer_path << "\n";
         return 7;

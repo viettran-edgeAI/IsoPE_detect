@@ -108,11 +108,14 @@ embedded_phase/
         ├── quantize_dataset.sh        # Shell driver: builds + runs orchestrator
         ├── quantization_config.json   # model_name, input_dir, bits-per-feature, etc.
         ├── dataset_workflow.md        # Quantization pipeline documentation
-        └── quantized_datasets/        # Generated artifacts (4 files × 5 splits)
+        └── quantized_datasets/        # Generated artifacts (per-split datasets + one shared quantizer)
             ├── <model>_ben_train_nml.bin
             ├── <model>_ben_train_nml.csv
-            ├── <model>_ben_train_qtz.bin
             ├── <model>_ben_train_dp.txt
+          ├── <model>_qtz.bin
+          ├── <model>_nml.bin
+          ├── <model>_nml.csv
+          ├── <model>_dp.txt
             ├── <model>_ben_val_*
             ├── <model>_ben_test_*
             ├── <model>_mal_val_*
@@ -291,8 +294,8 @@ feature 1: ...
 ...
 ```
 
-**`*_qtz.bin`** — unpacked integer matrix (one `uint8_t` per feature per sample),
-useful for debugging.
+**`<model>_qtz.bin`** — shared quantizer metadata (bin boundaries + optional clipping stats)
+fit once on the benign-train split and reused for all splits.
 
 **`*_nml.csv`** — human-readable, same content as `*_nml.bin`.
 
@@ -599,14 +602,14 @@ are integer bin-index vs integer threshold-slot.
 pe_model_engine_cli \
   --config       development_phase/results/iforest_optimized_config.json \
   --quantized-dir embedded_phase/tools/data_quantization/quantized_datasets \
-  --dp           quantized_datasets/benign_train_optimized_dp.txt \
+  --dp           quantized_datasets/iforest_ben_train_dp.txt \
   --output       embedded_phase/src/model_engine/results/if_evaluation_summary.json
 ```
 
 Writes a JSON report:
 ```json
 {
-  "selected_threshold": 0.0100316,
+  "selected_threshold": 0.0393511,
   "embedded":    { "validation": {...}, "test": {...} },
   "development": { "validation": {...}, "test": {...} },
   "delta":       { "validation": {...}, "test": {...} }
@@ -687,26 +690,22 @@ CTest output:
 
 | Split | FPR | TPR | ROC-AUC |
 |---|---|---|---|
-| Validation | 0.0399 | 0.9564 | 0.9933 |
-| Test (holdout) | 0.0576 | 0.9969 | 0.9960 |
+| Validation | 0.0354 | 0.8936 | 0.9781 |
+| Test (holdout) | 0.0412 | 0.8860 | 0.9813 |
 
 ### Delta (embedded − development)
 
 | Split | ΔFPR | ΔTPR | ΔROC-AUC |
 |---|---|---|---|
-| Validation | +0.0016 | **+0.0387** | **+0.0052** |
-| Test | +0.0123 | **+0.0622** | **+0.0081** |
+| Validation | −0.0016 | −0.0272 | −0.0097 |
+| Test | −0.0053 | −0.0544 | −0.0072 |
 
-Selected decision threshold (embedded): **0.0100316**
+Selected decision threshold (embedded): **0.0393511**
 
-The embedded model surpasses the development-phase baseline on TPR (+3.9 pp
-validation, +6.2 pp test) and ROC-AUC at a cost of a small FPR increase
-(+0.012 on test, within the `val_fpr_delta = 0.01` design budget).
-
-The accuracy improvement is explained by the regularizing effect of quantization:
-2-bit binning suppresses noisy high-variance feature dimensions and smooths
-tree split thresholds without sacrificing the separating signal at class
-boundaries, as observed consistently in the MCU library benchmark data.
+After enforcing the strict single-quantizer workflow (fit only on benign-train,
+reuse for all splits), embedded metrics become more conservative and align better
+with expected holdout behavior. This removes the optimistic bias caused by
+split-specific quantizer fitting.
 
 Full report: `embedded_phase/src/model_engine/results/if_evaluation_summary.json`
 
