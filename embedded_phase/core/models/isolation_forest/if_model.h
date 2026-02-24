@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -11,291 +12,44 @@
 #include <numeric>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "if_base.h"
+#include "if_components.h"
 #include "if_config.h"
-#include "if_node_resource.h"
+#include "if_feature_extractor.h"
 #include "if_scaler_transform.h"
 #include "../../ml/eml_predict_result.h"
 
 namespace eml {
 
-    struct IsoNode {
-        uint64_t packed_data = 0ull;
-
-        bool is_leaf() const {
-            return (packed_data & 1ull) != 0ull;
-        }
-
-        void set_is_leaf(bool leaf) {
-            if (leaf) {
-                packed_data |= 1ull;
-            } else {
-                packed_data &= ~1ull;
-            }
-        }
-
-        void set_split(const If_node_resource& resource,
-                       uint16_t feature_id,
-                       uint8_t threshold_slot,
-                       uint32_t left_child_index) {
-            packed_data = 0ull;
-            set_is_leaf(false);
-            resource.write_field(packed_data, resource.get_split_threshold_layout(), threshold_slot);
-            resource.write_field(packed_data, resource.get_split_feature_layout(), feature_id);
-            resource.write_field(packed_data, resource.get_split_child_layout(), left_child_index);
-        }
-
-        void set_leaf(const If_node_resource& resource,
-                      uint32_t leaf_size,
-                      uint16_t leaf_depth) {
-            packed_data = 0ull;
-            set_is_leaf(true);
-            resource.write_field(packed_data, resource.get_leaf_size_layout(), leaf_size);
-            resource.write_field(packed_data, resource.get_leaf_depth_layout(), leaf_depth);
-        }
-
-        uint8_t threshold_slot(const If_node_resource& resource) const {
-            return static_cast<uint8_t>(resource.read_field(packed_data, resource.get_split_threshold_layout()));
-        }
-
-        uint16_t feature_id(const If_node_resource& resource) const {
-            return static_cast<uint16_t>(resource.read_field(packed_data, resource.get_split_feature_layout()));
-        }
-
-        uint32_t left_child(const If_node_resource& resource) const {
-            return static_cast<uint32_t>(resource.read_field(packed_data, resource.get_split_child_layout()));
-        }
-
-        uint32_t leaf_size(const If_node_resource& resource) const {
-            return static_cast<uint32_t>(resource.read_field(packed_data, resource.get_leaf_size_layout()));
-        }
-
-        uint16_t leaf_depth(const If_node_resource& resource) const {
-            return static_cast<uint16_t>(resource.read_field(packed_data, resource.get_leaf_depth_layout()));
-        }
-    };
-
-    inline double if_c_factor(uint32_t n) {
-        if (n <= 1u) {
-            return 0.0;
-        }
-        if (n == 2u) {
-            return 1.0;
-        }
-        const double nd = static_cast<double>(n);
-        return 2.0 * (std::log(nd - 1.0) + 0.5772156649015329) - (2.0 * (nd - 1.0) / nd);
-    }
-
-    class IsoTree {
-    private:
-        struct BuildTask {
-            uint32_t node_index = 0;
-            size_t begin = 0;
-            size_t end = 0;
-            uint16_t depth = 0;
-        };
-
-        std::vector<IsoNode> nodes_;
-        If_node_resource resource_{};
-        uint16_t depth_ = 0;
-        bool is_loaded_ = false;
-
+    class IsoForest {
     public:
-        void set_resource(const If_node_resource& resource) {
-            resource_ = resource;
-        }
+        using InferenceResult = eml_isolation_result_t;
 
-        const If_node_resource& resource() const {
-            return resource_;
-        }
-
-        bool train(const uint8_t* matrix,
-                   size_t num_samples,
-                   uint16_t num_features,
-                   const std::vector<uint32_t>& sampled_indices,
-                   uint16_t max_depth,
-                   uint32_t max_nodes_per_tree,
-                   std::mt19937& rng) {
-            (void)num_samples;
-            if (!matrix || num_features == 0 || sampled_indices.empty() || !resource_.valid()) {
-                return false;
-            }
-
-            std::vector<uint32_t> indices = sampled_indices;
-            nodes_.clear();
-            nodes_.reserve(std::max<uint32_t>(8u, std::min<uint32_t>(max_nodes_per_tree, 2048u)));
-            nodes_.push_back(IsoNode{});
-
-            std::vector<BuildTask> queue;
-            queue.reserve(256);
-            queue.push_back(BuildTask{0u, 0u, indices.size(), 0u});
-
-            depth_ = 0;
-            size_t queue_head = 0;
-
-            while (queue_head < queue.size()) {
-                const BuildTask task = queue[queue_head++];
-                const size_t sample_count = task.end - task.begin;
-
-                if (sample_count <= 1u || task.depth >= max_depth) {
-                    nodes_[task.node_index].set_leaf(resource_, static_cast<uint32_t>(sample_count), task.depth);
-                    depth_ = static_cast<uint16_t>(std::max<uint16_t>(depth_, task.depth));
-                    continue;
-                }
-
-                bool found_split = false;
-                uint16_t split_feature = 0;
-                uint8_t min_value = 0;
-                uint8_t max_value = 0;
-                const uint32_t attempts = std::max<uint32_t>(8u, static_cast<uint32_t>(num_features) * 2u);
-                std::uniform_int_distribution<uint16_t> feature_dist(0u, static_cast<uint16_t>(num_features - 1u));
-
-                for (uint32_t a = 0; a < attempts; ++a) {
-                    const uint16_t feature = feature_dist(rng);
-                    uint8_t local_min = 255u;
-                    uint8_t local_max = 0u;
-                    for (size_t i = task.begin; i < task.end; ++i) {
-                        const uint8_t value = matrix[static_cast<size_t>(indices[i]) * num_features + feature];
-                        if (value < local_min) local_min = value;
-                        if (value > local_max) local_max = value;
-                    }
-                    if (local_min < local_max) {
-                        found_split = true;
-                        split_feature = feature;
-                        min_value = local_min;
-                        max_value = local_max;
-                        break;
-                    }
-                }
-
-                if (!found_split) {
-                    nodes_[task.node_index].set_leaf(resource_, static_cast<uint32_t>(sample_count), task.depth);
-                    depth_ = static_cast<uint16_t>(std::max<uint16_t>(depth_, task.depth));
-                    continue;
-                }
-
-                std::uniform_int_distribution<int> threshold_dist(
-                    static_cast<int>(min_value),
-                    static_cast<int>(max_value) - 1
-                );
-                const uint8_t threshold = static_cast<uint8_t>(threshold_dist(rng));
-
-                size_t left = task.begin;
-                size_t right = task.end;
-                while (left < right) {
-                    const uint8_t value = matrix[static_cast<size_t>(indices[left]) * num_features + split_feature];
-                    if (value <= threshold) {
-                        ++left;
-                    } else {
-                        --right;
-                        std::swap(indices[left], indices[right]);
-                    }
-                }
-
-                const size_t mid = left;
-                if (mid == task.begin || mid == task.end || nodes_.size() + 2u > max_nodes_per_tree) {
-                    nodes_[task.node_index].set_leaf(resource_, static_cast<uint32_t>(sample_count), task.depth);
-                    depth_ = static_cast<uint16_t>(std::max<uint16_t>(depth_, task.depth));
-                    continue;
-                }
-
-                const uint32_t left_child = static_cast<uint32_t>(nodes_.size());
-                nodes_[task.node_index].set_split(resource_, split_feature, threshold, left_child);
-
-                nodes_.push_back(IsoNode{});
-                nodes_.push_back(IsoNode{});
-
-                const uint16_t child_depth = static_cast<uint16_t>(task.depth + 1u);
-                queue.push_back(BuildTask{left_child, task.begin, mid, child_depth});
-                queue.push_back(BuildTask{static_cast<uint32_t>(left_child + 1u), mid, task.end, child_depth});
-            }
-
-            is_loaded_ = !nodes_.empty();
-            return is_loaded_;
-        }
-
-        float path_length(const uint8_t* quantized_features, uint16_t num_features) const {
-            if (!is_loaded_ || !quantized_features || num_features == 0 || nodes_.empty()) {
-                return 0.0f;
-            }
-
-            uint32_t node_index = 0;
-            while (node_index < nodes_.size()) {
-                const IsoNode& node = nodes_[node_index];
-                if (node.is_leaf()) {
-                    const uint32_t leaf_size = std::max<uint32_t>(1u, node.leaf_size(resource_));
-                    const uint16_t leaf_depth = node.leaf_depth(resource_);
-                    const double path = static_cast<double>(leaf_depth) + if_c_factor(leaf_size);
-                    return static_cast<float>(path);
-                }
-
-                const uint16_t feature = node.feature_id(resource_);
-                if (feature >= num_features) {
-                    return 0.0f;
-                }
-
-                const uint8_t threshold = node.threshold_slot(resource_);
-                const uint32_t left_child = node.left_child(resource_);
-                const uint32_t next = (quantized_features[feature] <= threshold)
-                    ? left_child
-                    : static_cast<uint32_t>(left_child + 1u);
-
-                if (next >= nodes_.size()) {
-                    return 0.0f;
-                }
-                node_index = next;
-            }
-
-            return 0.0f;
-        }
-
-        bool load_serialized(const If_node_resource& resource,
-                             const uint64_t* packed_nodes,
-                             size_t node_count,
-                             uint16_t depth) {
-            if (!resource.valid() || !packed_nodes || node_count == 0u) {
-                return false;
-            }
-
-            resource_ = resource;
-            nodes_.clear();
-            nodes_.reserve(node_count);
-            for (size_t i = 0; i < node_count; ++i) {
-                IsoNode node;
-                node.packed_data = packed_nodes[i];
-                nodes_.push_back(node);
-            }
-
-            depth_ = depth;
-            is_loaded_ = true;
-            return true;
-        }
-
-        const std::vector<IsoNode>& nodes() const {
-            return nodes_;
-        }
-
-        size_t node_count() const { return nodes_.size(); }
-        uint16_t depth() const { return depth_; }
-        bool loaded() const { return is_loaded_; }
-    };
-
-    class QuantizedIsolationForest {
     private:
-        std::vector<IsoTree> trees_;
-        If_node_resource resource_{};
-        If_config config_{};
-        uint32_t samples_per_tree_ = 1u;
-        float threshold_offset_ = 0.0f;
-        bool trained_ = false;
+        If_base if_base_{};
+        If_config if_config_{};
+        If_scaler_transform scaler_{};
+        eml_quantizer<problem_type::ISOLATION> quantizer_{};
+        If_feature_extractor feature_extractor_{};
+        If_tree_container if_tree_container_{};
 
-        // Determine the number of samples to draw for each tree based on the config and total sample count.
+        uint16_t num_features_ = 0u;
+        bool initialized_ = false;
+        bool loaded_ = false;
+
+        static bool read_exact(std::ifstream& fin, void* dst, size_t bytes) {
+            fin.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(bytes));
+            return static_cast<size_t>(fin.gcount()) == bytes;
+        }
+
         static uint32_t resolve_samples_per_tree(const If_config& cfg, size_t num_samples) {
             if (num_samples == 0u) {
                 return 1u;
             }
+
             uint32_t resolved = cfg.max_samples_per_tree;
             if (resolved == 0u) {
                 if (cfg.max_samples <= 1.0f) {
@@ -305,6 +59,7 @@ namespace eml {
                     resolved = static_cast<uint32_t>(std::ceil(cfg.max_samples));
                 }
             }
+
             if (resolved == 0u) {
                 resolved = 1u;
             }
@@ -314,7 +69,6 @@ namespace eml {
             return resolved;
         }
 
-        // Sample indices for building a tree, with optional bootstrapping.
         static std::vector<uint32_t> sample_indices(size_t num_samples,
                                                     uint32_t sample_size,
                                                     bool bootstrap,
@@ -341,233 +95,86 @@ namespace eml {
             return out;
         }
 
-    public:
-        bool train(const uint8_t* matrix,
-                   size_t num_samples,
-                   uint16_t num_features,
-                   const If_config& cfg) {
-            if (!matrix || num_samples == 0u || num_features == 0 || !cfg.isLoaded) {
+        bool initialize_components() {
+            initialized_ = false;
+            loaded_ = false;
+            num_features_ = 0u;
+
+            if_base_.update_resource_status();
+            if (!if_base_.ready_to_use()) {
                 return false;
             }
 
-            config_ = cfg;
-            threshold_offset_ = cfg.threshold_offset;
-            if (!resource_.set_bits(cfg.threshold_bits,
-                                    cfg.feature_bits,
-                                    cfg.child_bits,
-                                    cfg.leaf_size_bits,
-                                    cfg.depth_bits)) {
+            if (!if_base_.has_required_core_resources()) {
                 return false;
             }
 
-            samples_per_tree_ = resolve_samples_per_tree(cfg, num_samples);
-            const uint16_t n_estimators = std::max<uint16_t>(1u, cfg.n_estimators);
-            const uint32_t max_nodes_per_tree = std::max<uint32_t>(1u, cfg.max_nodes_per_tree);
-            const uint16_t max_depth = std::max<uint16_t>(1u, cfg.max_depth);
+            if_config_.init(&if_base_);
+            if_config_.set_base(&if_base_);
+            if (!if_config_.load_from_base()) {
+                return false;
+            }
 
-            std::mt19937 rng(cfg.random_state);
-            trees_.clear();
-            trees_.reserve(n_estimators);
+            if_config_.decision_threshold = 0.0f;
+            if_config_.threshold_offset = 0.0f;
 
-            for (uint16_t i = 0; i < n_estimators; ++i) {
-                IsoTree tree;
-                tree.set_resource(resource_);
-                const std::vector<uint32_t> picked = sample_indices(num_samples, samples_per_tree_, cfg.bootstrap, rng);
-                if (!tree.train(matrix,
-                                num_samples,
-                                num_features,
-                                picked,
-                                max_depth,
-                                max_nodes_per_tree,
-                                rng)) {
+            if (!scaler_.init(if_config_)) {
+                return false;
+            }
+
+            if (!feature_extractor_.init(if_base_.get_feature_config_path(), if_config_.num_features)) {
+                return false;
+            }
+
+            const std::string qtz_path = if_base_.get_qtz_path().string();
+            if (!quantizer_.loadQuantizer(qtz_path.c_str())) {
+                return false;
+            }
+
+            if_tree_container_.unload_model();
+            if_tree_container_.reserve_tree_slots(std::max<uint16_t>(1u, if_config_.n_estimators));
+            num_features_ = if_config_.num_features;
+            initialized_ = true;
+            return true;
+        }
+
+        bool ensure_initialized() {
+            if (initialized_) {
+                return true;
+            }
+            return initialize_components();
+        }
+
+        bool preprocess_raw_matrix(const float* raw_matrix,
+                                   size_t num_samples,
+                                   uint16_t feature_count,
+                                   std::vector<uint8_t>& out_matrix) const {
+            out_matrix.clear();
+
+            if (!initialized_ || !raw_matrix || num_samples == 0u || feature_count != num_features_) {
+                return false;
+            }
+
+            out_matrix.resize(num_samples * static_cast<size_t>(feature_count), 0u);
+            std::vector<float> scaled(feature_count, 0.0f);
+            packed_vector<8> quantized;
+            quantized.resize(feature_count, 0u);
+
+            for (size_t row = 0; row < num_samples; ++row) {
+                const float* raw_row = &raw_matrix[row * static_cast<size_t>(feature_count)];
+                if (!scaler_.transform(raw_row, feature_count, scaled.data())) {
                     return false;
                 }
-                trees_.push_back(tree);
-            }
 
-            trained_ = !trees_.empty();
-            return trained_;
-        }
+                (void)quantizer_.quantizeFeatures(scaled.data(), quantized, nullptr, nullptr);
 
-        float score_samples(const uint8_t* quantized_features, uint16_t num_features) const {
-            if (!trained_ || !quantized_features || trees_.empty()) {
-                return 0.0f;
-            }
-
-            double acc = 0.0;
-            for (const IsoTree& tree : trees_) {
-                acc += static_cast<double>(tree.path_length(quantized_features, num_features));
-            }
-            const double avg_path = acc / static_cast<double>(trees_.size());
-            const double c_n = if_c_factor(samples_per_tree_);
-            if (c_n <= 0.0) {
-                return 0.0f;
-            }
-
-            const double anomaly_score = std::pow(2.0, -avg_path / c_n);
-            return static_cast<float>(-anomaly_score);
-        }
-
-        float decision_function(const uint8_t* quantized_features, uint16_t num_features) const {
-            return score_samples(quantized_features, num_features) - threshold_offset_;
-        }
-
-        bool is_anomaly(const uint8_t* quantized_features,
-                        uint16_t num_features,
-                        float threshold) const {
-            return decision_function(quantized_features, num_features) < threshold;
-        }
-
-        bool save_model_binary(const std::filesystem::path& file_path) const {
-            if (!trained_ || trees_.empty() || !resource_.valid()) {
-                return false;
-            }
-
-            const std::filesystem::path parent = file_path.parent_path();
-            if (!parent.empty()) {
-                std::filesystem::create_directories(parent);
-            }
-            std::ofstream fout(file_path, std::ios::binary | std::ios::trunc);
-            if (!fout.is_open()) {
-                return false;
-            }
-
-            const auto write_exact = [&fout](const void* src, size_t bytes) -> bool {
-                fout.write(reinterpret_cast<const char*>(src), static_cast<std::streamsize>(bytes));
-                return static_cast<bool>(fout);
-            };
-
-            const char magic[4] = {'I', 'F', 'R', '1'};
-            const uint16_t version = 1u;
-            const uint32_t tree_count = static_cast<uint32_t>(trees_.size());
-
-            if (!write_exact(magic, sizeof(magic))) return false;
-            if (!write_exact(&version, sizeof(version))) return false;
-
-            const uint8_t threshold_bits = resource_.threshold_bits();
-            const uint8_t feature_bits = resource_.feature_bits();
-            const uint8_t child_bits = resource_.child_bits();
-            const uint8_t leaf_size_bits = resource_.leaf_size_bits();
-            const uint8_t depth_bits = resource_.depth_bits();
-
-            if (!write_exact(&threshold_bits, sizeof(threshold_bits))) return false;
-            if (!write_exact(&feature_bits, sizeof(feature_bits))) return false;
-            if (!write_exact(&child_bits, sizeof(child_bits))) return false;
-            if (!write_exact(&leaf_size_bits, sizeof(leaf_size_bits))) return false;
-            if (!write_exact(&depth_bits, sizeof(depth_bits))) return false;
-
-            if (!write_exact(&samples_per_tree_, sizeof(samples_per_tree_))) return false;
-            if (!write_exact(&threshold_offset_, sizeof(threshold_offset_))) return false;
-            if (!write_exact(&tree_count, sizeof(tree_count))) return false;
-
-            for (const IsoTree& tree : trees_) {
-                const uint16_t tree_depth = tree.depth();
-                const uint32_t node_count = static_cast<uint32_t>(tree.node_count());
-                if (!write_exact(&tree_depth, sizeof(tree_depth))) return false;
-                if (!write_exact(&node_count, sizeof(node_count))) return false;
-                const std::vector<IsoNode>& nodes = tree.nodes();
-                for (const IsoNode& node : nodes) {
-                    if (!write_exact(&node.packed_data, sizeof(node.packed_data))) return false;
+                uint8_t* out_row = &out_matrix[row * static_cast<size_t>(feature_count)];
+                for (uint16_t col = 0; col < feature_count; ++col) {
+                    out_row[col] = quantized[col];
                 }
             }
 
             return true;
-        }
-
-        bool load_model_binary(const std::filesystem::path& file_path) {
-            std::ifstream fin(file_path, std::ios::binary);
-            if (!fin.is_open()) {
-                return false;
-            }
-
-            const auto read_exact = [&fin](void* dst, size_t bytes) -> bool {
-                fin.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(bytes));
-                return static_cast<size_t>(fin.gcount()) == bytes;
-            };
-
-            char magic[4] = {0, 0, 0, 0};
-            uint16_t version = 0u;
-            if (!read_exact(magic, sizeof(magic)) ||
-                !read_exact(&version, sizeof(version))) {
-                return false;
-            }
-            if (magic[0] != 'I' || magic[1] != 'F' || magic[2] != 'R' || magic[3] != '1' || version != 1u) {
-                return false;
-            }
-
-            uint8_t threshold_bits = 0u;
-            uint8_t feature_bits = 0u;
-            uint8_t child_bits = 0u;
-            uint8_t leaf_size_bits = 0u;
-            uint8_t depth_bits = 0u;
-            if (!read_exact(&threshold_bits, sizeof(threshold_bits))) return false;
-            if (!read_exact(&feature_bits, sizeof(feature_bits))) return false;
-            if (!read_exact(&child_bits, sizeof(child_bits))) return false;
-            if (!read_exact(&leaf_size_bits, sizeof(leaf_size_bits))) return false;
-            if (!read_exact(&depth_bits, sizeof(depth_bits))) return false;
-
-            if (!resource_.set_bits(threshold_bits, feature_bits, child_bits, leaf_size_bits, depth_bits)) {
-                return false;
-            }
-
-            if (!read_exact(&samples_per_tree_, sizeof(samples_per_tree_))) return false;
-            if (!read_exact(&threshold_offset_, sizeof(threshold_offset_))) return false;
-
-            uint32_t tree_count = 0u;
-            if (!read_exact(&tree_count, sizeof(tree_count))) return false;
-
-            trees_.clear();
-            trees_.reserve(tree_count);
-
-            for (uint32_t i = 0; i < tree_count; ++i) {
-                uint16_t tree_depth = 0u;
-                uint32_t node_count = 0u;
-                if (!read_exact(&tree_depth, sizeof(tree_depth))) return false;
-                if (!read_exact(&node_count, sizeof(node_count))) return false;
-                if (node_count == 0u) {
-                    return false;
-                }
-
-                std::vector<uint64_t> packed_nodes(node_count, 0ull);
-                for (uint32_t n = 0u; n < node_count; ++n) {
-                    if (!read_exact(&packed_nodes[n], sizeof(uint64_t))) {
-                        return false;
-                    }
-                }
-
-                IsoTree tree;
-                if (!tree.load_serialized(resource_, packed_nodes.data(), packed_nodes.size(), tree_depth)) {
-                    return false;
-                }
-                trees_.push_back(tree);
-            }
-
-            trained_ = !trees_.empty();
-            return trained_;
-        }
-
-        size_t num_trees() const { return trees_.size(); }
-        uint32_t samples_per_tree() const { return samples_per_tree_; }
-        bool trained() const { return trained_; }
-        float threshold_offset() const { return threshold_offset_; }
-    };
-
-    class IsoForest {
-    public:
-        using InferenceResult = eml_isolation_result_t;
-
-    private:
-        If_base base_{};
-        If_config config_{};
-        If_scaler_transform scaler_{};
-        eml_quantizer<problem_type::ISOLATION> quantizer_{};
-        QuantizedIsolationForest tree_container_{};
-        uint16_t num_features_ = 0u;
-        bool loaded_ = false;
-
-        static bool read_exact(std::ifstream& fin, void* dst, size_t bytes) {
-            fin.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(bytes));
-            return static_cast<size_t>(fin.gcount()) == bytes;
         }
 
         static bool load_quantized_nml_dataset(const std::filesystem::path& nml_path,
@@ -643,86 +250,696 @@ namespace eml {
             return true;
         }
 
+        static std::vector<float> score_quantized_matrix(const If_tree_container& tree_container,
+                                                         const std::vector<uint8_t>& matrix,
+                                                         size_t num_samples,
+                                                         uint16_t num_features) {
+            std::vector<float> scores;
+            if (num_samples == 0u || num_features == 0u) {
+                return scores;
+            }
+
+            const size_t expected = num_samples * static_cast<size_t>(num_features);
+            if (matrix.size() != expected) {
+                return scores;
+            }
+
+            scores.reserve(num_samples);
+            for (size_t row = 0; row < num_samples; ++row) {
+                const uint8_t* sample = &matrix[row * static_cast<size_t>(num_features)];
+                scores.push_back(tree_container.decision_function(sample, num_features));
+            }
+            return scores;
+        }
+
+        static float resolve_validation_fpr_target(const If_config& cfg) {
+            float target = cfg.val_fpr_target;
+            if (!(target > 0.0f && target < 1.0f)) {
+                target = cfg.fpr_threshold;
+            }
+            if (!(target > 0.0f && target < 1.0f)) {
+                target = cfg.contamination;
+            }
+            if (!(target > 0.0f && target < 1.0f)) {
+                target = 0.05f;
+            }
+            return target;
+        }
+
+        static float select_threshold_from_validation(const std::vector<float>& benign_scores,
+                                                      const std::vector<float>& malware_scores,
+                                                      float target_fpr,
+                                                      float& out_fpr,
+                                                      float& out_tpr) {
+            out_fpr = 0.0f;
+            out_tpr = 0.0f;
+
+            if (benign_scores.empty() || malware_scores.empty()) {
+                return 0.0f;
+            }
+
+            std::vector<float> candidates;
+            candidates.reserve(benign_scores.size() + malware_scores.size());
+            candidates.insert(candidates.end(), benign_scores.begin(), benign_scores.end());
+            candidates.insert(candidates.end(), malware_scores.begin(), malware_scores.end());
+            std::sort(candidates.begin(), candidates.end());
+            candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+
+            const float max_fpr = std::max(0.0f, std::min(1.0f, target_fpr));
+            const size_t benign_count = benign_scores.size();
+            const size_t malware_count = malware_scores.size();
+
+            bool found = false;
+            float best_threshold = candidates.front();
+            float best_fpr = 1.0f;
+            float best_tpr = 0.0f;
+
+            for (float threshold : candidates) {
+                size_t fp = 0u;
+                for (float score : benign_scores) {
+                    if (score < threshold) {
+                        ++fp;
+                    }
+                }
+
+                size_t tp = 0u;
+                for (float score : malware_scores) {
+                    if (score < threshold) {
+                        ++tp;
+                    }
+                }
+
+                const float fpr = static_cast<float>(fp) / static_cast<float>(benign_count);
+                const float tpr = static_cast<float>(tp) / static_cast<float>(malware_count);
+                if (fpr > max_fpr) {
+                    continue;
+                }
+
+                if (!found ||
+                    tpr > best_tpr ||
+                    (tpr == best_tpr && fpr < best_fpr)) {
+                    found = true;
+                    best_threshold = threshold;
+                    best_fpr = fpr;
+                    best_tpr = tpr;
+                }
+            }
+
+            if (!found) {
+                std::vector<float> sorted_benign = benign_scores;
+                std::sort(sorted_benign.begin(), sorted_benign.end());
+
+                const size_t max_fp = static_cast<size_t>(
+                    std::floor(max_fpr * static_cast<float>(sorted_benign.size()))
+                );
+
+                if (max_fp == 0u) {
+                    best_threshold = sorted_benign.front() - 1e-10f;
+                } else {
+                    best_threshold = sorted_benign[max_fp - 1u];
+                }
+
+                size_t fp = 0u;
+                size_t tp = 0u;
+                for (float score : benign_scores) {
+                    if (score < best_threshold) {
+                        ++fp;
+                    }
+                }
+                for (float score : malware_scores) {
+                    if (score < best_threshold) {
+                        ++tp;
+                    }
+                }
+
+                best_fpr = static_cast<float>(fp) / static_cast<float>(benign_count);
+                best_tpr = static_cast<float>(tp) / static_cast<float>(malware_count);
+            }
+
+            out_fpr = best_fpr;
+            out_tpr = best_tpr;
+            return best_threshold;
+        }
+
+        bool quantize_raw_feature_vector(const vector<float>& raw_features,
+                                         std::vector<uint8_t>& out_quantized) const {
+            out_quantized.clear();
+            if (!initialized_ || raw_features.size() != num_features_) {
+                return false;
+            }
+
+            std::vector<float> scaled(num_features_, 0.0f);
+            if (!scaler_.transform(raw_features.data(), num_features_, scaled.data())) {
+                return false;
+            }
+
+            packed_vector<8> quantized;
+            quantized.resize(num_features_, 0u);
+            (void)quantizer_.quantizeFeatures(scaled.data(), quantized, nullptr, nullptr);
+
+            out_quantized.resize(num_features_, 0u);
+            for (uint16_t i = 0; i < num_features_; ++i) {
+                out_quantized[i] = quantized[i];
+            }
+            return true;
+        }
+
+        bool build_train_seen_bins(std::vector<std::array<uint8_t, 256>>& out_seen) const {
+            out_seen.clear();
+            if (if_config_.num_features == 0u) {
+                return false;
+            }
+
+            std::filesystem::path train_path = if_base_.get_benign_train_nml_path();
+            if (train_path.empty() || !std::filesystem::exists(train_path)) {
+                train_path = if_base_.get_nml_path();
+            }
+            if (train_path.empty() || !std::filesystem::exists(train_path)) {
+                return false;
+            }
+
+            std::vector<uint8_t> train_matrix;
+            size_t train_samples = 0u;
+            if (!load_quantized_nml_dataset(train_path,
+                                            if_config_.num_features,
+                                            if_config_.quantization_bits,
+                                            train_matrix,
+                                            train_samples)) {
+                return false;
+            }
+
+            out_seen.resize(if_config_.num_features);
+            for (auto& bins : out_seen) {
+                bins.fill(0u);
+            }
+
+            for (size_t row = 0; row < train_samples; ++row) {
+                const uint8_t* sample = &train_matrix[row * static_cast<size_t>(if_config_.num_features)];
+                for (uint16_t col = 0; col < if_config_.num_features; ++col) {
+                    out_seen[col][sample[col]] = 1u;
+                }
+            }
+
+            return true;
+        }
+
+        static float feature_drift_ratio(const std::vector<uint8_t>& quantized,
+                                         const std::vector<std::array<uint8_t, 256>>& seen_bins) {
+            if (quantized.empty() || quantized.size() != seen_bins.size()) {
+                return 0.0f;
+            }
+
+            size_t unseen = 0u;
+            for (size_t i = 0; i < quantized.size(); ++i) {
+                if (seen_bins[i][quantized[i]] == 0u) {
+                    ++unseen;
+                }
+            }
+
+            return static_cast<float>(unseen) / static_cast<float>(quantized.size());
+        }
+
+        bool calibrate_threshold_from_validation_datasets(const std::filesystem::path& benign_val_nml_path = {},
+                                                          const std::filesystem::path& malware_val_nml_path = {}) {
+            if (!loaded_ || !if_tree_container_.trained()) {
+                return false;
+            }
+
+            const std::filesystem::path benign_path = benign_val_nml_path.empty()
+                ? if_base_.get_benign_val_nml_path()
+                : benign_val_nml_path;
+            const std::filesystem::path malware_path = malware_val_nml_path.empty()
+                ? if_base_.get_malware_val_nml_path()
+                : malware_val_nml_path;
+
+            if (benign_path.empty() || malware_path.empty()) {
+                return false;
+            }
+
+            if (!std::filesystem::exists(benign_path) || !std::filesystem::exists(malware_path)) {
+                return false;
+            }
+
+            std::vector<uint8_t> benign_matrix;
+            std::vector<uint8_t> malware_matrix;
+            size_t benign_samples = 0u;
+            size_t malware_samples = 0u;
+
+            if (!load_quantized_nml_dataset(benign_path,
+                                            if_config_.num_features,
+                                            if_config_.quantization_bits,
+                                            benign_matrix,
+                                            benign_samples)) {
+                return false;
+            }
+
+            if (!load_quantized_nml_dataset(malware_path,
+                                            if_config_.num_features,
+                                            if_config_.quantization_bits,
+                                            malware_matrix,
+                                            malware_samples)) {
+                return false;
+            }
+
+            const std::vector<float> benign_scores = score_quantized_matrix(
+                if_tree_container_, benign_matrix, benign_samples, if_config_.num_features);
+            const std::vector<float> malware_scores = score_quantized_matrix(
+                if_tree_container_, malware_matrix, malware_samples, if_config_.num_features);
+
+            if (benign_scores.empty() || malware_scores.empty()) {
+                return false;
+            }
+
+            const float target_fpr = resolve_validation_fpr_target(if_config_);
+            float calibrated_fpr = 0.0f;
+            float calibrated_tpr = 0.0f;
+            const float calibrated_threshold = select_threshold_from_validation(
+                benign_scores,
+                malware_scores,
+                target_fpr,
+                calibrated_fpr,
+                calibrated_tpr
+            );
+
+            if_config_.decision_threshold = calibrated_threshold;
+            if_config_.fpr_threshold = calibrated_fpr;
+            if_config_.threshold_offset = 0.0f;
+            if_tree_container_.set_threshold_offset(0.0f);
+            return true;
+        }
+
     public:
+        static std::filesystem::path default_resource_dir() {
+            return std::filesystem::path("embedded_phase/core/models/isolation_forest/resources");
+        }
+
         IsoForest() = default;
 
         explicit IsoForest(const std::string& model_name,
                            const std::filesystem::path& dir_path = std::filesystem::path(".")) {
-            init(model_name, dir_path);
+            (void)init(model_name, dir_path);
         }
 
-        void init(const std::string& model_name,
+        bool init(const std::string& model_name = "iforest",
                   const std::filesystem::path& dir_path = std::filesystem::path(".")) {
-            base_.init(model_name.c_str(), dir_path);
-            config_.init(&base_);
-            loaded_ = false;
-            num_features_ = 0u;
+            if_base_.init(model_name.c_str(), dir_path);
+            if_config_.init(&if_base_);
+            return initialize_components();
         }
 
         bool load() {
-            base_.update_resource_status();
-            config_.set_base(&base_);
-            if (!config_.load_from_base()) {
+            if (!ensure_initialized()) {
                 return false;
             }
 
-            if (!scaler_.init(config_)) {
+            if (!if_base_.model_exists()) {
                 return false;
             }
 
-            const std::string qtz_path = base_.get_qtz_path().string();
-            if (!quantizer_.loadQuantizer(qtz_path.c_str())) {
+            if_tree_container_.unload_model();
+            if (!if_tree_container_.load_model_binary(if_base_.get_model_path())) {
                 return false;
             }
 
-            if (!tree_container_.load_model_binary(base_.get_model_path())) {
-                return false;
-            }
+            if_config_.threshold_offset = 0.0f;
+            if_tree_container_.set_threshold_offset(0.0f);
 
-            num_features_ = config_.num_features;
             loaded_ = true;
+            (void)calibrate_threshold_from_validation_datasets();
             return true;
         }
 
-        bool train_from_quantized_dataset() {
-            config_.set_base(&base_);
-            if (!config_.isLoaded && !config_.load_from_base()) {
+        bool init_from_config(const If_config& config) {
+            if (!config.isLoaded || config.num_features == 0) {
+                return false;
+            }
+
+            if_config_ = config;
+            num_features_ = if_config_.num_features;
+            initialized_ = true;
+            loaded_ = false;
+
+            (void)scaler_.init(if_config_);
+            if_tree_container_.unload_model();
+            if_tree_container_.reserve_tree_slots(std::max<uint16_t>(1u, if_config_.n_estimators));
+            return true;
+        }
+
+        bool train_from_quantized_matrix(const uint8_t* matrix,
+                                         size_t num_samples,
+                                         uint16_t feature_count,
+                                         const If_config* config_override = nullptr) {
+            if (!matrix || num_samples == 0u || feature_count == 0u) {
+                return false;
+            }
+
+            const If_config* active_config = nullptr;
+            if (config_override != nullptr) {
+                if (!config_override->isLoaded || config_override->num_features == 0u) {
+                    return false;
+                }
+                if_config_ = *config_override;
+                num_features_ = if_config_.num_features;
+                initialized_ = true;
+                active_config = &if_config_;
+            } else {
+                if (!ensure_initialized()) {
+                    return false;
+                }
+                active_config = &if_config_;
+            }
+
+            if (feature_count != active_config->num_features) {
+                return false;
+            }
+
+            if_tree_container_.unload_model();
+            if (!if_tree_container_.set_node_resource_layout(active_config->threshold_bits,
+                                                             active_config->feature_bits,
+                                                             active_config->child_bits,
+                                                             active_config->leaf_size_bits,
+                                                             active_config->depth_bits)) {
+                return false;
+            }
+
+            const uint32_t samples_per_tree = resolve_samples_per_tree(*active_config, num_samples);
+            if_tree_container_.set_samples_per_tree(samples_per_tree);
+            if_config_.threshold_offset = 0.0f;
+            if_tree_container_.set_threshold_offset(0.0f);
+
+            const uint16_t n_estimators = std::max<uint16_t>(1u, active_config->n_estimators);
+            const uint16_t max_depth = std::max<uint16_t>(1u, active_config->max_depth);
+            const uint32_t max_nodes_per_tree = std::max<uint32_t>(1u, active_config->max_nodes_per_tree);
+
+            if_tree_container_.reserve_tree_slots(n_estimators);
+
+            std::mt19937 rng(active_config->random_state);
+            for (uint16_t tree_index = 0; tree_index < n_estimators; ++tree_index) {
+                If_tree tree;
+                tree.set_resource(if_tree_container_.node_resource());
+
+                const std::vector<uint32_t> sampled = sample_indices(
+                    num_samples,
+                    samples_per_tree,
+                    active_config->bootstrap,
+                    rng
+                );
+
+                if (!tree.train(matrix,
+                                num_samples,
+                                feature_count,
+                                sampled,
+                                max_depth,
+                                max_nodes_per_tree,
+                                rng)) {
+                    if_tree_container_.unload_model();
+                    loaded_ = false;
+                    return false;
+                }
+
+                if_tree_container_.add_trained_tree(tree);
+            }
+
+            loaded_ = if_tree_container_.trained();
+            return loaded_;
+        }
+
+        bool train_from_raw_matrix(const float* raw_matrix,
+                                   size_t num_samples,
+                                   uint16_t feature_count) {
+            if (!ensure_initialized()) {
+                return false;
+            }
+
+            std::vector<uint8_t> quantized_matrix;
+            if (!preprocess_raw_matrix(raw_matrix, num_samples, feature_count, quantized_matrix)) {
+                return false;
+            }
+
+            const bool ok = train_from_quantized_matrix(
+                quantized_matrix.data(),
+                num_samples,
+                feature_count,
+                &if_config_
+            );
+
+            quantized_matrix.clear();
+            quantized_matrix.shrink_to_fit();
+
+            loaded_ = ok;
+            return ok;
+        }
+
+        bool calibrate_threshold_from_validation(const std::filesystem::path& benign_val_nml_path = {},
+                                                 const std::filesystem::path& malware_val_nml_path = {}) {
+            if (!ensure_initialized() || !loaded_) {
+                return false;
+            }
+            return calibrate_threshold_from_validation_datasets(benign_val_nml_path, malware_val_nml_path);
+        }
+
+        bool calibrate_threshold_from_pe_validation(const std::filesystem::path& benign_val_dir,
+                                                    const std::filesystem::path& malware_val_dir,
+                                                    float target_fpr = -1.0f,
+                                                    float benign_drift_quantile = 0.98f) {
+            if (!ensure_initialized() || !loaded_) {
+                return false;
+            }
+
+            if (benign_val_dir.empty() || malware_val_dir.empty()) {
+                return false;
+            }
+
+            if (!std::filesystem::exists(benign_val_dir) || !std::filesystem::is_directory(benign_val_dir)) {
+                return false;
+            }
+            if (!std::filesystem::exists(malware_val_dir) || !std::filesystem::is_directory(malware_val_dir)) {
+                return false;
+            }
+
+            struct ScoredSample {
+                float score = 0.0f;
+                float drift = 0.0f;
+            };
+
+            std::vector<std::array<uint8_t, 256>> seen_bins;
+            const bool has_drift_profile = build_train_seen_bins(seen_bins);
+
+            std::vector<ScoredSample> benign_samples;
+            std::vector<ScoredSample> malware_samples;
+            benign_samples.reserve(4096);
+            malware_samples.reserve(2048);
+
+            vector<float> raw_features;
+            std::vector<uint8_t> quantized_features;
+
+            for (const auto& entry : std::filesystem::directory_iterator(benign_val_dir)) {
+                if (!entry.is_regular_file()) {
+                    continue;
+                }
+
+                if (!feature_extractor_.extract_from_pe(entry.path(), raw_features)) {
+                    continue;
+                }
+                if (!quantize_raw_feature_vector(raw_features, quantized_features)) {
+                    continue;
+                }
+
+                ScoredSample sample;
+                sample.score = decision_function(quantized_features.data(), num_features_);
+                sample.drift = has_drift_profile
+                    ? feature_drift_ratio(quantized_features, seen_bins)
+                    : 0.0f;
+                benign_samples.push_back(sample);
+            }
+
+            for (const auto& entry : std::filesystem::directory_iterator(malware_val_dir)) {
+                if (!entry.is_regular_file()) {
+                    continue;
+                }
+
+                if (!feature_extractor_.extract_from_pe(entry.path(), raw_features)) {
+                    continue;
+                }
+                if (!quantize_raw_feature_vector(raw_features, quantized_features)) {
+                    continue;
+                }
+
+                ScoredSample sample;
+                sample.score = decision_function(quantized_features.data(), num_features_);
+                sample.drift = has_drift_profile
+                    ? feature_drift_ratio(quantized_features, seen_bins)
+                    : 0.0f;
+                malware_samples.push_back(sample);
+            }
+
+            if (benign_samples.empty() || malware_samples.empty()) {
+                return false;
+            }
+
+            std::vector<float> benign_scores;
+            benign_scores.reserve(benign_samples.size());
+            std::vector<float> malware_scores;
+            malware_scores.reserve(malware_samples.size());
+
+            std::vector<float> benign_scores_full;
+            benign_scores_full.reserve(benign_samples.size());
+            for (const auto& sample : benign_samples) {
+                benign_scores_full.push_back(sample.score);
+            }
+
+            std::vector<float> malware_scores_full;
+            malware_scores_full.reserve(malware_samples.size());
+            for (const auto& sample : malware_samples) {
+                malware_scores_full.push_back(sample.score);
+            }
+
+            if (has_drift_profile) {
+                float effective_quantile = benign_drift_quantile;
+                if (!(effective_quantile > 0.0f && effective_quantile <= 1.0f)) {
+                    effective_quantile = 0.98f;
+                }
+
+                std::vector<float> benign_drifts;
+                benign_drifts.reserve(benign_samples.size());
+                for (const auto& sample : benign_samples) {
+                    benign_drifts.push_back(sample.drift);
+                }
+                std::sort(benign_drifts.begin(), benign_drifts.end());
+
+                const size_t cutoff_idx = static_cast<size_t>(
+                    std::floor(effective_quantile * static_cast<float>(benign_drifts.size() - 1u))
+                );
+                const float drift_cutoff = benign_drifts[cutoff_idx];
+
+                for (const auto& sample : benign_samples) {
+                    if (sample.drift <= drift_cutoff) {
+                        benign_scores.push_back(sample.score);
+                    }
+                }
+
+                if (benign_scores.size() < std::max<size_t>(32u, benign_samples.size() / 2u)) {
+                    benign_scores.clear();
+                    for (const auto& sample : benign_samples) {
+                        benign_scores.push_back(sample.score);
+                    }
+                }
+            } else {
+                for (const auto& sample : benign_samples) {
+                    benign_scores.push_back(sample.score);
+                }
+            }
+
+            for (const auto& sample : malware_samples) {
+                malware_scores.push_back(sample.score);
+            }
+
+            if (benign_scores.empty() || malware_scores.empty()) {
+                return false;
+            }
+
+            float effective_target_fpr = target_fpr;
+            if (!(effective_target_fpr > 0.0f && effective_target_fpr < 1.0f)) {
+                effective_target_fpr = resolve_validation_fpr_target(if_config_);
+            }
+
+            float calibrated_fpr = 0.0f;
+            float calibrated_tpr = 0.0f;
+            float calibrated_threshold = select_threshold_from_validation(
+                benign_scores,
+                malware_scores,
+                effective_target_fpr,
+                calibrated_fpr,
+                calibrated_tpr
+            );
+
+            size_t full_fp = 0u;
+            for (float score : benign_scores_full) {
+                if (score < calibrated_threshold) {
+                    ++full_fp;
+                }
+            }
+            const float full_fpr = static_cast<float>(full_fp) / static_cast<float>(benign_scores_full.size());
+
+            if (full_fpr > effective_target_fpr) {
+                calibrated_threshold = select_threshold_from_validation(
+                    benign_scores_full,
+                    malware_scores_full,
+                    effective_target_fpr,
+                    calibrated_fpr,
+                    calibrated_tpr
+                );
+            }
+
+            if_config_.decision_threshold = calibrated_threshold;
+            if_config_.fpr_threshold = calibrated_fpr;
+            if_config_.threshold_offset = 0.0f;
+            if_tree_container_.set_threshold_offset(0.0f);
+            return true;
+        }
+
+        bool train_from_quantized_dataset(const std::filesystem::path& benign_train_nml_path = {}) {
+            if (!ensure_initialized()) {
+                return false;
+            }
+
+            const std::filesystem::path dataset_path = benign_train_nml_path.empty()
+                ? if_base_.get_nml_path()
+                : benign_train_nml_path;
+
+            if (dataset_path.empty()) {
                 return false;
             }
 
             std::vector<uint8_t> matrix;
             size_t num_samples = 0u;
             if (!load_quantized_nml_dataset(
-                    base_.get_nml_path(),
-                    config_.num_features,
-                    config_.quantization_bits,
+                    dataset_path,
+                    if_config_.num_features,
+                    if_config_.quantization_bits,
                     matrix,
                     num_samples)) {
                 return false;
             }
 
-            if (!tree_container_.train(matrix.data(), num_samples, config_.num_features, config_)) {
-                return false;
+            const bool ok = train_from_quantized_matrix(
+                matrix.data(),
+                num_samples,
+                if_config_.num_features,
+                &if_config_
+            );
+            matrix.clear();
+            matrix.shrink_to_fit();
+
+            if (ok) {
+                (void)calibrate_threshold_from_validation_datasets();
             }
 
-            num_features_ = config_.num_features;
-            loaded_ = true;
-            return true;
+            loaded_ = ok;
+            return ok;
         }
 
         bool save_model() const {
-            return tree_container_.save_model_binary(base_.get_iforest_bin_path());
+            return if_tree_container_.save_model_binary(if_base_.get_iforest_bin_path());
+        }
+
+        void set_feature_extract_callback(If_feature_extractor::extract_callback_t callback) {
+            feature_extractor_.set_extract_callback(std::move(callback));
+        }
+
+        void set_feature_extract_content_callback(If_feature_extractor::extract_content_callback_t callback) {
+            feature_extractor_.set_extract_content_callback(std::move(callback));
         }
 
         float decision_function(const uint8_t* quantized_features,
                                 uint16_t feature_count) const {
-            return tree_container_.decision_function(quantized_features, feature_count);
+            return if_tree_container_.decision_function(quantized_features, feature_count);
         }
 
         bool is_anomaly(const uint8_t* quantized_features,
                         uint16_t feature_count,
                         float threshold) const {
-            return tree_container_.is_anomaly(quantized_features, feature_count, threshold);
+            return if_tree_container_.is_anomaly(quantized_features, feature_count, threshold);
         }
 
         InferenceResult infer_quantized(const uint8_t* quantized_features,
@@ -780,12 +997,47 @@ namespace eml {
             return result;
         }
 
+        InferenceResult infer_pe_path(const std::filesystem::path& pe_path,
+                                      float threshold = 0.0f) const {
+            InferenceResult result;
+            if (!loaded_) {
+                return result;
+            }
+
+            vector<float> raw_features;
+            if (!feature_extractor_.extract_from_pe(pe_path, raw_features)) {
+                result.success = false;
+                return result;
+            }
+
+            return infer_raw(raw_features.data(), static_cast<uint16_t>(raw_features.size()), threshold);
+        }
+
+        InferenceResult infer_pe_content(const uint8_t* pe_content,
+                                         size_t pe_size,
+                                         float threshold = 0.0f) const {
+            InferenceResult result;
+            if (!loaded_) {
+                return result;
+            }
+
+            vector<float> raw_features;
+            if (!feature_extractor_.extract_from_pe_content(pe_content, pe_size, raw_features)) {
+                result.success = false;
+                return result;
+            }
+
+            return infer_raw(raw_features.data(), static_cast<uint16_t>(raw_features.size()), threshold);
+        }
+
+        bool initialized() const { return initialized_; }
         bool loaded() const { return loaded_; }
         uint16_t num_features() const { return num_features_; }
 
-        const If_base& base() const { return base_; }
-        const If_config& config() const { return config_; }
-        const QuantizedIsolationForest& tree_container() const { return tree_container_; }
+        const If_base& base() const { return if_base_; }
+        const If_config& config() const { return if_config_; }
+        const If_feature_extractor& feature_extractor() const { return feature_extractor_; }
+        const If_tree_container& tree_container() const { return if_tree_container_; }
     };
 
     struct If_threshold_result {

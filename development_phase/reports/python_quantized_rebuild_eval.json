@@ -1,0 +1,25 @@
+{
+  "config_path": "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/results/iforest_optimized_config.json",
+  "train_nml": "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/core/models/isolation_forest/resources/iforest_ben_train_nml.bin",
+  "ben_test_nml": "/home/viettran/Documents/visual_code/EDR_AGENT/tools/data_quantization/quantized_datasets/iforest_ben_test_nml.bin",
+  "mal_test_nml": "/home/viettran/Documents/visual_code/EDR_AGENT/tools/data_quantization/quantized_datasets/iforest_mal_test_nml.bin",
+  "num_features": 40,
+  "quantization_bits": 2,
+  "saved_threshold": 0.08441254411962695,
+  "saved_offset": -0.6010632325659369,
+  "model_offset_after_fit": -0.6294516097867047,
+  "benign_test": {
+    "total": 4948,
+    "anomaly_count": 1740,
+    "anomaly_rate": 0.3516572352465643,
+    "fpr": 0.3516572352465643,
+    "tpr": 0.0
+  },
+  "malware_test": {
+    "total": 4194,
+    "anomaly_count": 4194,
+    "anomaly_rate": 1.0,
+    "fpr": 0.0,
+    "tpr": 1.0
+  }
+}

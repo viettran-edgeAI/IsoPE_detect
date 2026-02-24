@@ -1,10 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <string>
-#include <array>
 
 #include "../../base/eml_base.h"
 
@@ -16,18 +16,17 @@ namespace eml {
         IF_QTZ_FILE_EXIST       = 1u << 2,
         IF_CONFIG_FILE_EXIST    = 1u << 3,
         IF_MODEL_FILE_EXIST     = 1u << 4,
-        IF_ABLE_TO_INFERENCE    = 1u << 5,
-        IF_ABLE_TO_TRAINING     = 1u << 6,
-        IF_SCANNED              = 1u << 7
+        IF_FEATURE_FILE_EXIST   = 1u << 5,
+        IF_ABLE_TO_INFERENCE    = 1u << 6,
+        IF_ABLE_TO_TRAINING     = 1u << 7,
+        IF_SCANNED              = 1u << 8
     } If_base_flags;
 
     class If_base {
     private:
         uint16_t flags = 0;
         char model_name[EML_PATH_BUFFER] = {0};
-
         std::filesystem::path dir_path = std::filesystem::path(".");
-        std::filesystem::path config_path_override;
 
         inline void set_flag(If_base_flags f) {
             flags |= static_cast<uint16_t>(f);
@@ -64,6 +63,13 @@ namespace eml {
             buffer[buffer_size - 1] = '\0';
         }
 
+        bool has_required_training_resources() const {
+            return has_flag(IF_DP_TXT_EXIST)
+                && has_flag(IF_QTZ_FILE_EXIST)
+                && has_flag(IF_CONFIG_FILE_EXIST)
+                && has_flag(IF_FEATURE_FILE_EXIST);
+        }
+
         void scan_current_resource() {
             flags = 0;
 
@@ -73,21 +79,17 @@ namespace eml {
             }
 
             const auto nml_path = get_nml_path();
-            if (std::filesystem::exists(nml_path)) {
+            if (!nml_path.empty() && std::filesystem::exists(nml_path)) {
                 set_flag(IF_BASE_DATA_EXIST);
-                eml_debug(2, "✅ Found IF base dataset: ", nml_path.string().c_str());
-            } else {
-                eml_debug(1, "⚠️ IF base dataset not found: ", nml_path.string().c_str());
+                eml_debug(2, "✅ Found IF benign-train dataset: ", nml_path.string().c_str());
             }
 
             const auto dp_txt_path = get_dp_txt_path();
             if (std::filesystem::exists(dp_txt_path)) {
                 set_flag(IF_DP_TXT_EXIST);
                 eml_debug(2, "✅ Found IF data params (txt): ", dp_txt_path.string().c_str());
-            }
-
-            if (!has_flag(IF_DP_TXT_EXIST)) {
-                eml_debug(1, "⚠️ IF data params file not found (_dp.bin or _dp.txt)");
+            } else {
+                eml_debug(1, "⚠️ IF data params file not found: ", dp_txt_path.string().c_str());
             }
 
             const auto qtz_path = get_qtz_path();
@@ -99,26 +101,35 @@ namespace eml {
             }
 
             const auto cfg_path = get_config_path();
-            if (!cfg_path.empty() && std::filesystem::exists(cfg_path)) {
+            if (std::filesystem::exists(cfg_path)) {
                 set_flag(IF_CONFIG_FILE_EXIST);
-                eml_debug(2, "✅ Found model engine config: ", cfg_path.string().c_str());
+                eml_debug(2, "✅ Found IF optimized config: ", cfg_path.string().c_str());
             } else {
-                eml_debug(1, "⚠️ optimized_config.json not found: ", cfg_path.string().c_str());
+                eml_debug(1, "⚠️ IF optimized config not found: ", cfg_path.string().c_str());
+            }
+
+            const auto features_path = get_feature_config_path();
+            if (std::filesystem::exists(features_path)) {
+                set_flag(IF_FEATURE_FILE_EXIST);
+                eml_debug(2, "✅ Found IF optimized features: ", features_path.string().c_str());
+            } else {
+                eml_debug(1, "⚠️ IF optimized features not found: ", features_path.string().c_str());
             }
 
             const auto model_path = get_model_path();
             if (std::filesystem::exists(model_path)) {
                 set_flag(IF_MODEL_FILE_EXIST);
                 eml_debug(2, "✅ Found IF model binary: ", model_path.string().c_str());
+            } else {
+                eml_debug(1, "⚠️ IF model binary not found: ", model_path.string().c_str());
             }
 
-            if (has_flag(IF_QTZ_FILE_EXIST) && has_flag(IF_CONFIG_FILE_EXIST) && has_flag(IF_MODEL_FILE_EXIST)) {
-                set_flag(IF_ABLE_TO_INFERENCE);
-            }
-
-            if (has_flag(IF_BASE_DATA_EXIST) && has_flag(IF_QTZ_FILE_EXIST) &&
-                 has_flag(IF_DP_TXT_EXIST) && has_flag(IF_CONFIG_FILE_EXIST)) {
+            if (has_required_training_resources()) {
                 set_flag(IF_ABLE_TO_TRAINING);
+            }
+
+            if (has_required_training_resources() && has_flag(IF_MODEL_FILE_EXIST)) {
+                set_flag(IF_ABLE_TO_INFERENCE);
             }
 
             set_flag(IF_SCANNED);
@@ -130,12 +141,15 @@ namespace eml {
         explicit If_base(const char* model_name_input,
                          const std::filesystem::path& dir_path_input = std::filesystem::path("."),
                          const std::filesystem::path& config_path_input = {}) {
-            init(model_name_input, dir_path_input, config_path_input);
+            (void)config_path_input;
+            init(model_name_input, dir_path_input);
         }
 
         void init(const char* model_name_input,
                   const std::filesystem::path& dir_path_input = std::filesystem::path("."),
                   const std::filesystem::path& config_path_input = {}) {
+            (void)config_path_input;
+
             if (!model_name_input || std::strlen(model_name_input) == 0) {
                 model_name[0] = '\0';
                 flags = 0;
@@ -145,9 +159,7 @@ namespace eml {
 
             std::strncpy(model_name, model_name_input, EML_PATH_BUFFER - 1);
             model_name[EML_PATH_BUFFER - 1] = '\0';
-
             dir_path = dir_path_input;
-            config_path_override = config_path_input;
 
             scan_current_resource();
         }
@@ -164,7 +176,7 @@ namespace eml {
         }
 
         void set_config_path(const std::filesystem::path& path) {
-            config_path_override = path;
+            (void)path;
             if (model_name[0] != '\0') {
                 scan_current_resource();
             }
@@ -177,17 +189,30 @@ namespace eml {
             scan_current_resource();
         }
 
-        std::filesystem::path get_nml_path() const { return build_model_artifact_path("_nml.bin"); }
-        std::filesystem::path get_qtz_path() const { return build_model_artifact_path("_qtz.bin"); }
-        std::filesystem::path get_dp_bin_path() const { return build_model_artifact_path("_dp.bin"); }
-        std::filesystem::path get_dp_txt_path() const { return build_model_artifact_path("_dp.txt"); }
-        std::filesystem::path get_model_path() const {
+        std::filesystem::path get_nml_path() const {
             const std::array<std::filesystem::path, 2> candidates = {
-                build_model_artifact_path("_iforest.bin"),
-                build_model_artifact_path("_if.bin")
+                build_model_artifact_path("_ben_train_nml.bin"),
+                build_model_artifact_path("_nml.bin")
             };
             return first_existing(candidates);
         }
+
+        std::filesystem::path get_benign_train_nml_path() const {
+            return build_model_artifact_path("_ben_train_nml.bin");
+        }
+
+        std::filesystem::path get_benign_val_nml_path() const {
+            return build_model_artifact_path("_ben_val_nml.bin");
+        }
+
+        std::filesystem::path get_malware_val_nml_path() const {
+            return build_model_artifact_path("_mal_val_nml.bin");
+        }
+
+        std::filesystem::path get_qtz_path() const { return build_model_artifact_path("_qtz.bin"); }
+        std::filesystem::path get_dp_bin_path() const { return build_model_artifact_path("_dp.bin"); }
+        std::filesystem::path get_dp_txt_path() const { return build_model_artifact_path("_dp.txt"); }
+        std::filesystem::path get_model_path() const { return build_model_artifact_path("_iforest.bin"); }
 
         std::filesystem::path get_iforest_bin_path() const {
             return build_model_artifact_path("_iforest.bin");
@@ -198,14 +223,11 @@ namespace eml {
         }
 
         std::filesystem::path get_config_path() const {
-            if (!config_path_override.empty()) {
-                return config_path_override;
-            }
-            const std::array<std::filesystem::path, 2> candidates = {
-                build_model_artifact_path("_optimized_config.json"),
-                std::filesystem::path("development_phase/results") / (std::string(model_name) + "_optimized_config.json")
-            };
-            return first_existing(candidates);
+            return build_model_artifact_path("_optimized_config.json");
+        }
+
+        std::filesystem::path get_feature_config_path() const {
+            return build_model_artifact_path("_optimized_features.json");
         }
 
         const std::filesystem::path& get_resource_dir() const { return dir_path; }
@@ -229,6 +251,9 @@ namespace eml {
         void get_config_path(char* buffer, size_t buffer_size) const {
             write_path_to_buffer(get_config_path(), buffer, buffer_size);
         }
+        void get_feature_config_path(char* buffer, size_t buffer_size) const {
+            write_path_to_buffer(get_feature_config_path(), buffer, buffer_size);
+        }
 
         void get_model_name(char* buffer, size_t buffer_size) const {
             if (!buffer || buffer_size == 0) {
@@ -245,7 +270,9 @@ namespace eml {
         bool qtz_exists() const { return has_flag(IF_QTZ_FILE_EXIST); }
         bool dp_txt_exists() const { return has_flag(IF_DP_TXT_EXIST); }
         bool config_exists() const { return has_flag(IF_CONFIG_FILE_EXIST); }
+        bool feature_config_exists() const { return has_flag(IF_FEATURE_FILE_EXIST); }
         bool model_exists() const { return has_flag(IF_MODEL_FILE_EXIST); }
+        bool has_required_core_resources() const { return has_required_training_resources(); }
         bool ready_for_training() const { return has_flag(IF_ABLE_TO_TRAINING); }
         bool ready_for_inference() const { return has_flag(IF_ABLE_TO_INFERENCE); }
 

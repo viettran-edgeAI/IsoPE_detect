@@ -1,365 +1,228 @@
-# Embedded Phase Design (Authoritative)
+# Embedded Phase Design (Current Authoritative State)
 
 Date: 2026-02-24  
 Scope: `embedded_phase/`
 
 ## 1) Purpose
 
-This document is the single source of truth for the embedded Isolation Forest architecture and refactor direction.
+This document is the current source of truth for the embedded Isolation Forest implementation and evaluation status.
 
-The embedded phase is organized into two implementation tasks:
+Project target remains:
+- **FPR < 0.05**
+- **TPR > 0.95**
 
-1. **Task 1 — Core model library** under `core/models/isolation_forest/`.
-2. **Task 2 — Model engine packaging/runtime layer** under `src/model_engine/`.
-
-Legacy architecture descriptions, historical benchmark/test/report workflows, and stale design history are intentionally excluded.
-
----
-
-## 2) Current Target Architecture
-
-### Task 1 — Core model library (`core/models/isolation_forest/`)
-
-**Scope**: C++ developers, header-focused, no cross-platform CMake.
-
-Owns domain model logic:
-- model resource discovery and validation
-- tree/container representation
-- training and inference domain behavior
-- model serialization/deserialization
-
-Alternate usage patterns (e.g., direct header inclusion, library linkage, testing) are developer-responsibility. No CMake configuration required.
-
-**Refactor direction**: `IsoForest` is the single integrated model owner that aggregates all components (if_base, if_config, quantizer, scaler, feature_extractor, if_tree_container).
-
-### Task 2 — Model engine (`src/model_engine/`)
-
-**Scope**: Production deployment, CMake required.
-
-Owns runtime packaging and integration:
-- endpoint-facing API boundary
-- runtime model loading and lifecycle
-- **CMake packaging and deployable integration surface** (required for production)
-- diagnostics/error plumbing for runtime usage
-- cross-platform build reproducibility and distribution
-
-Task 2 wraps Task 1; Task 2 does not re-implement core model logic. Task 2 brings production rigor (CMake, deployment, versioning, artifact management).
+Given current findings, the project is running in **dual mode**:
+1. **Quantized mode** (resource-efficient embedded path)
+2. **Normal/Plain mode** (non-quantized baseline path)
 
 ---
 
-## 3) Core Component Responsibilities
+## 2) Current Dual-Mode Architecture
 
-### `If_base`
+### 2.1 Quantized mode (production-oriented embedded path)
 
-Responsibility:
-- owns model identity and resource root (`model_name`, `dir_path`)
-- constructs canonical model file paths
-- validates presence/readiness of required resources
+Primary files:
+- `embedded_phase/core/models/isolation_forest/if_model.h`
+- `embedded_phase/core/models/isolation_forest/if_components.h`
+- `embedded_phase/core/models/isolation_forest/if_base.h`
 
-Required constructor shape:
-- `If_base(model_name, dir_path = ".")`
+Key properties:
+- Uses scaler + quantizer + packed/compact tree representation.
+- Uses model resources in `embedded_phase/core/models/isolation_forest/resources`.
+- Uses C++ threshold calibration (development-phase threshold/offset reuse has been removed).
+- Supports two calibration entry points:
+  - quantized validation BIN calibration
+  - raw-PE validation directory calibration (`calibrate_threshold_from_pe_validation`)
 
-### `If_tree`
+Current status:
+- Functional and integrated.
+- Still shows a significant accuracy gap on raw PE end-to-end inference (details in benchmark section).
 
-Responsibility:
-- represents one Isolation Tree
-- encapsulates node-level traversal/path-length behavior
-- provides per-tree scoring primitives
+### 2.2 Normal mode (plain float baseline)
 
-### `If_tree_container`
+Primary files:
+- `embedded_phase/core/models/isolation_forest/if_plain_float.h`
+- `development_phase/src/if_plain_float_eval.cpp`
 
-Responsibility:
-- owns and manages all `If_tree` instances of one model
-- owns node-resource internals used for packed-tree layout
-- serializes/deserializes forest artifacts
-- provides ensemble-level tree iteration/scoring support
+Key properties:
+- No quantization.
+- No compressed node format.
+- Uses simple node structure (feature index, float threshold, child indices, leaf metadata).
+- Trains on optimized CSV datasets from development_phase.
+- Uses optimized configuration and optimized feature set from development artifacts.
 
-Design rule:
-- node-resource internals remain encapsulated in `If_tree_container`.
-
-### `IsoForest`
-
-Responsibility:
-- single high-level orchestration class for model lifecycle
-- aggregates `If_base`, `If_config`, `quantizer`, `scaler`, `feature_extractor`, and `if_tree_container`
-- exposes load/train/save/infer workflow as the primary API surface
-- owns tree-level training orchestration and inference pipeline encapsulation
-
-Expected constructor:
-- `IsoForest(model_name, dir_path = ".")`
+Current status:
+- Implemented and runnable.
+- Produces strong TPR, with FPR slightly above target on test in current run.
 
 ---
 
-## 4) IsoForest Detailed Responsibilities
+## 3) Resource and Data Contracts
 
-`IsoForest` owns and manages these integrated components:
-- `if_base`: model identity and resource root
-- `if_config`: configuration and dataset parameters
-- `quantizer`: feature quantization (`eml_quantizer<problem_type::ISOLATION>`)
-- `scaler`: feature standardization
-- `feature_extractor`: PE feature extraction (resource: `${model_name}_optimized_features.json`)
-- `if_tree_container`: ensemble of trained trees
+### 3.1 Quantized mode resources
 
----
+Canonical resource root:
+- `embedded_phase/core/models/isolation_forest/resources`
 
-## 5) Model Resource Naming and Location
+Important files:
+- `iforest_qtz.bin`
+- `iforest_dp.txt`
+- `iforest_optimized_config.json`
+- `iforest_optimized_features.json`
+- `iforest_ben_train_nml.bin`
+- `iforest_ben_val_nml.bin`
+- `iforest_mal_val_nml.bin`
 
-Model resources are addressed by `model_name + dir_path`.
+### 3.2 Plain mode datasets (optimized CSV)
 
-Canonical file set:
-- `${dir_path}/${model_name}_iforest.bin`
-- `${dir_path}/${model_name}_dp.txt`
-- `${dir_path}/${model_name}_optimized_config.json`
-- `${dir_path}/${model_name}_qtz.bin`
-- `${dir_path}/${model_name}_optimized_features.json`
+- `development_phase/data/optimized/iforest_ben_train.csv`
+- `development_phase/data/optimized/iforest_ben_val.csv`
+- `development_phase/data/optimized/iforest_ben_test.csv`
+- `development_phase/data/optimized/iforest_mal_val.csv`
+- `development_phase/data/optimized/iforest_mal_test.csv`
 
-All Task 1 and Task 2 loading logic must derive paths from this convention only.
+### 3.3 Shared config/artifact sources
 
----
-
-## 6) Initialization Sequence (Required)
-
-Initialization must fail fast if any required resource is missing.
-
-Ordered flow:
-1. Initialize `if_base` with `model_name` and `dir_path`.
-2. Scan/check all model resources derived from `if_base`.
-3. If any required file is missing, return initialization failure.
-4. Initialize `if_config`, `quantizer`, `scaler`, and `feature_extractor`.
-5. Initialize `if_tree_container` and reserve tree slots.
-
-Required model resources:
-- `${dir_path}/${model_name}_iforest.bin` (when loading an existing model)
-- `${dir_path}/${model_name}_dp.txt`
-- `${dir_path}/${model_name}_optimized_config.json`
-- `${dir_path}/${model_name}_qtz.bin`
-- `${dir_path}/${model_name}_optimized_features.json`
+- `development_phase/results/iforest_optimized_config.json`
+- `development_phase/results/iforest_optimized_features.json`
 
 ---
 
-## 7) Training Flow (Required)
+## 4) Benchmark Report (Latest)
 
-Training is owned by `IsoForest`.
+### 4.1 Quantized mode
 
-Required flow:
-1. Load benign train file into RAM.
-2. For each tree in loop:
-	- create sub-dataset for that tree
-	- initialize tree
-	- train tree
-	- add trained tree to `if_tree_container`
-3. After training completes, release benign train data from RAM.
+#### A) Quantized-domain validation (BIN-domain calibration check)
+- Threshold: `-0.542177`
+- Validation FPR: `0.034629`
+- Validation TPR: `0.915842`
+- Interpretation: quantized-domain separation is decent.
 
-The implementation may use rebuilt internal classes, but this lifecycle behavior is mandatory.
+#### B) Raw PE domain calibration + evaluation (current operational view)
+Calibration on:
+- `datasets/BENIGN_VALIDATION_DATASET`
+- `datasets/MALWARE_VALIDATION_DATASET`
 
----
+Selected threshold:
+- `-0.655372`
 
-## 8) Inference API and Pipeline (Required)
+Validation:
+- Benign success/fail: `4986 / 14`
+- Malware success/fail: `2178 / 2`
+- FPR: `0.049138`
+- TPR: `0.750230`
 
-Inference API is defined at `IsoForest` level.
+Test:
+- Benign success/fail: `4994 / 6`
+- Malware success/fail: `4227 / 0`
+- FPR: `0.051262`
+- TPR: `0.718476`
 
-Method contract:
-- input: PE file path/content
-- output: `eml_isolation_result_t`
+#### C) Quantized mode conclusion
+- FPR is near target after C++ raw-domain calibration.
+- TPR is far below target in raw end-to-end mode.
+- Root issue is not only thresholding; representation/domain mismatch remains significant.
 
-Encapsulated inference pipeline inside `IsoForest`:
-1. PE file input
-2. feature extraction (`feature_extractor`)
-3. standardization (`scaler`)
-4. quantization (`eml_quantizer`)
-5. ensemble scoring via trees in `if_tree_container`
-6. aggregate and evaluate anomaly result
-7. return `eml_isolation_result_t`
+### 4.2 Plain mode (non-quantized baseline)
 
-No external caller should manually orchestrate these sub-steps.
+Run configuration (from optimized config):
+- `n_estimators=200`
+- `max_samples=1.0`
+- `max_features=1.0`
+- `bootstrap=false`
+- `random_state=42`
+- target FPR cap for threshold selection: `0.05`
 
----
+Selected threshold:
+- `-0.506791`
 
-## 9) Data Semantics (Isolation)
+Validation:
+- Benign rows: `4967`
+- Malware rows: `404`
+- FPR: `0.048118`
+- TPR: `0.925743`
 
-`if_data` uses `eml_data<problem_type::ISOLATION>` with **1-bit label semantics**:
-- `0` = Negative / benign
-- `1` = Positive / malware
+Test:
+- Benign rows: `4948`
+- Malware rows: `4194`
+- FPR: `0.057599`
+- TPR: `0.959943`
 
-Any train/eval/inference path must preserve this mapping exactly.
-
----
-
-## 10) File Ownership Boundaries
-
-- `core/models/isolation_forest/`: domain model internals (tree logic, config binding, serialization, inference behavior)
-- `core/ml/`: shared ML result/status/metrics types used by core models
-- `src/model_engine/`: runtime wrapper, packaging, integration API, deployment-oriented loading lifecycle
-
-Ownership intent: keep model logic centralized in core; keep runtime integration concerns in model_engine.
-
----
-
-## 11) Implementation Phases
-
-### Phase 1 — Core abstractions (Task 1: C++ developer headers)
-- finalize `If_tree` and `If_tree_container` boundaries
-- keep tree-container IO format stable and documented
-- validation: header compilation, no external dependencies beyond STL + eml
-
-### Phase 2 — `IsoForest` consolidation (Task 1: C++ developer headers)
-- route lifecycle through `IsoForest(model_name, dir_path)`
-- unify resource discovery through `If_base`
-- validation: direct header usage, standalone C++ linking
-
-### Phase 3 — Shared type normalization (Task 1: C++ developer headers)
-- centralize result/status/metrics contracts in `core/ml/`
-- remove ad-hoc duplicates across modules
-- validation: type consistency across Task 1 modules
-
-### Phase 4 — Model engine packaging (Task 2: Production CMake)
-- keep `src/model_engine/` as thin runtime/integration layer over Task 1
-- enforce model loading by `model_name + dir_path`
-- introduce CMake targets, versioning, artifact management for production deployment
-- validation: CMake builds cleanly, produces deployable binaries
-
-### Phase 5 — Completion validation (Task 1 + Task 2)
-- Task 1: load/save/reload functional validation (C++ unit tests)
-- Task 2: deterministic inference consistency validation across runtime paths (CMake-driven e2e tests)
-- cross-artifact validation: serialized models exchangeable between Task 1 (dev) and Task 2 (prod)
+#### Plain mode conclusion
+- TPR meets target on test (>0.95).
+- FPR is close but slightly above target on test (~0.058).
+- This mode is currently the strongest accuracy baseline in C++.
 
 ---
 
-## 12) Acceptance Criteria
+## 5) Problems Encountered (Quantized Path)
 
-### Task 1 complete when (C++ developer-focused headers)
-- `IsoForest(model_name, dir_path)` performs strict resource scanning and fails on missing required files
-- `IsoForest` initializes `if_base`, `if_config`, `quantizer`, `scaler`, `feature_extractor`, and `if_tree_container`
-- `IsoForest` training follows the required RAM load → per-tree sub-dataset loop → RAM release lifecycle
-- `IsoForest` inference takes PE input and returns `eml_isolation_result_t` via a fully encapsulated pipeline
-- old fragmented structure can be removed without blocking the final design
-- headers compile standalone without CMake (developer can link directly)
-- zero dependency on header-external build tools
+1. **Threshold transfer mismatch**
+   - Development-phase threshold/offset did not transfer reliably to embedded quantized runtime.
+   - Fixed by moving threshold tuning to C++ calibration paths.
 
-### Task 2 complete when (Production CMake deployment)
-- model_engine loads model artifacts via `model_name + dir_path`
-- model_engine remains packaging/runtime only (no duplicated core model logic)
-- CMake packaging/runtime integration is clean and deployable
-- e2e runtime validation: save model (Task 1) → load via CMake binary (Task 2) → infer identically
-- cross-platform CMake build works on target deployment OS/architecture
+2. **Raw-domain degradation**
+   - Even with raw-domain threshold calibration, quantized mode cannot recover required TPR at low FPR.
+   - Indicates quantization + runtime extraction domain shift impact.
+
+3. **Calibration trade-off ceiling**
+   - Under FPR cap near 5%, quantized mode currently plateaus around ~0.72–0.75 TPR in raw PE evaluation.
 
 ---
 
-## 13) Out of Scope
+## 6) Comparative Evaluation
 
-The following are not part of this design document:
-- legacy architecture variants
-- historical benchmark/test utility programs
-- old reporting pipelines and stale benchmark artifacts
+### Quantized mode
+Pros:
+- Embedded-friendly memory/layout.
+- Existing integration path in core/model_engine.
 
-This document is implementation-oriented and forward-only.
+Cons:
+- Fails current detection target in raw PE operation.
+- Sensitive to domain mismatch and information loss.
 
----
+### Plain mode
+Pros:
+- Much stronger detection performance profile.
+- Easier interpretability and debugging.
 
-## 14) Supplementary Guidance from `random_forest/` Reference
-
-This section is **supplementary** to all instructions above (sections 1-13). It does not replace or delete any prior requirements.
-
-Use `core/models/random_forest/` as a structural reference for how components/resources are:
-- declared
-- arranged
-- initialized
-- connected through one top-level model owner
-
-### 14.1 Reference adoption rule
-
-Adopt the `RandomForest`-style component wiring pattern for `IsoForest`, with one required change:
-- in Isolation Forest, tree-building/training logic is pushed down to tree-level behavior (`If_tree`) and orchestrated through `if_tree_container`
-- avoid keeping training ownership as a monolithic model-layer block copied from `RandomForest`
-
-### 14.2 Component/resource parity target
-
-When rebuilding internals, keep this parity in mind:
-- `Rf_base` → `if_base` (model identity + resource scanning)
-- `Rf_config` → `if_config` (config + data parameter binding)
-- `eml_quantizer` usage pattern → same for Isolation (`problem_type::ISOLATION`)
-- model preprocessor component pattern (e.g., HOG-related in RF) → `feature_extractor` in Isolation
-- `Rf_tree_container` ownership pattern → `if_tree_container`
-- top-level model owner (`RandomForest`) → single `IsoForest`
-
-### 14.3 Initialization arrangement (supplement to Section 6)
-
-Follow RF-like initialization ordering discipline:
-1. initialize `if_base` first
-2. validate/scan all model resources
-3. initialize dependent components (`if_config`, quantizer, scaler, feature extractor)
-4. initialize `if_tree_container` and reserve capacity
-
-This ordering is mandatory unless a stricter ordering is required by correctness.
-
-### 14.4 Resource arrangement notes
-
-Resource naming remains the Isolation Forest canonical set already defined in this document.
-
-In addition, feature extraction resource wiring must follow model-scoped naming discipline:
-- `${dir_path}/${model_name}_optimized_features.json`
-
-### 14.5 Explicit exclusions from RF reference
-
-Ignore RF components that serve higher-complexity MCU workflows not required by current Isolation Forest scope, including but not limited to:
-- dynamic modeling hooks
-- adaptation feedback loops
-- online retraining/pending-data workflows
-- auxiliary runtime logging/report subsystems that are not part of the core IF contract
-
-The RF reference is used for architecture style and initialization structure, not for importing unrelated complexity.
+Cons:
+- Larger model/runtime footprint.
+- Not yet integrated as production engine backend switch.
 
 ---
 
-## 11) Supplementary Guidance from `random_forest/` Reference
+## 7) Current Decision
 
-This section is **supplementary** to all instructions above. It does not replace or delete any prior requirements.
+For now, maintain **both modes**:
 
-Use `core/models/random_forest/` as a structural reference for how components/resources are:
-- declared
-- arranged
-- initialized
-- connected through one top-level model owner
+1. **Quantized mode** stays as embedded deployment path under active improvement.
+2. **Plain mode** stays as non-quantized benchmark/reference path and fallback baseline for detection quality.
 
-### 11.1 Reference adoption rule
+Operationally:
+- Accuracy reference should be tracked against plain mode.
+- Quantized mode should be treated as optimization path until it meets target constraints.
 
-Adopt the `RandomForest`-style component wiring pattern for `IsoForest`, with one required change:
-- in Isolation Forest, tree-building/training logic is pushed down to tree-level behavior (`If_tree`) and orchestrated through `if_tree_container`
-- avoid keeping training ownership as a monolithic model-layer block copied from `RandomForest`
+---
 
-### 11.2 Component/resource parity target
+## 8) Next Engineering Priorities
 
-When rebuilding internals, keep this parity in mind:
-- `Rf_base` → `if_base` (model identity + resource scanning)
-- `Rf_config` → `if_config` (config + data parameter binding)
-- `eml_quantizer` usage pattern → same for Isolation (`problem_type::ISOLATION`)
-- model preprocessor component pattern (e.g., HOG-related in RF) → `feature_extractor` in Isolation
-- `Rf_tree_container` ownership pattern → `if_tree_container`
-- top-level model owner (`RandomForest`) → single `IsoForest`
+1. Add backend selection in model_engine (`quantized` vs `plain`).
+2. Add unified benchmark harness to report both modes in one run.
+3. Add feasibility reports at multiple FPR caps (`1%, 2%, 5%, 10%`) for transparent trade-off tracking.
+4. Investigate quantized-path recovery options:
+   - feature-space alignment checks,
+   - split policy and score calibration updates,
+   - selective de-quantization for high-impact features.
 
-### 11.3 Initialization arrangement (supplement to Section 4)
+---
 
-Follow RF-like initialization ordering discipline:
-1. initialize `if_base` first
-2. validate/scan all model resources
-3. initialize dependent components (`if_config`, quantizer, scaler, feature extractor)
-4. initialize `if_tree_container` and reserve capacity
+## 9) Acceptance Gate (Current)
 
-This ordering is mandatory unless a stricter ordering is required by correctness.
+A mode is considered deployment-ready only when both conditions hold on test:
+- FPR < 0.05
+- TPR > 0.95
 
-### 11.4 Resource arrangement notes
-
-Resource naming remains the Isolation Forest canonical set already defined in this document.
-
-In addition, feature extraction resource wiring must follow model-scoped naming discipline:
-- `${dir_path}/${model_name}_optimized_features.json`
-
-### 11.5 Explicit exclusions from RF reference
-
-Ignore RF components that serve higher-complexity MCU workflows not required by current Isolation Forest scope, including but not limited to:
-- dynamic modeling hooks
-- adaptation feedback loops
-- online retraining/pending-data workflows
-- auxiliary runtime logging/report subsystems that are not part of the core IF contract
-
-The RF reference is used for architecture style and initialization structure, not for importing unrelated complexity.
+Current snapshot:
+- Quantized mode: **not ready** (TPR gap).
+- Plain mode: **near-ready baseline** (TPR pass, slight FPR miss).

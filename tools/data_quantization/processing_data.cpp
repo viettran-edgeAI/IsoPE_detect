@@ -209,7 +209,11 @@ class Rf_quantizer{
     uint16_t groupsPerFeature = 0;
     
     // Feature type definitions
-    enum FeatureType : uint8_t { FT_DF = 0, FT_DC = 1, FT_CU = 2 };
+    enum FeatureType : uint8_t { 
+        FT_DF = 0,  // Discrete Full: values from 0 to groupsPerFeature-1   
+        FT_DC = 1,  // Discrete Custom: specific discrete values defined in discreteValues vector
+        FT_CU = 2   // Continuous with quantile-based edges defined in edgesScaled vector
+    };
     
     struct FeatureInfo {
         FeatureType type;

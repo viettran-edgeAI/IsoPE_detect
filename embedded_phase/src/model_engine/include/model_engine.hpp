@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "models/isolation_forest/if_components.h"
+#include "models/isolation_forest/if_model.h"
 
 namespace eml {
 namespace model_engine {
@@ -46,7 +46,7 @@ namespace model_engine {
     class IsolationForestModelEngine {
     private:
         If_config config_{};
-        QuantizedIsolationForest forest_{};
+        IsoForest model_{};
         uint16_t num_features_ = 0;
 
     public:
@@ -65,7 +65,7 @@ namespace model_engine {
                                   uint16_t feature_count,
                                   float threshold) const;
 
-        const QuantizedIsolationForest& forest() const;
+        const If_tree_container& forest() const;
 
         const If_config& config() const;
         uint16_t num_features() const;

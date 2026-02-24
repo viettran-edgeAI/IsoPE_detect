@@ -20,7 +20,7 @@ namespace model_engine {
             }
         }
 
-        std::vector<float> score_dataset(const QuantizedIsolationForest& forest,
+        std::vector<float> score_dataset(const If_tree_container& forest,
                                          const std::vector<uint8_t>& matrix,
                                          size_t num_samples,
                                          uint16_t num_features) {
@@ -43,6 +43,10 @@ namespace model_engine {
             set_error(error, "Failed to parse config or dp metadata");
             return false;
         }
+        if (!model_.init_from_config(config_)) {
+            set_error(error, "Failed to initialize IsoForest from loaded config");
+            return false;
+        }
         num_features_ = config_.num_features;
         return true;
     }
@@ -59,7 +63,7 @@ namespace model_engine {
             set_error(error, "Training matrix shape mismatch");
             return false;
         }
-        if (!forest_.train(matrix.data(), num_samples, num_features_, config_)) {
+        if (!model_.train_from_quantized_matrix(matrix.data(), num_samples, num_features_, &config_)) {
             set_error(error, "Isolation forest training failed");
             return false;
         }
@@ -68,17 +72,17 @@ namespace model_engine {
 
     float IsolationForestModelEngine::decision_function_quantized(const uint8_t* quantized_features,
                                                                    uint16_t feature_count) const {
-        return forest_.decision_function(quantized_features, feature_count);
+        return model_.decision_function(quantized_features, feature_count);
     }
 
     bool IsolationForestModelEngine::is_anomaly_quantized(const uint8_t* quantized_features,
                                                            uint16_t feature_count,
                                                            float threshold) const {
-        return forest_.is_anomaly(quantized_features, feature_count, threshold);
+        return model_.is_anomaly(quantized_features, feature_count, threshold);
     }
 
-    const QuantizedIsolationForest& IsolationForestModelEngine::forest() const {
-        return forest_;
+    const If_tree_container& IsolationForestModelEngine::forest() const {
+        return model_.tree_container();
     }
 
     const If_config& IsolationForestModelEngine::config() const {
@@ -90,7 +94,7 @@ namespace model_engine {
     }
 
     bool IsolationForestModelEngine::trained() const {
-        return forest_.trained();
+        return model_.loaded();
     }
 
     bool load_quantized_nml_dataset(const std::filesystem::path& nml_path,
