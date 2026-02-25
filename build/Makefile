@@ -152,32 +152,6 @@ pe_model_engine_cli/fast:
 	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build
 .PHONY : pe_model_engine_cli/fast
 
-#=============================================================================
-# Target rules for targets named pe_model_engine_benchmark_cli
-
-# Build rule for target.
-pe_model_engine_benchmark_cli: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pe_model_engine_benchmark_cli
-.PHONY : pe_model_engine_benchmark_cli
-
-# fast build rule for target.
-pe_model_engine_benchmark_cli/fast:
-	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build
-.PHONY : pe_model_engine_benchmark_cli/fast
-
-#=============================================================================
-# Target rules for targets named pe_model_engine_tests
-
-# Build rule for target.
-pe_model_engine_tests: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pe_model_engine_tests
-.PHONY : pe_model_engine_tests
-
-# fast build rule for target.
-pe_model_engine_tests/fast:
-	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/build.make embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/build
-.PHONY : pe_model_engine_tests/fast
-
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -188,9 +162,7 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... pe_model_engine"
-	@echo "... pe_model_engine_benchmark_cli"
 	@echo "... pe_model_engine_cli"
-	@echo "... pe_model_engine_tests"
 .PHONY : help
 
 

@@ -18,6 +18,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace {
@@ -54,6 +55,80 @@ const std::unordered_set<std::string> kSuspiciousApis = {
   "createservicea", "createservicew",
 };
 
+const std::unordered_map<std::string, uint16_t> kDirectFeatureNameToIndex = {
+  {"coff_machine", embedded_feature_config::D_COFF_MACHINE},
+  {"coff_num_sections", embedded_feature_config::D_COFF_NUM_SECTIONS},
+  {"coff_timestamp", embedded_feature_config::D_COFF_TIMESTAMP},
+  {"coff_sizeof_opt_header", embedded_feature_config::D_COFF_SIZEOF_OPT_HEADER},
+  {"coff_characteristics", embedded_feature_config::D_COFF_CHARACTERISTICS},
+  {"opt_sizeof_init_data", embedded_feature_config::D_OPT_SIZEOF_INIT_DATA},
+  {"opt_checksum", embedded_feature_config::D_OPT_CHECKSUM},
+  {"opt_section_alignment", embedded_feature_config::D_OPT_SECTION_ALIGNMENT},
+  {"opt_imagebase", embedded_feature_config::D_OPT_IMAGEBASE},
+  {"opt_subsystem", embedded_feature_config::D_OPT_SUBSYSTEM},
+  {"checksum_matches", embedded_feature_config::D_CHECKSUM_MATCHES},
+  {"sec_mean_entropy", embedded_feature_config::D_SEC_MEAN_ENTROPY},
+  {"sec_max_entropy", embedded_feature_config::D_SEC_MAX_ENTROPY},
+  {"has_resources", embedded_feature_config::D_HAS_RESOURCES},
+  {"rsrc_has_version", embedded_feature_config::D_RSRC_HAS_VERSION},
+  {"has_relocations", embedded_feature_config::D_HAS_RELOCATIONS},
+  {"has_debug", embedded_feature_config::D_HAS_DEBUG},
+  {"has_repro", embedded_feature_config::D_HAS_REPRO},
+  {"rich_max_build_id", embedded_feature_config::D_RICH_MAX_BUILD_ID},
+  {"has_overlay", embedded_feature_config::D_HAS_OVERLAY},
+  {"overlay_size", embedded_feature_config::D_OVERLAY_SIZE},
+  {"overlay_entropy", embedded_feature_config::D_OVERLAY_ENTROPY},
+  {"num_certificates", embedded_feature_config::D_NUM_CERTIFICATES},
+  {"sig_verified", embedded_feature_config::D_SIG_VERIFIED},
+  {"dos_e_lfanew", embedded_feature_config::D_DOS_E_LFANEW},
+  {"opt_sizeof_headers", embedded_feature_config::D_OPT_SIZEOF_HEADERS},
+  {"num_suspicious_imports", embedded_feature_config::D_NUM_SUSPICIOUS_IMPORTS},
+  {"has_pdb", embedded_feature_config::D_HAS_PDB},
+  {"num_sections", embedded_feature_config::D_COFF_NUM_SECTIONS},
+};
+
+const std::unordered_map<std::string, uint32_t> kCoffCharFlags = {
+  {"EXECUTABLE_IMAGE", 0x0002u},
+  {"DLL", 0x2000u},
+  {"LARGE_ADDRESS_AWARE", 0x0020u},
+  {"RELOCS_STRIPPED", 0x0001u},
+  {"DEBUG_STRIPPED", 0x0200u},
+  {"SYSTEM", 0x1000u},
+};
+
+const std::unordered_map<std::string, uint32_t> kOptDllCharFlags = {
+  {"DYNAMIC_BASE", 0x0040u},
+  {"NX_COMPAT", 0x0100u},
+  {"GUARD_CF", 0x4000u},
+  {"HIGH_ENTROPY_VA", 0x0020u},
+  {"NO_SEH", 0x0400u},
+  {"NO_BIND", 0x0800u},
+  {"APPCONTAINER", 0x1000u},
+  {"TERMINAL_SERVER_AWARE", 0x8000u},
+  {"FORCE_INTEGRITY", 0x0080u},
+  {"NO_ISOLATION", 0x0200u},
+  {"WDM_DRIVER", 0x2000u},
+};
+
+const std::unordered_map<std::string, uint16_t> kDataDirectoryNameToIndex = {
+  {"EXPORT_TABLE", 0u},
+  {"IMPORT_TABLE", 1u},
+  {"RESOURCE_TABLE", 2u},
+  {"EXCEPTION_TABLE", 3u},
+  {"CERTIFICATE_TABLE", 4u},
+  {"BASE_RELOCATION_TABLE", 5u},
+  {"DEBUG_DIR", 6u},
+  {"ARCHITECTURE", 7u},
+  {"GLOBAL_PTR", 8u},
+  {"TLS_TABLE", 9u},
+  {"LOAD_CONFIG_TABLE", 10u},
+  {"BOUND_IMPORT", 11u},
+  {"IAT", 12u},
+  {"DELAY_IMPORT_DESCRIPTOR", 13u},
+  {"CLR_RUNTIME_HEADER", 14u},
+  {"RESERVED", 15u},
+};
+
 struct ExtractResult {
   bool parse_ok = false;
   std::string error;
@@ -71,6 +146,125 @@ struct ExtractResult {
   std::array<double, kDataDirectorySlots> dd_rva{};
   std::array<double, kDataDirectorySlots> dd_size{};
 };
+
+bool parse_index_suffix(const std::string& name,
+                        const std::string& prefix,
+                        uint16_t max_allowed,
+                        uint16_t& out_index) {
+  if (name.rfind(prefix, 0) != 0 || name.size() <= prefix.size()) {
+    return false;
+  }
+
+  const std::string suffix = name.substr(prefix.size());
+  try {
+    const unsigned long parsed = std::stoul(suffix);
+    if (parsed > static_cast<unsigned long>(max_allowed)) {
+      return false;
+    }
+    out_index = static_cast<uint16_t>(parsed);
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool try_resolve_runtime_feature_spec(const std::string& feature_name,
+                                      CompiledFeatureSpec& out_spec) {
+  const auto direct_it = kDirectFeatureNameToIndex.find(feature_name);
+  if (direct_it != kDirectFeatureNameToIndex.end()) {
+    out_spec = CompiledFeatureSpec{CompiledFeatureKind::Direct, direct_it->second, 0u};
+    return true;
+  }
+
+  if (feature_name.rfind("coff_char_", 0) == 0) {
+    const std::string flag = feature_name.substr(std::strlen("coff_char_"));
+    const auto coff_it = kCoffCharFlags.find(flag);
+    if (coff_it == kCoffCharFlags.end()) {
+      return false;
+    }
+    out_spec = CompiledFeatureSpec{CompiledFeatureKind::CoffChar, 0u, coff_it->second};
+    return true;
+  }
+
+  if (feature_name.rfind("opt_dllchar_", 0) == 0) {
+    const std::string flag = feature_name.substr(std::strlen("opt_dllchar_"));
+    const auto opt_it = kOptDllCharFlags.find(flag);
+    if (opt_it == kOptDllCharFlags.end()) {
+      return false;
+    }
+    out_spec = CompiledFeatureSpec{CompiledFeatureKind::OptDllChar, 0u, opt_it->second};
+    return true;
+  }
+
+  uint16_t index = 0u;
+  if (parse_index_suffix(feature_name, "sec_name_hash_", 31u, index)) {
+    out_spec = CompiledFeatureSpec{CompiledFeatureKind::SecNameHash, index, 0u};
+    return true;
+  }
+  if (parse_index_suffix(feature_name, "imp_dll_hash_", 63u, index)) {
+    out_spec = CompiledFeatureSpec{CompiledFeatureKind::ImpDllHash, index, 0u};
+    return true;
+  }
+  if (parse_index_suffix(feature_name, "imp_func_hash_", 255u, index)) {
+    out_spec = CompiledFeatureSpec{CompiledFeatureKind::ImpFuncHash, index, 0u};
+    return true;
+  }
+
+  if (feature_name.rfind("sec", 0) == 0) {
+    const size_t underscore = feature_name.find('_', 3u);
+    if (underscore != std::string::npos && underscore > 3u) {
+      try {
+        const unsigned long section_index = std::stoul(feature_name.substr(3u, underscore - 3u));
+        if (section_index <= 9u) {
+          const std::string suffix = feature_name.substr(underscore + 1u);
+          if (suffix == "entropy") {
+            out_spec = CompiledFeatureSpec{CompiledFeatureKind::SecEntropy, static_cast<uint16_t>(section_index), 0u};
+            return true;
+          }
+          if (suffix == "vsize") {
+            out_spec = CompiledFeatureSpec{CompiledFeatureKind::SecVsize, static_cast<uint16_t>(section_index), 0u};
+            return true;
+          }
+          if (suffix == "is_write") {
+            out_spec = CompiledFeatureSpec{CompiledFeatureKind::SecIsWrite, static_cast<uint16_t>(section_index), 0u};
+            return true;
+          }
+        }
+      } catch (...) {
+        return false;
+      }
+    }
+  }
+
+  if (feature_name.rfind("dd_", 0) == 0) {
+    constexpr const char* kRvaSuffix = "_rva";
+    constexpr const char* kSizeSuffix = "_size";
+
+    if (feature_name.size() > 3u + std::strlen(kRvaSuffix) &&
+        feature_name.compare(feature_name.size() - std::strlen(kRvaSuffix), std::strlen(kRvaSuffix), kRvaSuffix) == 0) {
+      const std::string dd_name = feature_name.substr(3u, feature_name.size() - 3u - std::strlen(kRvaSuffix));
+      const auto dd_it = kDataDirectoryNameToIndex.find(dd_name);
+      if (dd_it == kDataDirectoryNameToIndex.end()) {
+        return false;
+      }
+      out_spec = CompiledFeatureSpec{CompiledFeatureKind::DataDirectoryRva, dd_it->second, 0u};
+      return true;
+    }
+
+    if (feature_name.size() > 3u + std::strlen(kSizeSuffix) &&
+        feature_name.compare(feature_name.size() - std::strlen(kSizeSuffix), std::strlen(kSizeSuffix), kSizeSuffix) == 0) {
+      const std::string dd_name = feature_name.substr(3u, feature_name.size() - 3u - std::strlen(kSizeSuffix));
+      const auto dd_it = kDataDirectoryNameToIndex.find(dd_name);
+      if (dd_it == kDataDirectoryNameToIndex.end()) {
+        return false;
+      }
+      out_spec = CompiledFeatureSpec{CompiledFeatureKind::DataDirectorySize, dd_it->second, 0u};
+      return true;
+    }
+  }
+
+  return false;
+}
 
 std::string clamp_error(const std::string& error) {
   const size_t max_error_bytes = static_cast<size_t>(EDR_PE_MAX_ERROR_TEXT_BYTES);
@@ -470,6 +664,29 @@ extractor::FeatureVector make_feature_vector(const ExtractResult& row) {
   return vector;
 }
 
+extractor::FeatureVector make_feature_vector_dynamic(const ExtractResult& row,
+                                                     const std::vector<std::string>& feature_names,
+                                                     bool& out_ok,
+                                                     std::string& out_error) {
+  extractor::FeatureVector vector;
+  vector.values.resize(feature_names.size(), 0.0);
+  out_ok = true;
+  out_error.clear();
+
+  for (size_t i = 0; i < feature_names.size(); ++i) {
+    CompiledFeatureSpec spec{};
+    if (!try_resolve_runtime_feature_spec(feature_names[i], spec)) {
+      out_ok = false;
+      out_error = "unsupported_feature:" + feature_names[i];
+      vector.values.clear();
+      return vector;
+    }
+    vector.values[i] = resolve_value(row, spec);
+  }
+
+  return vector;
+}
+
 } // namespace
 
 namespace extractor {
@@ -492,6 +709,43 @@ ExtractionReport PEExtractor::extract_with_metadata(const std::string& path) con
   report.metadata.parse_ok = row.parse_ok;
   report.metadata.error = row.error;
   report.metadata.processing_time_ms = row.processing_time_ms;
+  return report;
+}
+
+FeatureVector PEExtractor::extract_selected(const std::string& path,
+                                            const std::vector<std::string>& feature_names) const {
+  const ExtractionReport report = extract_selected_with_metadata(path, feature_names);
+  if (!report.metadata.parse_ok) {
+    throw std::runtime_error(
+      report.metadata.error.empty() ? "extractor_parse_failed" : report.metadata.error
+    );
+  }
+  return report.feature_vector;
+}
+
+ExtractionReport PEExtractor::extract_selected_with_metadata(
+    const std::string& path,
+    const std::vector<std::string>& feature_names) const {
+  const ExtractResult row = extract_row(path);
+
+  ExtractionReport report;
+  report.metadata.parse_ok = row.parse_ok;
+  report.metadata.error = row.error;
+  report.metadata.processing_time_ms = row.processing_time_ms;
+
+  if (!row.parse_ok) {
+    report.feature_vector.values.assign(feature_names.size(), 0.0);
+    return report;
+  }
+
+  bool features_ok = false;
+  std::string feature_error;
+  report.feature_vector = make_feature_vector_dynamic(row, feature_names, features_ok, feature_error);
+  if (!features_ok) {
+    report.metadata.parse_ok = false;
+    report.metadata.error = feature_error;
+  }
+
   return report;
 }
 

@@ -13,7 +13,6 @@ set(CMAKE_MAKEFILE_DEPENDS
   "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/CMakeLists.txt"
   "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/app/CMakeLists.txt"
   "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/CMakeLists.txt"
-  "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/test/CMakeLists.txt"
   "/usr/share/cmake-3.28/Modules/CMakeCXXInformation.cmake"
   "/usr/share/cmake-3.28/Modules/CMakeCommonLanguageInclude.cmake"
   "/usr/share/cmake-3.28/Modules/CMakeGenericSystem.cmake"
@@ -43,13 +42,10 @@ set(CMAKE_MAKEFILE_PRODUCTS
   "embedded_phase/src/model_engine/CMakeFiles/CMakeDirectoryInformation.cmake"
   "embedded_phase/src/model_engine/src/CMakeFiles/CMakeDirectoryInformation.cmake"
   "embedded_phase/src/model_engine/app/CMakeFiles/CMakeDirectoryInformation.cmake"
-  "embedded_phase/src/model_engine/test/CMakeFiles/CMakeDirectoryInformation.cmake"
   )
 
 # Dependency information for all targets:
 set(CMAKE_DEPEND_INFO_FILES
   "embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine.dir/DependInfo.cmake"
   "embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/DependInfo.cmake"
-  "embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/DependInfo.cmake"
-  "embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/DependInfo.cmake"
   )

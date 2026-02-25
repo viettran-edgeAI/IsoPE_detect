@@ -23,6 +23,8 @@ Outputs:
     ../docs/malware_val_test_independence_assessment.md
     ../results/<model_name>_optimized_features.json
     ../results/<model_name>_optimized_config.json
+    ../results/<model_name>_scaler_params.json
+    ../results/<model_name>_feature_schema.json
 """
 
 import argparse
@@ -879,12 +881,16 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
                    val_fpr_target, val_fpr_delta,
                    val_fpr, val_tpr, val_auc_value, test_fpr, test_tpr, auc_value, best_params,
                    group_mapping, results_dir, feature_names_path, model_config_path,
+                   scaler_params_path, feature_schema_path,
+                   selected_log_transform_features,
                    threshold_strategy="fpr", f_beta=1.0,
                    model_name="iforest", node_resource=None):
-    """Export exactly two embedding artifacts: selected feature names and model-engine config."""
+    """Export embedding artifacts: feature list, config, scaler params, and feature schema."""
     results_dir.mkdir(parents=True, exist_ok=True)
     feature_names_path.parent.mkdir(parents=True, exist_ok=True)
     model_config_path.parent.mkdir(parents=True, exist_ok=True)
+    scaler_params_path.parent.mkdir(parents=True, exist_ok=True)
+    feature_schema_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Remove legacy artifacts from older export layout.
     legacy_artifacts = [
@@ -896,7 +902,12 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
         results_dir / "feature_names.json",
     ]
     for legacy_path in legacy_artifacts:
-        if legacy_path.exists() and legacy_path not in {feature_names_path, model_config_path}:
+        if legacy_path.exists() and legacy_path not in {
+            feature_names_path,
+            model_config_path,
+            scaler_params_path,
+            feature_schema_path,
+        }:
             legacy_path.unlink()
 
     # 1) Optimized features artifact
@@ -906,10 +917,33 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
 
     # 2) Consolidated model-engine artifact (optimized parameters + evaluation)
     scaler_export = {
+        "schema_version": "1.0",
+        "model_name": str(model_name),
         "mean": scaler.mean_.tolist(),
         "scale": scaler.scale_.tolist(),
         "n_features": int(scaler.n_features_in_),
     }
+
+    feature_schema_export = {
+        "schema_version": "1.0",
+        "created_date": time.strftime("%Y-%m-%d"),
+        "model_name": str(model_name),
+        "selected_features": len(feature_name_list),
+        "feature_order": feature_name_list,
+        "log_transform_features": [str(name) for name in selected_log_transform_features],
+        "feature_transform": {
+            "method": "log1p_abs",
+            "expression": "log1p(abs(x))",
+        },
+        "feature_groups": group_mapping,
+    }
+
+    with open(scaler_params_path, "w", encoding="utf-8") as f:
+        json.dump(scaler_export, f, indent=2)
+
+    with open(feature_schema_path, "w", encoding="utf-8") as f:
+        json.dump(feature_schema_export, f, indent=2)
+
     consolidated = {
         "model_name": str(model_name),
         "model_type": "IsolationForest",
@@ -920,7 +954,14 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
             "feature_groups": group_mapping,
         },
         "preprocessing": {
-            "scaler": scaler_export,
+            "feature_transform": {
+                "source_file": str(feature_schema_path),
+                "method": "log1p_abs",
+            },
+            "scaler": {
+                "source_file": str(scaler_params_path),
+                "n_features": int(scaler.n_features_in_),
+            },
         },
         "deployment_scaling": {
             "runtime_normalization": "disabled",
@@ -931,7 +972,7 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
                 "note": "Keep scaler parameters in artifact for audit/parity checks.",
             },
             "audit": {
-                "keep_scaler_params": True,
+                "keep_scaler_params": False,
                 "parity_reference": "python_stage3_standardized_training",
             },
         },
@@ -970,7 +1011,7 @@ def export_results(model, scaler, feature_names, threshold, fpr_threshold,
         json.dump(consolidated, f, indent=2)
 
     print(f"\n  Results exported to: {results_dir}")
-    generated = [feature_names_path, model_config_path]
+    generated = [feature_names_path, model_config_path, scaler_params_path, feature_schema_path]
     for p in generated:
         sz = p.stat().st_size
         unit = "KB" if sz > 1024 else "B"
@@ -1130,6 +1171,8 @@ def main():
     # Output paths derived from pipeline_cfg dirs and model_name
     optimized_features_json     = results_dir / f"{model_name}_optimized_features.json"
     optimized_model_config_json = results_dir / f"{model_name}_optimized_config.json"
+    optimized_scaler_params_json = results_dir / f"{model_name}_scaler_params.json"
+    optimized_feature_schema_json = results_dir / f"{model_name}_feature_schema.json"
     optimized_data_dir = _resolve_path(pipeline_cfg_path, paths_cfg.get("optimized_data_dir", "../data/optimized"))
     results_csv   = report_dir / "optimization_results.csv"
     params_json   = report_dir / "optimized_params.json"
@@ -1214,10 +1257,19 @@ def main():
     # Load group mapping for artifact export
     schema_dir = _resolve_path(config_path, "../schemas")
     group_mapping_path = schema_dir / "feature_group_mapping.json"
+    selected_schema_path = schema_dir / "feature_schema_selected.json"
     group_mapping = {}
     if group_mapping_path.exists():
         with open(group_mapping_path) as fh:
             group_mapping = json.load(fh)
+
+    if not selected_schema_path.exists():
+        raise FileNotFoundError(
+            f"Required selected schema not found: {selected_schema_path}. Run feature_selection.py first."
+        )
+    with open(selected_schema_path, "r", encoding="utf-8") as fh:
+        selected_schema = json.load(fh)
+    selected_schema_log_set = set(str(name) for name in selected_schema.get("log_transform_features", []))
 
     all_results = []
     total_configs = (
@@ -1633,6 +1685,7 @@ def main():
 
     # Build group mapping for selected features
     selected_group_mapping = {name: group_mapping.get(name, "unknown") for name in top_names}
+    selected_log_transform_features = [name for name in top_names if name in selected_schema_log_set]
 
     node_resource_params = _compute_node_resource_params(
         model=model,
@@ -1660,6 +1713,9 @@ def main():
         results_dir=results_dir,
         feature_names_path=optimized_features_json,
         model_config_path=optimized_model_config_json,
+        scaler_params_path=optimized_scaler_params_json,
+        feature_schema_path=optimized_feature_schema_json,
+        selected_log_transform_features=selected_log_transform_features,
         threshold_strategy=threshold_strategy,
         f_beta=f_beta,
         model_name=model_name,

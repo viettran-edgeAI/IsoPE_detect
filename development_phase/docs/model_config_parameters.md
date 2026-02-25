@@ -43,5 +43,8 @@ Diagnostic sampling behavior in Stage 3:
 
 ## outputs (embedding-focused)
 - results_dir: Directory for Stage-3 embedding handoff artifacts.
-- optimized_feature_list_json: Output JSON list of optimized feature names (default: `../results/optimized_feature_list.json`).
-- optimized_model_config_json: Output consolidated model-engine config (default: `../results/model_engine_config.json`). Contains optimized hyperparameters, threshold settings (including `val_fpr_delta`), scaler parameters, deployment scaling policy (build-time threshold folding), and final validation/test metrics.
+- output_prefix: Prefix used to derive model-name artifact outputs (default: model name).
+- optimized_config_json: Output optimized model config JSON (`<model_name>_optimized_config.json`).
+- scaler_params_json: Output scaler parameters JSON (`<model_name>_scaler_params.json`).
+- feature_schema_json: Output feature-transform schema JSON (`<model_name>_feature_schema.json`).
+- optimized_feature_set_json: Output optimized feature-set JSON (`<model_name>_optimized_features.json`).

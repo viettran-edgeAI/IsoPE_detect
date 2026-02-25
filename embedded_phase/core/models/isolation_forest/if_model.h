@@ -1,11 +1,11 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -19,7 +19,9 @@
 #include "if_components.h"
 #include "if_config.h"
 #include "if_feature_extractor.h"
-#include "if_scaler_transform.h"
+#include "if_feature_transform_layer.h"
+#include "if_scaler_layer.h"
+#include "../../ml/eml_quantize.h"
 #include "../../ml/eml_predict_result.h"
 
 namespace eml {
@@ -27,18 +29,30 @@ namespace eml {
     class IsoForest {
     public:
         using InferenceResult = eml_isolation_result_t;
+        using extract_callback_t = If_feature_extractor::extract_callback_t;
+        using extract_content_callback_t = If_feature_extractor::extract_content_callback_t;
 
     private:
         If_base if_base_{};
         If_config if_config_{};
-        If_scaler_transform scaler_{};
-        eml_quantizer<problem_type::ISOLATION> quantizer_{};
-        If_feature_extractor feature_extractor_{};
+        If_feature_extractor if_feature_extractor_{};
+        If_feature_transform_layer if_feature_transform_layer_{};
+        If_scaler_layer if_scaler_layer_{};
+        eml_quantizer<problem_type::ISOLATION> if_quantizer_{};
         If_tree_container if_tree_container_{};
 
         uint16_t num_features_ = 0u;
         bool initialized_ = false;
+        bool preprocessing_initialized_ = false;
         bool loaded_ = false;
+
+        void release_preprocessing_components() {
+            if_feature_extractor_.release();
+            if_feature_transform_layer_.release();
+            if_scaler_layer_.release();
+            if_quantizer_.releaseQuantizer();
+            preprocessing_initialized_ = false;
+        }
 
         static bool read_exact(std::ifstream& fin, void* dst, size_t bytes) {
             fin.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(bytes));
@@ -99,6 +113,7 @@ namespace eml {
             initialized_ = false;
             loaded_ = false;
             num_features_ = 0u;
+            release_preprocessing_components();
 
             if_base_.update_resource_status();
             if (!if_base_.ready_to_use()) {
@@ -115,25 +130,38 @@ namespace eml {
                 return false;
             }
 
+            num_features_ = if_config_.num_features;
+
+            if (!if_feature_extractor_.init(if_base_.get_feature_config_path(), num_features_)) {
+                eml_debug(0, "❌ IF init failed: cannot initialize feature extractor from optimized feature list");
+                return false;
+            }
+
+            if (!if_feature_transform_layer_.init_from_feature_schema(
+                    if_base_.get_feature_schema_path(),
+                    if_feature_extractor_.feature_names(),
+                    num_features_)) {
+                eml_debug(0, "❌ IF init failed: cannot initialize feature transform layer");
+                return false;
+            }
+
+            if (!if_scaler_layer_.init_from_file(if_base_.get_scaler_params_path(), num_features_)) {
+                eml_debug(0, "❌ IF init failed: cannot initialize scaler layer");
+                return false;
+            }
+
+            if (!if_quantizer_.loadQuantizer(if_base_.get_qtz_path().string().c_str())) {
+                eml_debug(0, "❌ IF init failed: cannot load quantizer");
+                return false;
+            }
+
+            preprocessing_initialized_ = true;
+
             if_config_.decision_threshold = 0.0f;
             if_config_.threshold_offset = 0.0f;
 
-            if (!scaler_.init(if_config_)) {
-                return false;
-            }
-
-            if (!feature_extractor_.init(if_base_.get_feature_config_path(), if_config_.num_features)) {
-                return false;
-            }
-
-            const std::string qtz_path = if_base_.get_qtz_path().string();
-            if (!quantizer_.loadQuantizer(qtz_path.c_str())) {
-                return false;
-            }
-
             if_tree_container_.unload_model();
             if_tree_container_.reserve_tree_slots(std::max<uint16_t>(1u, if_config_.n_estimators));
-            num_features_ = if_config_.num_features;
             initialized_ = true;
             return true;
         }
@@ -145,33 +173,99 @@ namespace eml {
             return initialize_components();
         }
 
-        bool preprocess_raw_matrix(const float* raw_matrix,
-                                   size_t num_samples,
-                                   uint16_t feature_count,
-                                   std::vector<uint8_t>& out_matrix) const {
-            out_matrix.clear();
+        bool apply_feature_transforms(const float* raw_features,
+                                      uint16_t feature_count,
+                                      vector<float>& out_scaled_features) const {
+            out_scaled_features.clear();
 
-            if (!initialized_ || !raw_matrix || num_samples == 0u || feature_count != num_features_) {
+            if (!raw_features || feature_count == 0u) {
                 return false;
             }
 
-            out_matrix.resize(num_samples * static_cast<size_t>(feature_count), 0u);
-            std::vector<float> scaled(feature_count, 0.0f);
-            packed_vector<8> quantized;
-            quantized.resize(feature_count, 0u);
+            if (!preprocessing_initialized_ ||
+                !if_feature_transform_layer_.loaded() ||
+                !if_scaler_layer_.loaded()) {
+                return false;
+            }
+
+            if (feature_count != num_features_) {
+                return false;
+            }
+
+            vector<float> transformed(feature_count, 0.0f);
+            if (!if_feature_transform_layer_.transform(raw_features, feature_count, transformed.data())) {
+                return false;
+            }
+
+            out_scaled_features.resize(feature_count, 0.0f);
+            if (!if_scaler_layer_.transform(transformed.data(), feature_count, out_scaled_features.data())) {
+                out_scaled_features.clear();
+                return false;
+            }
+
+            return true;
+        }
+
+        bool quantize_raw_feature_vector(const float* raw_features,
+                                         uint16_t feature_count,
+                                         vector<uint8_t>& out_quantized) const {
+            out_quantized.clear();
+
+            if (!raw_features || feature_count == 0u) {
+                return false;
+            }
+
+            if (!if_quantizer_.loaded()) {
+                return false;
+            }
+
+            vector<float> scaled_features;
+            if (!apply_feature_transforms(raw_features, feature_count, scaled_features)) {
+                return false;
+            }
+
+            packed_vector<8> quantized_buffer;
+            quantized_buffer.resize(feature_count, 0u);
+            (void)if_quantizer_.quantizeFeatures(scaled_features.data(), quantized_buffer, nullptr, nullptr);
+
+            out_quantized.resize(feature_count, 0u);
+            for (uint16_t feature_index = 0; feature_index < feature_count; ++feature_index) {
+                out_quantized[feature_index] = quantized_buffer[feature_index];
+            }
+
+            return true;
+        }
+
+        bool preprocess_raw_matrix(const float* raw_matrix,
+                                   size_t num_samples,
+                                   uint16_t feature_count,
+                                   vector<uint8_t>& out_quantized_matrix) const {
+            out_quantized_matrix.clear();
+
+            if (!raw_matrix || num_samples == 0u || feature_count == 0u) {
+                return false;
+            }
+
+            if (feature_count != num_features_) {
+                return false;
+            }
+
+            out_quantized_matrix.resize(num_samples * static_cast<size_t>(feature_count), 0u);
+
+            vector<uint8_t> quantized_row;
+            quantized_row.reserve(feature_count);
 
             for (size_t row = 0; row < num_samples; ++row) {
                 const float* raw_row = &raw_matrix[row * static_cast<size_t>(feature_count)];
-                if (!scaler_.transform(raw_row, feature_count, scaled.data())) {
+                if (!quantize_raw_feature_vector(raw_row, feature_count, quantized_row)) {
+                    out_quantized_matrix.clear();
                     return false;
                 }
 
-                (void)quantizer_.quantizeFeatures(scaled.data(), quantized, nullptr, nullptr);
-
-                uint8_t* out_row = &out_matrix[row * static_cast<size_t>(feature_count)];
-                for (uint16_t col = 0; col < feature_count; ++col) {
-                    out_row[col] = quantized[col];
-                }
+                std::memcpy(
+                    &out_quantized_matrix[row * static_cast<size_t>(feature_count)],
+                    quantized_row.data(),
+                    static_cast<size_t>(feature_count) * sizeof(uint8_t));
             }
 
             return true;
@@ -381,84 +475,6 @@ namespace eml {
             return best_threshold;
         }
 
-        bool quantize_raw_feature_vector(const vector<float>& raw_features,
-                                         std::vector<uint8_t>& out_quantized) const {
-            out_quantized.clear();
-            if (!initialized_ || raw_features.size() != num_features_) {
-                return false;
-            }
-
-            std::vector<float> scaled(num_features_, 0.0f);
-            if (!scaler_.transform(raw_features.data(), num_features_, scaled.data())) {
-                return false;
-            }
-
-            packed_vector<8> quantized;
-            quantized.resize(num_features_, 0u);
-            (void)quantizer_.quantizeFeatures(scaled.data(), quantized, nullptr, nullptr);
-
-            out_quantized.resize(num_features_, 0u);
-            for (uint16_t i = 0; i < num_features_; ++i) {
-                out_quantized[i] = quantized[i];
-            }
-            return true;
-        }
-
-        bool build_train_seen_bins(std::vector<std::array<uint8_t, 256>>& out_seen) const {
-            out_seen.clear();
-            if (if_config_.num_features == 0u) {
-                return false;
-            }
-
-            std::filesystem::path train_path = if_base_.get_benign_train_nml_path();
-            if (train_path.empty() || !std::filesystem::exists(train_path)) {
-                train_path = if_base_.get_nml_path();
-            }
-            if (train_path.empty() || !std::filesystem::exists(train_path)) {
-                return false;
-            }
-
-            std::vector<uint8_t> train_matrix;
-            size_t train_samples = 0u;
-            if (!load_quantized_nml_dataset(train_path,
-                                            if_config_.num_features,
-                                            if_config_.quantization_bits,
-                                            train_matrix,
-                                            train_samples)) {
-                return false;
-            }
-
-            out_seen.resize(if_config_.num_features);
-            for (auto& bins : out_seen) {
-                bins.fill(0u);
-            }
-
-            for (size_t row = 0; row < train_samples; ++row) {
-                const uint8_t* sample = &train_matrix[row * static_cast<size_t>(if_config_.num_features)];
-                for (uint16_t col = 0; col < if_config_.num_features; ++col) {
-                    out_seen[col][sample[col]] = 1u;
-                }
-            }
-
-            return true;
-        }
-
-        static float feature_drift_ratio(const std::vector<uint8_t>& quantized,
-                                         const std::vector<std::array<uint8_t, 256>>& seen_bins) {
-            if (quantized.empty() || quantized.size() != seen_bins.size()) {
-                return 0.0f;
-            }
-
-            size_t unseen = 0u;
-            for (size_t i = 0; i < quantized.size(); ++i) {
-                if (seen_bins[i][quantized[i]] == 0u) {
-                    ++unseen;
-                }
-            }
-
-            return static_cast<float>(unseen) / static_cast<float>(quantized.size());
-        }
-
         bool calibrate_threshold_from_validation_datasets(const std::filesystem::path& benign_val_nml_path = {},
                                                           const std::filesystem::path& malware_val_nml_path = {}) {
             if (!loaded_ || !if_tree_container_.trained()) {
@@ -574,12 +590,11 @@ namespace eml {
                 return false;
             }
 
+            release_preprocessing_components();
             if_config_ = config;
             num_features_ = if_config_.num_features;
             initialized_ = true;
             loaded_ = false;
-
-            (void)scaler_.init(if_config_);
             if_tree_container_.unload_model();
             if_tree_container_.reserve_tree_slots(std::max<uint16_t>(1u, if_config_.n_estimators));
             return true;
@@ -598,6 +613,7 @@ namespace eml {
                 if (!config_override->isLoaded || config_override->num_features == 0u) {
                     return false;
                 }
+                release_preprocessing_components();
                 if_config_ = *config_override;
                 num_features_ = if_config_.num_features;
                 initialized_ = true;
@@ -666,28 +682,50 @@ namespace eml {
 
         bool train_from_raw_matrix(const float* raw_matrix,
                                    size_t num_samples,
-                                   uint16_t feature_count) {
+                                   uint16_t feature_count,
+                                   const If_config* config_override = nullptr) {
+            if (!raw_matrix || num_samples == 0u || feature_count == 0u) {
+                return false;
+            }
+
             if (!ensure_initialized()) {
                 return false;
             }
 
-            std::vector<uint8_t> quantized_matrix;
+            const If_config* active_config = config_override ? config_override : &if_config_;
+            if (!active_config || !active_config->isLoaded || active_config->num_features == 0u) {
+                return false;
+            }
+
+            if (feature_count != active_config->num_features || feature_count != num_features_) {
+                return false;
+            }
+
+            vector<uint8_t> quantized_matrix;
             if (!preprocess_raw_matrix(raw_matrix, num_samples, feature_count, quantized_matrix)) {
                 return false;
             }
 
-            const bool ok = train_from_quantized_matrix(
+            return train_from_quantized_matrix(
                 quantized_matrix.data(),
                 num_samples,
                 feature_count,
-                &if_config_
+                config_override
             );
+        }
 
-            quantized_matrix.clear();
-            quantized_matrix.shrink_to_fit();
+        bool quantize_raw_feature_buffer(const float* raw_features,
+                                         uint16_t feature_count,
+                                         vector<uint8_t>& out_quantized) const {
+            return quantize_raw_feature_vector(raw_features, feature_count, out_quantized);
+        }
 
-            loaded_ = ok;
-            return ok;
+        void set_extract_callback(extract_callback_t callback) {
+            if_feature_extractor_.set_extract_callback(std::move(callback));
+        }
+
+        void set_extract_content_callback(extract_content_callback_t callback) {
+            if_feature_extractor_.set_extract_content_callback(std::move(callback));
         }
 
         bool calibrate_threshold_from_validation(const std::filesystem::path& benign_val_nml_path = {},
@@ -696,186 +734,6 @@ namespace eml {
                 return false;
             }
             return calibrate_threshold_from_validation_datasets(benign_val_nml_path, malware_val_nml_path);
-        }
-
-        bool calibrate_threshold_from_pe_validation(const std::filesystem::path& benign_val_dir,
-                                                    const std::filesystem::path& malware_val_dir,
-                                                    float target_fpr = -1.0f,
-                                                    float benign_drift_quantile = 0.98f) {
-            if (!ensure_initialized() || !loaded_) {
-                return false;
-            }
-
-            if (benign_val_dir.empty() || malware_val_dir.empty()) {
-                return false;
-            }
-
-            if (!std::filesystem::exists(benign_val_dir) || !std::filesystem::is_directory(benign_val_dir)) {
-                return false;
-            }
-            if (!std::filesystem::exists(malware_val_dir) || !std::filesystem::is_directory(malware_val_dir)) {
-                return false;
-            }
-
-            struct ScoredSample {
-                float score = 0.0f;
-                float drift = 0.0f;
-            };
-
-            std::vector<std::array<uint8_t, 256>> seen_bins;
-            const bool has_drift_profile = build_train_seen_bins(seen_bins);
-
-            std::vector<ScoredSample> benign_samples;
-            std::vector<ScoredSample> malware_samples;
-            benign_samples.reserve(4096);
-            malware_samples.reserve(2048);
-
-            vector<float> raw_features;
-            std::vector<uint8_t> quantized_features;
-
-            for (const auto& entry : std::filesystem::directory_iterator(benign_val_dir)) {
-                if (!entry.is_regular_file()) {
-                    continue;
-                }
-
-                if (!feature_extractor_.extract_from_pe(entry.path(), raw_features)) {
-                    continue;
-                }
-                if (!quantize_raw_feature_vector(raw_features, quantized_features)) {
-                    continue;
-                }
-
-                ScoredSample sample;
-                sample.score = decision_function(quantized_features.data(), num_features_);
-                sample.drift = has_drift_profile
-                    ? feature_drift_ratio(quantized_features, seen_bins)
-                    : 0.0f;
-                benign_samples.push_back(sample);
-            }
-
-            for (const auto& entry : std::filesystem::directory_iterator(malware_val_dir)) {
-                if (!entry.is_regular_file()) {
-                    continue;
-                }
-
-                if (!feature_extractor_.extract_from_pe(entry.path(), raw_features)) {
-                    continue;
-                }
-                if (!quantize_raw_feature_vector(raw_features, quantized_features)) {
-                    continue;
-                }
-
-                ScoredSample sample;
-                sample.score = decision_function(quantized_features.data(), num_features_);
-                sample.drift = has_drift_profile
-                    ? feature_drift_ratio(quantized_features, seen_bins)
-                    : 0.0f;
-                malware_samples.push_back(sample);
-            }
-
-            if (benign_samples.empty() || malware_samples.empty()) {
-                return false;
-            }
-
-            std::vector<float> benign_scores;
-            benign_scores.reserve(benign_samples.size());
-            std::vector<float> malware_scores;
-            malware_scores.reserve(malware_samples.size());
-
-            std::vector<float> benign_scores_full;
-            benign_scores_full.reserve(benign_samples.size());
-            for (const auto& sample : benign_samples) {
-                benign_scores_full.push_back(sample.score);
-            }
-
-            std::vector<float> malware_scores_full;
-            malware_scores_full.reserve(malware_samples.size());
-            for (const auto& sample : malware_samples) {
-                malware_scores_full.push_back(sample.score);
-            }
-
-            if (has_drift_profile) {
-                float effective_quantile = benign_drift_quantile;
-                if (!(effective_quantile > 0.0f && effective_quantile <= 1.0f)) {
-                    effective_quantile = 0.98f;
-                }
-
-                std::vector<float> benign_drifts;
-                benign_drifts.reserve(benign_samples.size());
-                for (const auto& sample : benign_samples) {
-                    benign_drifts.push_back(sample.drift);
-                }
-                std::sort(benign_drifts.begin(), benign_drifts.end());
-
-                const size_t cutoff_idx = static_cast<size_t>(
-                    std::floor(effective_quantile * static_cast<float>(benign_drifts.size() - 1u))
-                );
-                const float drift_cutoff = benign_drifts[cutoff_idx];
-
-                for (const auto& sample : benign_samples) {
-                    if (sample.drift <= drift_cutoff) {
-                        benign_scores.push_back(sample.score);
-                    }
-                }
-
-                if (benign_scores.size() < std::max<size_t>(32u, benign_samples.size() / 2u)) {
-                    benign_scores.clear();
-                    for (const auto& sample : benign_samples) {
-                        benign_scores.push_back(sample.score);
-                    }
-                }
-            } else {
-                for (const auto& sample : benign_samples) {
-                    benign_scores.push_back(sample.score);
-                }
-            }
-
-            for (const auto& sample : malware_samples) {
-                malware_scores.push_back(sample.score);
-            }
-
-            if (benign_scores.empty() || malware_scores.empty()) {
-                return false;
-            }
-
-            float effective_target_fpr = target_fpr;
-            if (!(effective_target_fpr > 0.0f && effective_target_fpr < 1.0f)) {
-                effective_target_fpr = resolve_validation_fpr_target(if_config_);
-            }
-
-            float calibrated_fpr = 0.0f;
-            float calibrated_tpr = 0.0f;
-            float calibrated_threshold = select_threshold_from_validation(
-                benign_scores,
-                malware_scores,
-                effective_target_fpr,
-                calibrated_fpr,
-                calibrated_tpr
-            );
-
-            size_t full_fp = 0u;
-            for (float score : benign_scores_full) {
-                if (score < calibrated_threshold) {
-                    ++full_fp;
-                }
-            }
-            const float full_fpr = static_cast<float>(full_fp) / static_cast<float>(benign_scores_full.size());
-
-            if (full_fpr > effective_target_fpr) {
-                calibrated_threshold = select_threshold_from_validation(
-                    benign_scores_full,
-                    malware_scores_full,
-                    effective_target_fpr,
-                    calibrated_fpr,
-                    calibrated_tpr
-                );
-            }
-
-            if_config_.decision_threshold = calibrated_threshold;
-            if_config_.fpr_threshold = calibrated_fpr;
-            if_config_.threshold_offset = 0.0f;
-            if_tree_container_.set_threshold_offset(0.0f);
-            return true;
         }
 
         bool train_from_quantized_dataset(const std::filesystem::path& benign_train_nml_path = {}) {
@@ -923,14 +781,6 @@ namespace eml {
             return if_tree_container_.save_model_binary(if_base_.get_iforest_bin_path());
         }
 
-        void set_feature_extract_callback(If_feature_extractor::extract_callback_t callback) {
-            feature_extractor_.set_extract_callback(std::move(callback));
-        }
-
-        void set_feature_extract_content_callback(If_feature_extractor::extract_content_callback_t callback) {
-            feature_extractor_.set_extract_content_callback(std::move(callback));
-        }
-
         float decision_function(const uint8_t* quantized_features,
                                 uint16_t feature_count) const {
             return if_tree_container_.decision_function(quantized_features, feature_count);
@@ -953,9 +803,11 @@ namespace eml {
                 return result;
             }
 
+            const float active_threshold = (threshold == 0.0f) ? if_config_.decision_threshold : threshold;
+
             result.anomaly_score = decision_function(quantized_features, feature_count);
-            result.threshold = threshold;
-            result.is_anomaly = result.anomaly_score < threshold;
+            result.threshold = active_threshold;
+            result.is_anomaly = result.anomaly_score < active_threshold;
             result.success = true;
 
             const auto end = std::chrono::steady_clock::now();
@@ -970,27 +822,23 @@ namespace eml {
             InferenceResult result;
             const auto start = std::chrono::steady_clock::now();
 
-            if (!loaded_ || !raw_features || feature_count != num_features_) {
+            if (!loaded_ || !raw_features || feature_count == 0u) {
                 result.success = false;
                 return result;
             }
 
-            std::vector<float> scaled(feature_count, 0.0f);
-            if (!scaler_.transform(raw_features, feature_count, scaled.data())) {
+            vector<uint8_t> quantized_features;
+            if (!quantize_raw_feature_vector(raw_features, feature_count, quantized_features)) {
                 result.success = false;
                 return result;
             }
 
-            packed_vector<8> quantized;
-            quantized.resize(feature_count, 0u);
-            (void)quantizer_.quantizeFeatures(scaled.data(), quantized, nullptr, nullptr);
+            const float active_threshold = (threshold == 0.0f) ? if_config_.decision_threshold : threshold;
+            result.anomaly_score = decision_function(quantized_features.data(), feature_count);
+            result.threshold = active_threshold;
+            result.is_anomaly = result.anomaly_score < active_threshold;
+            result.success = true;
 
-            std::vector<uint8_t> dense_quantized(feature_count, 0u);
-            for (uint16_t i = 0; i < feature_count; ++i) {
-                dense_quantized[i] = quantized[i];
-            }
-
-            result = infer_quantized(dense_quantized.data(), feature_count, threshold);
             const auto end = std::chrono::steady_clock::now();
             result.prediction_time = static_cast<size_t>(
                 std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
@@ -1001,11 +849,12 @@ namespace eml {
                                       float threshold = 0.0f) const {
             InferenceResult result;
             if (!loaded_) {
+                result.success = false;
                 return result;
             }
 
             vector<float> raw_features;
-            if (!feature_extractor_.extract_from_pe(pe_path, raw_features)) {
+            if (!if_feature_extractor_.extract_from_pe(pe_path, raw_features)) {
                 result.success = false;
                 return result;
             }
@@ -1017,12 +866,13 @@ namespace eml {
                                          size_t pe_size,
                                          float threshold = 0.0f) const {
             InferenceResult result;
-            if (!loaded_) {
+            if (!loaded_ || !pe_content || pe_size == 0u) {
+                result.success = false;
                 return result;
             }
 
             vector<float> raw_features;
-            if (!feature_extractor_.extract_from_pe_content(pe_content, pe_size, raw_features)) {
+            if (!if_feature_extractor_.extract_from_pe_content(pe_content, pe_size, raw_features)) {
                 result.success = false;
                 return result;
             }
@@ -1036,7 +886,10 @@ namespace eml {
 
         const If_base& base() const { return if_base_; }
         const If_config& config() const { return if_config_; }
-        const If_feature_extractor& feature_extractor() const { return feature_extractor_; }
+        const If_feature_extractor& feature_extractor() const { return if_feature_extractor_; }
+        const If_feature_transform_layer& feature_transform_layer() const { return if_feature_transform_layer_; }
+        const If_scaler_layer& scaler_layer() const { return if_scaler_layer_; }
+        const eml_quantizer<problem_type::ISOLATION>& quantizer() const { return if_quantizer_; }
         const If_tree_container& tree_container() const { return if_tree_container_; }
     };
 

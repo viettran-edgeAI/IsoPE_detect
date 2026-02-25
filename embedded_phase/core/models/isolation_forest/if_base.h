@@ -19,7 +19,9 @@ namespace eml {
         IF_FEATURE_FILE_EXIST   = 1u << 5,
         IF_ABLE_TO_INFERENCE    = 1u << 6,
         IF_ABLE_TO_TRAINING     = 1u << 7,
-        IF_SCANNED              = 1u << 8
+        IF_SCANNED              = 1u << 8,
+        IF_SCALER_FILE_EXIST    = 1u << 9,
+        IF_SCHEMA_FILE_EXIST    = 1u << 10
     } If_base_flags;
 
     class If_base {
@@ -63,11 +65,16 @@ namespace eml {
             buffer[buffer_size - 1] = '\0';
         }
 
-        bool has_required_training_resources() const {
+        bool has_required_core_resources_internal() const {
             return has_flag(IF_DP_TXT_EXIST)
-                && has_flag(IF_QTZ_FILE_EXIST)
                 && has_flag(IF_CONFIG_FILE_EXIST)
-                && has_flag(IF_FEATURE_FILE_EXIST);
+                && has_flag(IF_QTZ_FILE_EXIST)
+                && has_flag(IF_SCALER_FILE_EXIST)
+                && has_flag(IF_SCHEMA_FILE_EXIST);
+        }
+
+        bool has_required_training_resources() const {
+            return has_required_core_resources_internal();
         }
 
         void scan_current_resource() {
@@ -114,6 +121,22 @@ namespace eml {
                 eml_debug(2, "✅ Found IF optimized features: ", features_path.string().c_str());
             } else {
                 eml_debug(1, "⚠️ IF optimized features not found: ", features_path.string().c_str());
+            }
+
+            const auto scaler_path = get_scaler_params_path();
+            if (std::filesystem::exists(scaler_path)) {
+                set_flag(IF_SCALER_FILE_EXIST);
+                eml_debug(2, "✅ Found IF scaler params: ", scaler_path.string().c_str());
+            } else {
+                eml_debug(1, "⚠️ IF scaler params not found: ", scaler_path.string().c_str());
+            }
+
+            const auto schema_path = get_feature_schema_path();
+            if (std::filesystem::exists(schema_path)) {
+                set_flag(IF_SCHEMA_FILE_EXIST);
+                eml_debug(2, "✅ Found IF feature schema: ", schema_path.string().c_str());
+            } else {
+                eml_debug(1, "⚠️ IF feature schema not found: ", schema_path.string().c_str());
             }
 
             const auto model_path = get_model_path();
@@ -226,8 +249,16 @@ namespace eml {
             return build_model_artifact_path("_optimized_config.json");
         }
 
+        std::filesystem::path get_scaler_params_path() const {
+            return build_model_artifact_path("_scaler_params.json");
+        }
+
         std::filesystem::path get_feature_config_path() const {
             return build_model_artifact_path("_optimized_features.json");
+        }
+
+        std::filesystem::path get_feature_schema_path() const {
+            return build_model_artifact_path("_feature_schema.json");
         }
 
         const std::filesystem::path& get_resource_dir() const { return dir_path; }
@@ -254,6 +285,12 @@ namespace eml {
         void get_feature_config_path(char* buffer, size_t buffer_size) const {
             write_path_to_buffer(get_feature_config_path(), buffer, buffer_size);
         }
+        void get_scaler_params_path(char* buffer, size_t buffer_size) const {
+            write_path_to_buffer(get_scaler_params_path(), buffer, buffer_size);
+        }
+        void get_feature_schema_path(char* buffer, size_t buffer_size) const {
+            write_path_to_buffer(get_feature_schema_path(), buffer, buffer_size);
+        }
 
         void get_model_name(char* buffer, size_t buffer_size) const {
             if (!buffer || buffer_size == 0) {
@@ -271,8 +308,10 @@ namespace eml {
         bool dp_txt_exists() const { return has_flag(IF_DP_TXT_EXIST); }
         bool config_exists() const { return has_flag(IF_CONFIG_FILE_EXIST); }
         bool feature_config_exists() const { return has_flag(IF_FEATURE_FILE_EXIST); }
+        bool scaler_params_exists() const { return has_flag(IF_SCALER_FILE_EXIST); }
+        bool feature_schema_exists() const { return has_flag(IF_SCHEMA_FILE_EXIST); }
         bool model_exists() const { return has_flag(IF_MODEL_FILE_EXIST); }
-        bool has_required_core_resources() const { return has_required_training_resources(); }
+        bool has_required_core_resources() const { return has_required_core_resources_internal(); }
         bool ready_for_training() const { return has_flag(IF_ABLE_TO_TRAINING); }
         bool ready_for_inference() const { return has_flag(IF_ABLE_TO_INFERENCE); }
 

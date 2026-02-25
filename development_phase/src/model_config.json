@@ -1,6 +1,6 @@
 {
   "feature_selection": {
-    "top_k_list": [40, 100]
+    "top_k_list": [50]
   },
   "model": {
     "n_estimators": [200],

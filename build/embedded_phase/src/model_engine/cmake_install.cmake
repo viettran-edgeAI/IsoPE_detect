@@ -52,8 +52,3 @@ if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   include("/home/viettran/Documents/visual_code/EDR_AGENT/build/embedded_phase/src/model_engine/app/cmake_install.cmake")
 endif()
 
-if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for the subdirectory.
-  include("/home/viettran/Documents/visual_code/EDR_AGENT/build/embedded_phase/src/model_engine/test/cmake_install.cmake")
-endif()
-

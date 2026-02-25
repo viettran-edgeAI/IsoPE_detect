@@ -2,6 +2,38 @@
 
 All notable changes to the EDR Agent model and optimization pipeline will be documented in this file. This project follows absolute metric tracking for model effectiveness.
 
+## [1.10.0] - 2026-02-25
+
+### Changed
+
+#### Embedded IF runtime cleanup (quantized-only)
+- Removed embedded float/plain Isolation Forest runtime implementation and related legacy preprocessing code paths.
+- `embedded_phase/core/models/isolation_forest/if_model.h` now exposes quantized-only training/inference flow.
+- Removed deprecated scaler alias compatibility header (`if_scaler_transform.h`).
+
+#### Development cleanup
+- Removed temporary verification programs created during refactor iterations:
+  - `development_phase/src/if_quantized_cpp_dual_eval.cpp`
+  - `development_phase/src/if_quantizer_diagnostics.cpp`
+  - `development_phase/src/python_quantized_if_eval.py`
+- Kept `development_phase/src/if_plain_float_eval.cpp` as a retained entrypoint, now marked deprecated.
+
+#### Documentation alignment
+- Updated embedded design documentation to quantized-only runtime contract.
+- Updated development docs/results docs to split Stage-3 artifact contract:
+  - `<model_name>_optimized_config.json`
+  - `<model_name>_scaler_params.json`
+  - `<model_name>_feature_schema.json`
+  - `<model_name>_optimized_features.json`
+
+### Issues encountered and resolutions
+- **Issue:** Legacy compatibility alias (`If_scaler_transform`) created unnecessary indirection.
+  - **Resolution:** Removed alias header and standardized on direct, explicit runtime interfaces.
+- **Issue:** Embedded phase docs still described dual-mode (quantized + plain) behavior.
+  - **Resolution:** Rewrote embedded design docs to reflect quantized-only runtime.
+- **Issue:** Development docs still described old two-file Stage-3 export contract.
+  - **Resolution:** Updated documentation to the split artifact contract and current output key names.
+
 ## [1.7.0] - 2026-02-23
 
 ### Changed

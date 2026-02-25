@@ -3,8 +3,18 @@
   "model_type": "IsolationForest",
   "optimized_feature_set": {
     "source_file": "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../results/iforest_optimized_features.json",
-    "n_features": 40,
+    "n_features": 50,
     "features": [
+      "dd_IMPORT_TABLE_rva",
+      "imp_dll_hash_53",
+      "has_resources",
+      "opt_sizeof_image",
+      "opt_major_linker",
+      "overlay_ratio",
+      "num_write_sections",
+      "imp_func_hash_149",
+      "opt_sizeof_init_data",
+      "coff_machine",
       "sec_mean_entropy",
       "dos_e_lfanew",
       "imp_func_hash_15",
@@ -47,6 +57,16 @@
       "checksum_matches"
     ],
     "feature_groups": {
+      "dd_IMPORT_TABLE_rva": "data_directories",
+      "imp_dll_hash_53": "imports_dll_hash",
+      "has_resources": "resources",
+      "opt_sizeof_image": "optional_header",
+      "opt_major_linker": "optional_header",
+      "overlay_ratio": "overlay",
+      "num_write_sections": "sections_counts",
+      "imp_func_hash_149": "imports_func_hash",
+      "opt_sizeof_init_data": "optional_header",
+      "coff_machine": "coff_header",
       "sec_mean_entropy": "sections_aggregate",
       "dos_e_lfanew": "dos_header",
       "imp_func_hash_15": "imports_func_hash",
@@ -90,92 +110,13 @@
     }
   },
   "preprocessing": {
+    "feature_transform": {
+      "source_file": "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../results/iforest_feature_schema.json",
+      "method": "log1p_abs"
+    },
     "scaler": {
-      "mean": [
-        4.028759906712332,
-        168.6624522751455,
-        -0.3629592539275208,
-        0.32193152656944357,
-        0.5324529010452526,
-        0.11079547266388011,
-        0.05595204610732662,
-        0.6118213416802284,
-        1.2013206484321213,
-        6.710681090883479,
-        3.5128782722053127,
-        0.08403322237740846,
-        8.637565096791414,
-        1.5490705388996682,
-        0.12003098455203327,
-        11.067540769218287,
-        0.3810164611629217,
-        8.028721247640384,
-        0.9384114664830694,
-        0.36984415096701506,
-        0.7236339738373913,
-        0.4979658258746949,
-        6.680455491555799,
-        7.149568479947679,
-        -0.4426675846529386,
-        0.845715716342242,
-        5.645743973437064,
-        5875.842523627714,
-        5.093159564524011,
-        0.7643174563434938,
-        4.387097675630057,
-        5.93440639539931,
-        7444.545784565313,
-        0.9024222319584403,
-        0.9506478062214433,
-        0.7043562621268072,
-        0.9308067847530825,
-        0.6574137823120736,
-        1.3196746995603217,
-        0.9323715340802403
-      ],
-      "scale": [
-        0.7564968002728858,
-        58.16236454963271,
-        0.7774598661214444,
-        0.4700216991158348,
-        0.4989456976603236,
-        0.2617058385003546,
-        0.2103704281236476,
-        0.22412241274438022,
-        2.1594009792050097,
-        0.5382268045402121,
-        1.4496892873693978,
-        0.2500021576037717,
-        1.2631634325096854,
-        1.2959167822567002,
-        0.28800228132795325,
-        3.19320150748255,
-        0.48563661052870133,
-        4.745358999959413,
-        0.24040670967376204,
-        0.48276231725612434,
-        0.44720000642407975,
-        0.49999586211850594,
-        4.2076153704093375,
-        5.327726198612212,
-        0.5197924913442274,
-        0.36122104517036446,
-        3.5959265696474123,
-        2110.4913823994675,
-        3.3336852568410626,
-        0.42442464852091855,
-        4.534353013990945,
-        0.6606679784957793,
-        6087.567473902202,
-        0.2967428975149823,
-        0.21660229626622257,
-        0.45633158791558537,
-        0.2537824150935427,
-        0.47457444214602107,
-        0.13417704683658932,
-        0.2511072609804415
-      ],
-      "n_features": 40
+      "source_file": "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../results/iforest_scaler_params.json",
+      "n_features": 50
     }
   },
   "deployment_scaling": {
@@ -187,14 +128,14 @@
       "note": "Keep scaler parameters in artifact for audit/parity checks."
     },
     "audit": {
-      "keep_scaler_params": true,
+      "keep_scaler_params": false,
       "parity_reference": "python_stage3_standardized_training"
     }
   },
   "optimized_parameters": {
     "hyperparameters": {
       "n_estimators": 200,
-      "max_samples": 1.0,
+      "max_samples": 0.7,
       "max_features": 1.0,
       "bootstrap": false,
       "contamination": 0.005,
@@ -203,35 +144,35 @@
     "thresholding": {
       "strategy": "tpr",
       "f_beta": 1.0,
-      "threshold": 0.08441254411962695,
+      "threshold": 0.07776103957695624,
       "fpr_threshold": 0.05,
       "val_fpr_target": 0.04,
       "val_fpr_delta": 0.01,
-      "offset": -0.6010632325659369
+      "offset": -0.5941229032557367
     }
   },
   "evaluation": {
     "validation": {
-      "fpr": 0.037044493658143746,
-      "tpr": 0.9207920792079208,
-      "roc_auc": 0.9877598087974692
+      "fpr": 0.03805113750754983,
+      "tpr": 0.9158415841584159,
+      "roc_auc": 0.9853563220223773
     },
     "test": {
       "fpr": 0.04648342764753436,
-      "tpr": 0.9403910348116357,
-      "roc_auc": 0.9885123356344225
+      "tpr": 0.9339532665712923,
+      "roc_auc": 0.9867733633411707
     }
   },
   "node_resource": {
     "feature_bits": 6,
     "child_bits": 13,
-    "leaf_size_bits": 15,
+    "leaf_size_bits": 14,
     "depth_bits": 4,
     "max_depth": 15,
-    "max_nodes_per_tree": 5739,
-    "max_samples_per_tree": 31954,
-    "max_leaf_samples_per_node": 16776,
-    "num_features": 40,
+    "max_nodes_per_tree": 4871,
+    "max_samples_per_tree": 22368,
+    "max_leaf_samples_per_node": 11472,
+    "num_features": 50,
     "num_samples": 31954
   },
   "notes": [

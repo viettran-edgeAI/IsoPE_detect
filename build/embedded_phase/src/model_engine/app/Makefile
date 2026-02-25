@@ -140,44 +140,6 @@ pe_model_engine_cli/fast:
 	cd /home/viettran/Documents/visual_code/EDR_AGENT/build && $(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build
 .PHONY : pe_model_engine_cli/fast
 
-# Convenience name for target.
-embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/rule:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/rule
-.PHONY : embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/rule
-
-# Convenience name for target.
-pe_model_engine_benchmark_cli: embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/rule
-.PHONY : pe_model_engine_benchmark_cli
-
-# fast build rule for target.
-pe_model_engine_benchmark_cli/fast:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build && $(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build
-.PHONY : pe_model_engine_benchmark_cli/fast
-
-model_engine_benchmark_cli.o: model_engine_benchmark_cli.cpp.o
-.PHONY : model_engine_benchmark_cli.o
-
-# target to build an object file
-model_engine_benchmark_cli.cpp.o:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build && $(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/model_engine_benchmark_cli.cpp.o
-.PHONY : model_engine_benchmark_cli.cpp.o
-
-model_engine_benchmark_cli.i: model_engine_benchmark_cli.cpp.i
-.PHONY : model_engine_benchmark_cli.i
-
-# target to preprocess a source file
-model_engine_benchmark_cli.cpp.i:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build && $(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/model_engine_benchmark_cli.cpp.i
-.PHONY : model_engine_benchmark_cli.cpp.i
-
-model_engine_benchmark_cli.s: model_engine_benchmark_cli.cpp.s
-.PHONY : model_engine_benchmark_cli.s
-
-# target to generate assembly for a file
-model_engine_benchmark_cli.cpp.s:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build && $(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/model_engine_benchmark_cli.cpp.s
-.PHONY : model_engine_benchmark_cli.cpp.s
-
 model_engine_cli.o: model_engine_cli.cpp.o
 .PHONY : model_engine_cli.o
 
@@ -211,11 +173,7 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... test"
-	@echo "... pe_model_engine_benchmark_cli"
 	@echo "... pe_model_engine_cli"
-	@echo "... model_engine_benchmark_cli.o"
-	@echo "... model_engine_benchmark_cli.i"
-	@echo "... model_engine_benchmark_cli.s"
 	@echo "... model_engine_cli.o"
 	@echo "... model_engine_cli.i"
 	@echo "... model_engine_cli.s"

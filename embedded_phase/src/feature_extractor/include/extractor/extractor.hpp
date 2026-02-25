@@ -30,6 +30,10 @@ class PEExtractor : public IExtractor {
   public:
   FeatureVector extract(const std::string& path) override;
   ExtractionReport extract_with_metadata(const std::string& path) const;
+  FeatureVector extract_selected(const std::string& path, const std::vector<std::string>& feature_names) const;
+  ExtractionReport extract_selected_with_metadata(
+      const std::string& path,
+      const std::vector<std::string>& feature_names) const;
 };
 
 size_t compiled_feature_count();

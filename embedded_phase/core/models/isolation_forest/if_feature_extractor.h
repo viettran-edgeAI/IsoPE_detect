@@ -4,6 +4,7 @@
 #include <fstream>
 #include <functional>
 #include <string>
+#include <string_view>
 
 #include "../../base/eml_base.h"
 
@@ -79,6 +80,86 @@ namespace eml {
             return !out.empty();
         }
 
+        static bool parse_string_array_by_key(const std::string& json,
+                                              const std::string& key,
+                                              vector<std::string>& out,
+                                              size_t from = 0) {
+            out.clear();
+
+            const size_t key_pos = json.find(std::string("\"") + key + "\"", from);
+            if (key_pos == std::string::npos) {
+                return false;
+            }
+
+            const size_t open = json.find('[', key_pos);
+            if (open == std::string::npos) {
+                return false;
+            }
+
+            size_t close = open;
+            int depth = 0;
+            for (; close < json.size(); ++close) {
+                if (json[close] == '[') {
+                    ++depth;
+                } else if (json[close] == ']') {
+                    --depth;
+                    if (depth == 0) {
+                        break;
+                    }
+                }
+            }
+
+            if (close == std::string::npos || close <= open) {
+                return false;
+            }
+
+            const std::string_view payload(json.c_str() + open + 1, close - open - 1);
+            size_t pos = 0;
+            while (pos < payload.size()) {
+                const size_t q1 = payload.find('"', pos);
+                if (q1 == std::string_view::npos) {
+                    break;
+                }
+                const size_t q2 = payload.find('"', q1 + 1);
+                if (q2 == std::string_view::npos || q2 <= q1 + 1) {
+                    break;
+                }
+
+                out.push_back(std::string(payload.substr(q1 + 1, q2 - q1 - 1)));
+                pos = q2 + 1;
+            }
+
+            return !out.empty();
+        }
+
+        static bool parse_string_by_key(const std::string& json,
+                                        const std::string& key,
+                                        std::string& out,
+                                        size_t from = 0) {
+            const size_t key_pos = json.find(std::string("\"") + key + "\"", from);
+            if (key_pos == std::string::npos) {
+                return false;
+            }
+
+            const size_t colon = json.find(':', key_pos);
+            if (colon == std::string::npos) {
+                return false;
+            }
+
+            const size_t q1 = json.find('"', colon + 1);
+            if (q1 == std::string::npos) {
+                return false;
+            }
+
+            const size_t q2 = json.find('"', q1 + 1);
+            if (q2 == std::string::npos || q2 <= q1 + 1) {
+                return false;
+            }
+
+            out = json.substr(q1 + 1, q2 - q1 - 1);
+            return true;
+        }
+
     public:
         If_feature_extractor() = default;
 
@@ -114,6 +195,58 @@ namespace eml {
             }
 
             feature_config_path_ = feature_config_path;
+            loaded_ = true;
+            return true;
+        }
+
+        bool init_from_optimized_config(const std::filesystem::path& optimized_config_path,
+                                        uint16_t expected_num_features = 0) {
+            loaded_ = false;
+            feature_names_.clear();
+            feature_config_path_.clear();
+
+            if (optimized_config_path.empty()) {
+                eml_debug(0, "❌ IF feature_extractor init failed: empty optimized config path");
+                return false;
+            }
+
+            std::string json;
+            if (!read_text_file(optimized_config_path, json)) {
+                eml_debug(0, "❌ IF feature_extractor init failed: cannot read optimized config: ", optimized_config_path.string().c_str());
+                return false;
+            }
+
+            const size_t optimized_feature_set_pos = json.find("\"optimized_feature_set\"");
+            if (!parse_string_array_by_key(json, "features", feature_names_, optimized_feature_set_pos)) {
+                std::string source_file;
+                if (parse_string_by_key(json, "source_file", source_file, optimized_feature_set_pos)) {
+                    const std::filesystem::path source_path = std::filesystem::path(source_file);
+                    std::filesystem::path resolved = source_path;
+                    if (resolved.is_relative()) {
+                        resolved = optimized_config_path.parent_path() / resolved;
+                    }
+
+                    std::string list_json;
+                    if (!read_text_file(resolved, list_json) || !parse_feature_list_json(list_json, feature_names_)) {
+                        eml_debug(0, "❌ IF feature_extractor init failed: cannot parse source feature list from optimized config");
+                        return false;
+                    }
+                } else {
+                    eml_debug(0, "❌ IF feature_extractor init failed: missing optimized_feature_set.features");
+                    return false;
+                }
+            }
+
+            if (expected_num_features > 0 && feature_names_.size() != expected_num_features) {
+                eml_debug_2(0,
+                            "❌ IF feature_extractor init failed: feature count mismatch ",
+                            static_cast<uint32_t>(feature_names_.size()),
+                            " vs expected ",
+                            static_cast<uint32_t>(expected_num_features));
+                return false;
+            }
+
+            feature_config_path_ = optimized_config_path;
             loaded_ = true;
             return true;
         }

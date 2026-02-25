@@ -10,6 +10,7 @@
 #include <fstream>
 #include <limits>
 #include <string>
+#include <string_view>
 
 #include "if_base.h"
 
@@ -170,6 +171,58 @@ namespace eml {
             }
 
             return !out.empty();
+        }
+
+        inline bool extract_string_array(const std::string& json,
+                                         const std::string& key,
+                                         vector<std::string>& out,
+                                         size_t from = 0) {
+            size_t key_pos = 0;
+            if (!extract_key_pos(json, key, key_pos, from)) {
+                return false;
+            }
+
+            const size_t open = json.find('[', key_pos);
+            if (open == std::string::npos) {
+                return false;
+            }
+
+            size_t close = open;
+            int depth = 0;
+            for (; close < json.size(); ++close) {
+                if (json[close] == '[') {
+                    ++depth;
+                } else if (json[close] == ']') {
+                    --depth;
+                    if (depth == 0) {
+                        break;
+                    }
+                }
+            }
+
+            if (close == std::string::npos || close <= open) {
+                return false;
+            }
+
+            out.clear();
+            const std::string_view payload(json.c_str() + open + 1, close - open - 1);
+            size_t pos = 0;
+            while (pos < payload.size()) {
+                const size_t q1 = payload.find('"', pos);
+                if (q1 == std::string_view::npos) {
+                    break;
+                }
+
+                const size_t q2 = payload.find('"', q1 + 1);
+                if (q2 == std::string_view::npos || q2 <= q1 + 1) {
+                    break;
+                }
+
+                out.push_back(std::string(payload.substr(q1 + 1, q2 - q1 - 1)));
+                pos = q2 + 1;
+            }
+
+            return true;
         }
 
         inline std::string trim(const std::string& in) {
@@ -336,25 +389,8 @@ namespace eml {
                 threshold_offset = static_cast<float>(value);
             }
 
-            scaler_mean.clear();
-            scaler_scale.clear();
-            if_config_detail::extract_float_array(json, "mean", scaler_mean);
-            if_config_detail::extract_float_array(json, "scale", scaler_scale);
-
-            if (scaler_mean.size() == 0 || scaler_scale.size() == 0 || scaler_mean.size() != scaler_scale.size()) {
-                eml_debug(0, "❌ IF config: invalid scaler arrays in model_engine_config.json");
-                return false;
-            }
-
             if (num_features == 0) {
-                num_features = static_cast<uint16_t>(scaler_mean.size());
-            }
-
-            if (num_features != scaler_mean.size()) {
-                eml_debug_2(0, "❌ IF config: num_features mismatch scaler_mean size ",
-                            static_cast<uint32_t>(num_features),
-                            " vs ",
-                            static_cast<uint32_t>(scaler_mean.size()));
+                eml_debug(0, "❌ IF config: num_features missing in optimized_config");
                 return false;
             }
 
@@ -419,10 +455,6 @@ namespace eml {
         float val_fpr_target = 0.0f;
         float val_fpr_delta = 0.0f;
         float threshold_offset = 0.0f;
-
-        // Scaler
-        vector<float> scaler_mean;
-        vector<float> scaler_scale;
 
         // Node packing layout controls
         uint8_t threshold_bits = 2;
@@ -512,36 +544,12 @@ namespace eml {
             return true;
         }
 
-        bool load_scaler_only(const std::filesystem::path& config_path) {
-            std::string json;
-            if (!if_config_detail::read_text_file(config_path, json)) {
-                return false;
-            }
-
-            scaler_mean.clear();
-            scaler_scale.clear();
-            if (!if_config_detail::extract_float_array(json, "mean", scaler_mean)) {
-                return false;
-            }
-            if (!if_config_detail::extract_float_array(json, "scale", scaler_scale)) {
-                return false;
-            }
-
-            if (scaler_mean.size() == 0 || scaler_mean.size() != scaler_scale.size()) {
-                return false;
-            }
-
-            num_features = static_cast<uint16_t>(scaler_mean.size());
-            loaded_config_path = config_path;
-            return true;
-        }
-
         bool load_from_files(const std::filesystem::path& dp_file,
-                             const std::filesystem::path& model_engine_config_file) {
+                             const std::filesystem::path& model_engine_config_file,
+                             const std::filesystem::path& scaler_params_file = {}) {
             isLoaded = false;
 
             bool dp_ok = false;
-            const std::string ext = dp_file.extension().string();
             dp_ok = load_dp_txt(dp_file);
 
             if (!dp_ok) {
@@ -549,6 +557,21 @@ namespace eml {
             }
 
             if (!load_model_engine_config(model_engine_config_file)) {
+                return false;
+            }
+
+            std::filesystem::path resolved_scaler_path = scaler_params_file;
+            if (resolved_scaler_path.empty()) {
+                const std::string config_name = model_engine_config_file.filename().string();
+                const std::string suffix = "_optimized_config.json";
+                if (config_name.size() > suffix.size() &&
+                    config_name.compare(config_name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                    const std::string model_prefix = config_name.substr(0, config_name.size() - suffix.size());
+                    resolved_scaler_path = model_engine_config_file.parent_path() / (model_prefix + "_scaler_params.json");
+                }
+            }
+            if (resolved_scaler_path.empty() || !std::filesystem::exists(resolved_scaler_path)) {
+                eml_debug(0, "❌ IF config: scaler params file is required but missing");
                 return false;
             }
 
@@ -582,6 +605,12 @@ namespace eml {
                 return false;
             }
 
+            const std::filesystem::path scaler_path = base_ptr->get_scaler_params_path();
+            if (scaler_path.empty() || !std::filesystem::exists(scaler_path)) {
+                eml_debug(0, "❌ IF config: required scaler params file is missing");
+                return false;
+            }
+
             loaded_dp_path = dp_path;
             loaded_config_path = cfg_path;
             isLoaded = true;
@@ -590,8 +619,6 @@ namespace eml {
 
         size_t memory_usage() const {
             size_t usage = sizeof(*this);
-            usage += scaler_mean.size() * sizeof(float);
-            usage += scaler_scale.size() * sizeof(float);
             usage += samples_per_label.size() * sizeof(sample_idx_type);
             usage += threshold_strategy.size();
             return usage;
