@@ -2,6 +2,98 @@
 
 All notable changes to the EDR Agent model and optimization pipeline will be documented in this file. This project follows absolute metric tracking for model effectiveness.
 
+## [1.12.0] - 2026-02-26
+
+### Changed
+
+#### Embedded IF runtime contract cleanup
+- Removed backward-compatibility fallback for old IF dataset naming in `embedded_phase/core/models/isolation_forest/if_base.h`:
+  - runtime now resolves training data from canonical `<model>_ben_train_nml.bin` only (no `<model>_nml.bin` fallback).
+- Removed backward-compatibility fallback for legacy IF model binary format in `embedded_phase/core/models/isolation_forest/if_components.h`:
+  - runtime now accepts canonical modern IF model binary format only.
+- Removed backward-compatibility fallback for legacy `eml_data` dataset headers in `embedded_phase/core/ml/eml_data.h`:
+  - dataset parser now requires modern `EMLD` header/checksum format.
+
+#### Threshold persistence and load behavior
+- `IsoForest::build_model()` now persists calibrated threshold fields back into `<model>_optimized_config.json` via `If_config::persist_threshold_to_config()`.
+- `IsoForest::load()` no longer recalibrates threshold from validation datasets on every load.
+- Initialization no longer resets `If_config::decision_threshold` and `If_config::threshold_offset` after config load.
+
+#### Model artifact persistence
+- `IsoForest::build_model()` now automatically saves trained model binary to `dir_path/<model>_iforest.bin` and refreshes resource status.
+- Verified generated artifact path:
+  - `embedded_phase/core/models/isolation_forest/resources/iforest_iforest.bin`
+
+### Validation workflow rerun (Embedded design §4)
+- Regenerated Stage-3 artifacts:
+  - `development_phase/src/model_optimization.py --config model_config.json`
+- Rebuilt quantized resources in canonical resource directory:
+  - `tools/resource_prepairer/prepare_datasets.py` with benign-train/benign-val/malware-val optimized CSVs.
+- Synced Stage-3 split artifacts into canonical embedded resources.
+- Rebuilt and reran raw-PE C++ evaluator:
+  - `/tmp/if_quantized_cpp_raw_pe_eval --repo-root . --model-name iforest`
+
+### Evaluation summary
+
+- Stage-3 validation (from pipeline run):
+  - FPR: `0.037000`
+  - TPR: `0.920800`
+  - ROC-AUC: `0.987800`
+- Stage-3 holdout test (from pipeline run):
+  - FPR: `0.046500`
+  - TPR: `0.940400`
+  - ROC-AUC: `0.988500`
+- Raw-PE quantized C++ evaluation (from `development_phase/reports/if_quantized_cpp_raw_pe_eval.json`):
+  - Threshold: `-0.546877`
+  - FPR: `0.048058`
+  - TPR: `0.903714`
+  - ROC-AUC: `0.983336`
+
+### Deployment gate check
+- FPR target (`< 0.05`): **PASS** on raw-PE eval (`0.048058`).
+- TPR target (`> 0.95`): **NOT MET** on raw-PE eval (`0.903714`).
+
+## [1.11.0] - 2026-02-25
+
+### Changed
+
+#### Embedded IF tree/core refactor
+- Refactored `If_tree` in `embedded_phase/core/models/isolation_forest/if_components.h` to store packed nodes in `packed_vector<64, uint64_t>` with runtime `bits_per_value` set from `If_node_resource::bits_per_node()`.
+- Updated IF node-resource ownership model so `If_tree_container` owns `If_node_resource` and serves it to trees via pointers.
+- Removed tree construction/training implementation from `If_tree`; tree building now lives in `IsoForest` (`embedded_phase/core/models/isolation_forest/if_model.h`).
+- Added explicit tree-build handoff from `IsoForest` to `If_tree_container` via prebuilt tree collection loading.
+- **Model binary format upgraded**: new versioned, endian-safe header with checksum; legacy `IFR1` files still load.
+
+#### eml_data persistence overhaul
+- Dataset files now use a portable `["EMLD" magic][version][header][data][checksum]` layout with little‑endian encoding, RAII-safe I/O, and automatic header/Checksum management. Legacy two‑field headers are still recognised but future writes always emit modern format.
+
+#### Validation workflow rerun (Embedded design §4)
+- Regenerated Stage-3 artifacts via:
+  - `development_phase/src/model_optimization.py --config model_config.json`
+- Rebuilt quantized resource contract via:
+  - `tools/resource_prepairer/prepare_datasets.py` with benign-train/benign-val/malware-val optimized CSVs, output to canonical resource directory.
+- Re-ran raw-PE end-to-end quantized evaluation via:
+  - `/tmp/if_quantized_cpp_raw_pe_eval --repo-root ... --model-name iforest`
+
+### Evaluation summary
+
+- Stage-3 validation (from `development_phase/results/iforest_optimized_config.json`):
+  - FPR: `0.038051`
+  - TPR: `0.915842`
+  - ROC-AUC: `0.985356`
+- Stage-3 holdout test (same config):
+  - FPR: `0.046483`
+  - TPR: `0.933953`
+  - ROC-AUC: `0.986773`
+- Raw-PE quantized C++ evaluation (from `development_phase/reports/if_quantized_cpp_raw_pe_eval.json`):
+  - FPR: `0.047056`
+  - TPR: `0.881240`
+  - ROC-AUC: `0.980343`
+
+### Deployment gate check
+- FPR target (`< 0.05`): **PASS** on raw-PE eval (`0.047056`).
+- TPR target (`> 0.95`): **NOT MET** on raw-PE eval (`0.881240`).
+
 ## [1.10.0] - 2026-02-25
 
 ### Changed

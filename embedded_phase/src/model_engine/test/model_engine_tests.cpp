@@ -1,5 +1,7 @@
 #include <cassert>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <vector>
 
@@ -9,7 +11,7 @@ namespace {
 
 void test_node_resource_and_node_layout() {
     eml::If_node_resource resource;
-    const bool ok = resource.set_bits(3, 6, 16, 15, 5);
+    const bool ok = resource.set_node_layouts(3, 6, 16, 15, 5);
     assert(ok);
     assert(resource.bits_per_node() <= 64);
 
@@ -60,7 +62,30 @@ void test_quantized_iforest_scoring_order() {
     const bool init_ok = forest.init_from_config(cfg);
     assert(init_ok);
 
-    const bool trained = forest.train_from_quantized_matrix(train_matrix.data(), 8u, 4u, &cfg);
+    const std::filesystem::path tmp_nml = std::filesystem::temp_directory_path() / "if_test_model_engine.nml";
+    {
+        std::ofstream fout(tmp_nml, std::ios::binary | std::ios::trunc);
+        assert(fout.is_open());
+
+        const uint32_t num_samples = 8u;
+        const uint16_t num_features = 4u;
+        fout.write(reinterpret_cast<const char*>(&num_samples), sizeof(num_samples));
+        fout.write(reinterpret_cast<const char*>(&num_features), sizeof(num_features));
+
+        for (size_t row = 0; row < num_samples; ++row) {
+            const uint8_t label = 0u;
+            uint8_t packed_features = 0u;
+            for (uint16_t col = 0; col < num_features; ++col) {
+                const uint8_t value = train_matrix[row * num_features + col] & 0x03u;
+                packed_features |= static_cast<uint8_t>(value << (col * cfg.quantization_bits));
+            }
+            fout.write(reinterpret_cast<const char*>(&label), sizeof(label));
+            fout.write(reinterpret_cast<const char*>(&packed_features), sizeof(packed_features));
+        }
+    }
+
+    const bool trained = forest.build_model(false, tmp_nml);
+    std::filesystem::remove(tmp_nml);
     assert(trained);
     assert(forest.tree_container().trained());
     assert(forest.tree_container().num_trees() == 32u);

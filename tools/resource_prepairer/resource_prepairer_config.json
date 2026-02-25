@@ -1,0 +1,49 @@
+{
+    "benign_train": {
+        "value": "development_phase/data/optimized/iforest_ben_train.csv",
+        "description": "Path to benign training CSV used to fit quantizer and produce <model_name>_qtz.bin + <model_name>_dp.txt."
+    },
+    "benign_val": {
+        "value": "development_phase/data/optimized/iforest_ben_val.csv",
+        "description": "Path to benign validation CSV quantized with the training quantizer (transform-only)."
+    },
+    "malware_val": {
+        "value": "development_phase/data/optimized/iforest_mal_val.csv",
+        "description": "Path to malware validation CSV quantized with the training quantizer (transform-only)."
+    },
+    "output_dir": {
+        "value": "embedded_phase/core/models/isolation_forest/resources",
+        "description": "Directory where all resulting files are written."
+    },
+    "model_name": {
+        "value": "iforest",
+        "description": "Base model name for generated artifacts."
+    },
+    "quantization_bits": {
+        "value": 3,
+        "description": "Bits per feature for quantization (1-8)."
+    },
+    "quantization_tool": {
+        "value": "tools/data_quantization/processing_data",
+        "description": "Path to the quantization executable to invoke."
+    },
+    "header": {
+        "value": "auto",
+        "options": ["auto", "yes", "no"],
+        "description": "CSV header handling mode passed to quantization tool."
+    },
+    "problem_type": {
+        "value": "isolation",
+        "options": ["isolation", "classification", "regression"],
+        "description": "Problem type passed to quantization tool."
+    },
+    "remove_outliers": {
+        "value": false,
+        "options": [true, false],
+        "description": "Whether to enable outlier clipping in quantization preprocessing."
+    },
+    "dev_optimized_config_dir": {
+        "value": "",
+        "description": "Directory containing optimized JSON config files to copy into output_dir for model components: feature_list, scaler, feature_transform, model_config"
+    }
+}

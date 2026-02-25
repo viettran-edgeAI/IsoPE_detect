@@ -34,6 +34,10 @@ DIRECT_FEATURES = {
     "opt_sizeof_headers": 25,
     "num_suspicious_imports": 26,
     "has_pdb": 27,
+    "opt_sizeof_image": 28,
+    "opt_major_linker": 29,
+    "overlay_ratio": 30,
+    "num_write_sections": 31,
 }
 
 COFF_CHAR_FLAGS = {

@@ -74,6 +74,11 @@ namespace eml {
         R2 = 10,
         // Anomaly detection metrics (isolation forest)
         ANOMALY_SCORE = 11,
+        ROC_AUC = 12,
+        PRC_AUC = 13,
+        AVERAGE_PRECISION = 14,
+        FPR = 15,
+        TPR = 16,
         // Unknown
         UNKNOWN = 255
     };
@@ -92,6 +97,11 @@ namespace eml {
             case eval_metric::MAPE:      return "mape";
             case eval_metric::R2:            return "r2";
             case eval_metric::ANOMALY_SCORE:  return "anomaly_score";
+            case eval_metric::ROC_AUC:       return "roc_auc";
+            case eval_metric::PRC_AUC:       return "prc_auc";
+            case eval_metric::AVERAGE_PRECISION: return "average_precision";
+            case eval_metric::FPR:           return "fpr";
+            case eval_metric::TPR:           return "tpr";
             default: return "unknown";
         }
     }
@@ -137,6 +147,11 @@ namespace eml {
         if (strcmp(lower, "mape") == 0)      return eval_metric::MAPE;
         if (strcmp(lower, "r2") == 0)                                        return eval_metric::R2;
         if (strcmp(lower, "anomaly_score") == 0 || strcmp(lower, "anomaly") == 0) return eval_metric::ANOMALY_SCORE;
+        if (strcmp(lower, "roc_auc") == 0 || strcmp(lower, "auc") == 0) return eval_metric::ROC_AUC;
+        if (strcmp(lower, "prc_auc") == 0 || strcmp(lower, "auprc") == 0) return eval_metric::PRC_AUC;
+        if (strcmp(lower, "average_precision") == 0 || strcmp(lower, "ap") == 0) return eval_metric::AVERAGE_PRECISION;
+        if (strcmp(lower, "fpr") == 0) return eval_metric::FPR;
+        if (strcmp(lower, "tpr") == 0) return eval_metric::TPR;
         return eval_metric::UNKNOWN;
     }
 
@@ -146,7 +161,10 @@ namespace eml {
                metric == eval_metric::RECALL ||
                metric == eval_metric::F1_SCORE ||
                metric == eval_metric::LOGLOSS ||
-               metric == eval_metric::MLOGLOSS;
+               metric == eval_metric::MLOGLOSS ||
+               metric == eval_metric::ROC_AUC ||
+               metric == eval_metric::PRC_AUC ||
+               metric == eval_metric::AVERAGE_PRECISION;
     }
 
     inline bool isRegressionMetric(eval_metric metric) {
@@ -163,27 +181,28 @@ namespace eml {
                metric == eval_metric::MAE ||
                metric == eval_metric::MSE ||
                metric == eval_metric::RMSE ||
-               metric == eval_metric::MAPE;
+               metric == eval_metric::MAPE ||
+               metric == eval_metric::FPR;
     }
 
     inline eval_metric getDefaultMetric(problem_type type) {
         switch (type) {
             case problem_type::CLASSIFICATION: return eval_metric::ACCURACY;
             case problem_type::REGRESSION:     return eval_metric::RMSE;
-            case problem_type::ISOLATION:      return eval_metric::ANOMALY_SCORE;
+            case problem_type::ISOLATION:      return eval_metric::ROC_AUC;
             default: return eval_metric::ACCURACY;
         }
     }
 
     inline const char* getAvailableMetrics(problem_type type) {
         if (type == problem_type::CLASSIFICATION) {
-            return "accuracy, precision, recall, f1_score, logloss, mlogloss";
+            return "accuracy, precision, recall, f1_score, logloss, mlogloss, roc_auc, prc_auc, ap";
         }
         if (type == problem_type::REGRESSION) {
             return "mae, mse, rmse, mape, r2";
         }
         if (type == problem_type::ISOLATION) {
-            return "anomaly_score, accuracy, precision, recall, f1_score";
+            return "anomaly_score, accuracy, precision, recall, f1_score, roc_auc, prc_auc, ap, fpr, tpr";
         }
         return "accuracy";
     }
@@ -766,7 +785,18 @@ namespace eml {
         real_t max_score_   = std::numeric_limits<real_t>::lowest();
         count_type score_count_ = 0;
 
-        eval_metric metric_ = eval_metric::ANOMALY_SCORE;
+        // Score tracking for curve-based metrics (AUC, AP, etc.)
+        struct sample_score {
+            real_t score;
+            bool is_anomaly;
+            
+            bool operator<(const sample_score& other) const {
+                return score < other.score;
+            }
+        };
+        vector<sample_score> scores_cache_;
+
+        eval_metric metric_ = eval_metric::ROC_AUC;
 
         inline real_t safe_div(real_t num, real_t den) const {
             return den == 0.0f ? 0.0f : (num / den);
@@ -775,7 +805,7 @@ namespace eml {
     public:
         eml_metrics_calc_t() = default;
 
-        void init(eval_metric m = eval_metric::ANOMALY_SCORE) {
+        void init(eval_metric m = eval_metric::ROC_AUC) {
             metric_ = m;
             reset();
         }
@@ -789,9 +819,11 @@ namespace eml {
             min_score_   = std::numeric_limits<real_t>::max();
             max_score_   = std::numeric_limits<real_t>::lowest();
             score_count_ = 0;
+            scores_cache_.clear();
         }
 
         // Update with binary ground truth (actual_is_anomaly=true means truly anomalous sample)
+        // Note: For Isolation Forest binary prediction, thresholding is needed beforehand.
         void update(bool actual_is_anomaly, bool predicted_is_anomaly) {
             if (actual_is_anomaly  && predicted_is_anomaly)  tp_++;
             else if (!actual_is_anomaly && predicted_is_anomaly)  fp_++;
@@ -799,23 +831,32 @@ namespace eml {
             else                                                   fn_++;
         }
 
-        // Update with anomaly score alone (no ground truth required)
-        void update_score(real_t anomaly_score) {
+        // Update with anomaly score + ground truth
+        // score: should be converted such that HIGHER score means MORE anomalous
+        // (For isolation forest, often -anomaly_score is used)
+        void update_score(real_t anomaly_score, bool actual_is_anomaly) {
             sum_scores_ += anomaly_score;
             if (anomaly_score < min_score_) min_score_ = anomaly_score;
             if (anomaly_score > max_score_) max_score_ = anomaly_score;
             score_count_++;
+            scores_cache_.push_back({anomaly_score, actual_is_anomaly});
         }
 
-        // Combined update: ground truth + anomaly score
+        // Combined update: ground truth binary prediction + anomaly score
         void update(bool actual_is_anomaly, bool predicted_is_anomaly, real_t anomaly_score) {
             update(actual_is_anomaly, predicted_is_anomaly);
-            update_score(anomaly_score);
+            update_score(anomaly_score, actual_is_anomaly);
         }
 
         void update_batch(const bool* actual, const bool* predicted, size_t count) {
             if (!actual || !predicted || count == 0) return;
             for (size_t i = 0; i < count; ++i) update(actual[i], predicted[i]);
+        }
+
+        void update_batch_scores(const bool* actual, const real_t* scores, size_t count) {
+            if (!actual || !scores || count == 0) return;
+            scores_cache_.reserve(scores_cache_.size() + count);
+            for (size_t i = 0; i < count; ++i) update_score(scores[i], actual[i]);
         }
 
         bool merge(const eml_metrics_calc_t& other) {
@@ -827,6 +868,11 @@ namespace eml {
                 if (other.max_score_ > max_score_) max_score_ = other.max_score_;
             }
             score_count_ += other.score_count_;
+            
+            // Merge cache
+            scores_cache_.reserve(scores_cache_.size() + other.scores_cache_.size());
+            for (const auto& s : other.scores_cache_) scores_cache_.push_back(s);
+            
             return true;
         }
 
@@ -838,7 +884,7 @@ namespace eml {
         count_type true_negatives()  const { return tn_; }
         count_type false_negatives() const { return fn_; }
 
-        // ===== Detection metrics =====
+        // ===== Detection metrics (Point-based) =====
 
         // Accuracy: (TP + TN) / total
         real_t accuracy() const {
@@ -850,12 +896,14 @@ namespace eml {
             return safe_div(static_cast<real_t>(tp_), static_cast<real_t>(tp_ + fn_));
         }
         real_t recall()      const { return true_positive_rate(); }
+        real_t tpr()         const { return true_positive_rate(); }
         real_t sensitivity() const { return true_positive_rate(); }
 
         // False Positive Rate = FP / (FP + TN)
         real_t false_positive_rate() const {
             return safe_div(static_cast<real_t>(fp_), static_cast<real_t>(fp_ + tn_));
         }
+        real_t fpr() const { return false_positive_rate(); }
 
         // Specificity = TN / (TN + FP)
         real_t specificity() const {
@@ -874,6 +922,117 @@ namespace eml {
             return safe_div(2.0f * p * r, p + r);
         }
 
+        // ===== Curve-based metrics (AUC, AP) =====
+        
+        real_t roc_auc() const {
+            if (scores_cache_.empty()) return 0.5f;
+            
+            // Collect labels and scores
+            vector<sample_score> sorted = scores_cache_;
+            std::sort(sorted.begin(), sorted.end());
+            
+            size_t n = sorted.size();
+            size_t n_pos = 0;
+            for (const auto& s : sorted) if (s.is_anomaly) n_pos++;
+            
+            size_t n_neg = n - n_pos;
+            if (n_pos == 0 || n_neg == 0) return 0.5f;
+
+            double rank_sum_pos = 0.0;
+            size_t i = 0;
+            while (i < n) {
+                size_t j = i + 1;
+                while (j < n && sorted[j].score == sorted[i].score) j++;
+                
+                // Average rank for ties: (rank_start + rank_end) / 2
+                // ranks are 1-based, so i+1 to j
+                double avg_rank = 0.5 * (static_cast<double>(i + 1) + static_cast<double>(j));
+                for (size_t k = i; k < j; k++) {
+                    if (sorted[k].is_anomaly) rank_sum_pos += avg_rank;
+                }
+                i = j;
+            }
+
+            double u = rank_sum_pos - (static_cast<double>(n_pos) * (n_pos + 1) * 0.5);
+            return static_cast<real_t>(u / (static_cast<double>(n_pos) * n_neg));
+        }
+
+        real_t average_precision() const {
+            if (scores_cache_.empty()) return 0.0f;
+            
+            vector<sample_score> sorted = scores_cache_;
+            // Sort by score descending for precision-recall integration
+            std::sort(sorted.begin(), sorted.end(), [](const sample_score& a, const sample_score& b) {
+                return a.score > b.score;
+            });
+            
+            size_t n_pos = 0;
+            for (const auto& s : sorted) if (s.is_anomaly) n_pos++;
+            if (n_pos == 0) return 0.0f;
+
+            double ap = 0.0;
+            size_t current_tp = 0;
+            size_t current_fp = 0;
+            
+            for (size_t i = 0; i < sorted.size(); i++) {
+                if (sorted[i].is_anomaly) {
+                    current_tp++;
+                    double precision = static_cast<double>(current_tp) / (current_tp + current_fp);
+                    ap += precision;
+                } else {
+                    current_fp++;
+                }
+            }
+            
+            return static_cast<real_t>(ap / n_pos);
+        }
+
+        real_t prc_auc() const {
+            return average_precision();
+        }
+
+        // Returns vector of {Recall, Precision} pairs
+        vector<pair<real_t, real_t>> precision_recall_curve() const {
+            if (scores_cache_.empty()) return {};
+            
+            vector<sample_score> sorted = scores_cache_;
+            std::sort(sorted.begin(), sorted.end(), [](const sample_score& a, const sample_score& b) {
+                return a.score > b.score;
+            });
+            
+            size_t n_pos = 0;
+            for (const auto& s : sorted) if (s.is_anomaly) n_pos++;
+            if (n_pos == 0) {
+                vector<pair<real_t, real_t>> curve;
+                curve.push_back({0.0f, 0.0f});
+                curve.push_back({1.0f, 0.0f});
+                return curve;
+            }
+
+            vector<pair<real_t, real_t>> curve;
+            curve.reserve(sorted.size() + 1);
+            
+            size_t current_tp = 0;
+            size_t current_fp = 0;
+            
+            // Add point at recall=0
+            curve.push_back({0.0f, 1.0f});
+            
+            for (size_t i = 0; i < sorted.size(); i++) {
+                if (sorted[i].is_anomaly) current_tp++;
+                else current_fp++;
+                
+                // Only add point if score changes or it's the last sample
+                if (i + 1 == sorted.size() || sorted[i].score != sorted[i+1].score) {
+                    real_t recall = static_cast<real_t>(current_tp) / n_pos;
+                    real_t precision = static_cast<real_t>(current_tp) / (current_tp + current_fp);
+                    curve.push_back({recall, precision});
+                }
+            }
+            
+            return curve;
+        }
+
         // ===== Anomaly score stats =====
         real_t mean_score()      const { return safe_div(sum_scores_, static_cast<real_t>(score_count_)); }
         real_t min_anomaly_score() const { return score_count_ > 0 ? min_score_ : 0.0f; }
@@ -882,18 +1041,25 @@ namespace eml {
         // ===== Unified metric calculation =====
         real_t calculate_metric(eval_metric m) const {
             switch (m) {
-                case eval_metric::ANOMALY_SCORE: return mean_score();
-                case eval_metric::ACCURACY:      return accuracy();
-                case eval_metric::PRECISION:     return precision();
-                case eval_metric::RECALL:        return recall();
-                case eval_metric::F1_SCORE:      return f1();
+                case eval_metric::ANOMALY_SCORE:   return mean_score();
+                case eval_metric::ACCURACY:        return accuracy();
+                case eval_metric::PRECISION:       return precision();
+                case eval_metric::RECALL:          return recall();
+                case eval_metric::F1_SCORE:        return f1();
+                case eval_metric::ROC_AUC:         return roc_auc();
+                case eval_metric::PRC_AUC:         return prc_auc();
+                case eval_metric::AVERAGE_PRECISION: return average_precision();
+                case eval_metric::FPR:             return fpr();
+                case eval_metric::TPR:             return tpr();
                 default: return 0.0f;
             }
         }
 
         real_t calculate_score() const { return calculate_metric(metric_); }
 
-        size_t memory_usage() const { return sizeof(*this); }
+        size_t memory_usage() const { 
+            return sizeof(*this) + scores_cache_.capacity() * sizeof(sample_score); 
+        }
     };
 
     using eml_classification_metrics = eml_metrics_calc_t<problem_type::CLASSIFICATION>;

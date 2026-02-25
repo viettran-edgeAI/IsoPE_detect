@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -86,6 +87,56 @@ namespace eml {
             }
 
             out = v;
+            return true;
+        }
+
+        inline std::string format_number(double value) {
+            char buffer[64] = {0};
+            const int written = std::snprintf(buffer, sizeof(buffer), "%.17g", value);
+            if (written <= 0) {
+                return "0";
+            }
+            return std::string(buffer, static_cast<size_t>(written));
+        }
+
+        inline bool replace_number_value(std::string& json,
+                                         const std::string& key,
+                                         double value,
+                                         size_t from = 0) {
+            size_t key_pos = 0;
+            if (!extract_key_pos(json, key, key_pos, from)) {
+                return false;
+            }
+
+            const size_t colon = json.find(':', key_pos);
+            if (colon == std::string::npos) {
+                return false;
+            }
+
+            size_t value_begin = colon + 1;
+            while (value_begin < json.size() &&
+                   (json[value_begin] == ' ' || json[value_begin] == '\t' ||
+                    json[value_begin] == '\r' || json[value_begin] == '\n')) {
+                ++value_begin;
+            }
+            if (value_begin >= json.size()) {
+                return false;
+            }
+
+            const auto is_number_char = [](char c) {
+                return (c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E';
+            };
+
+            if (!is_number_char(json[value_begin])) {
+                return false;
+            }
+
+            size_t value_end = value_begin;
+            while (value_end < json.size() && is_number_char(json[value_end])) {
+                ++value_end;
+            }
+
+            json.replace(value_begin, value_end - value_begin, format_number(value));
             return true;
         }
 
@@ -614,6 +665,46 @@ namespace eml {
             loaded_dp_path = dp_path;
             loaded_config_path = cfg_path;
             isLoaded = true;
+            return true;
+        }
+
+        bool persist_threshold_to_config() const {
+            std::filesystem::path config_path = loaded_config_path;
+            if (base_ptr && base_ptr->ready_to_use()) {
+                config_path = base_ptr->get_config_path();
+            }
+
+            if (config_path.empty()) {
+                eml_debug(0, "❌ IF config: cannot persist threshold, config path is empty");
+                return false;
+            }
+
+            std::string json;
+            if (!if_config_detail::read_text_file(config_path, json)) {
+                eml_debug(0, "❌ IF config: cannot read optimized config for threshold persist: ", config_path.string().c_str());
+                return false;
+            }
+
+            if (!if_config_detail::replace_number_value(json, "threshold", static_cast<double>(decision_threshold)) ||
+                !if_config_detail::replace_number_value(json, "fpr_threshold", static_cast<double>(fpr_threshold)) ||
+                !if_config_detail::replace_number_value(json, "offset", static_cast<double>(threshold_offset))) {
+                eml_debug(0, "❌ IF config: missing threshold fields in optimized config: ", config_path.string().c_str());
+                return false;
+            }
+
+            std::ofstream fout(config_path, std::ios::out | std::ios::trunc);
+            if (!fout.is_open()) {
+                eml_debug(0, "❌ IF config: cannot open optimized config for writing: ", config_path.string().c_str());
+                return false;
+            }
+
+            fout << json;
+            fout.flush();
+            if (!fout.good()) {
+                eml_debug(0, "❌ IF config: failed to write updated threshold fields: ", config_path.string().c_str());
+                return false;
+            }
+
             return true;
         }
 

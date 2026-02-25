@@ -53,15 +53,29 @@ enum DirectFeatureId : uint16_t {
   D_OPT_SIZEOF_HEADERS = 25,
   D_NUM_SUSPICIOUS_IMPORTS = 26,
   D_HAS_PDB = 27,
+  D_OPT_SIZEOF_IMAGE = 28,
+  D_OPT_MAJOR_LINKER = 29,
+  D_OVERLAY_RATIO = 30,
+  D_NUM_WRITE_SECTIONS = 31,
   DIRECT_FEATURE_COUNT
 };
 
 static constexpr size_t kDataDirectorySlots = 16;
 static constexpr size_t kDirectFeatureCount = static_cast<size_t>(DIRECT_FEATURE_COUNT);
-static constexpr size_t kCompiledFeatureCount = 40;
+static constexpr size_t kCompiledFeatureCount = 50;
 static constexpr const char* kCompiledFeatureSource = "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/results/iforest_optimized_features.json";
 
 static constexpr std::array<const char*, kCompiledFeatureCount> kCompiledFeatureNames = {
+  "dd_IMPORT_TABLE_rva",
+  "imp_dll_hash_53",
+  "has_resources",
+  "opt_sizeof_image",
+  "opt_major_linker",
+  "overlay_ratio",
+  "num_write_sections",
+  "imp_func_hash_149",
+  "opt_sizeof_init_data",
+  "coff_machine",
   "sec_mean_entropy",
   "dos_e_lfanew",
   "imp_func_hash_15",
@@ -105,6 +119,16 @@ static constexpr std::array<const char*, kCompiledFeatureCount> kCompiledFeature
 };
 
 static constexpr std::array<CompiledFeatureSpec, kCompiledFeatureCount> kCompiledFeatureSpecs = {
+  CompiledFeatureSpec{CompiledFeatureKind::DataDirectoryRva, 1, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::ImpDllHash, 53, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::Direct, 13, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::Direct, 28, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::Direct, 29, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::Direct, 30, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::Direct, 31, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::ImpFuncHash, 149, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::Direct, 5, 0u},
+  CompiledFeatureSpec{CompiledFeatureKind::Direct, 0, 0u},
   CompiledFeatureSpec{CompiledFeatureKind::Direct, 11, 0u},
   CompiledFeatureSpec{CompiledFeatureKind::Direct, 24, 0u},
   CompiledFeatureSpec{CompiledFeatureKind::ImpFuncHash, 15, 0u},

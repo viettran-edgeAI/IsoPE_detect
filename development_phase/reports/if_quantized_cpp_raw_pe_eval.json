@@ -1,0 +1,18 @@
+{
+  "repo_root": "/home/viettran/Documents/visual_code/EDR_AGENT/.",
+  "model_name": "iforest",
+  "threshold": -0.541805,
+  "raw_pe_eval": {
+    "benign_total": 5000,
+    "benign_success": 4994,
+    "benign_failed": 6,
+    "benign_flagged": 225,
+    "malware_total": 4227,
+    "malware_success": 4227,
+    "malware_failed": 0,
+    "malware_flagged": 3964,
+    "fpr": 0.045054,
+    "tpr": 0.937781,
+    "roc_auc": 0.987847
+  }
+}

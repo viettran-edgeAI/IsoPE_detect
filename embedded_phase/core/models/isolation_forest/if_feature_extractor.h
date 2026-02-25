@@ -163,6 +163,10 @@ namespace eml {
     public:
         If_feature_extractor() = default;
 
+        /// Helper returning a default PE extraction callback; defined in
+        /// `if_feature_extractor_default.cpp` so that linking is optional.
+        static extract_callback_t default_pe_path_callback();
+
         bool init(const std::filesystem::path& feature_config_path,
                   uint16_t expected_num_features = 0) {
             loaded_ = false;
@@ -257,6 +261,33 @@ namespace eml {
 
         void set_extract_content_callback(extract_content_callback_t callback) {
             extractor_content_callback_ = std::move(callback);
+        }
+
+        /// Initialize using a runtime-provided feature list (no file I/O).
+        bool init_from_feature_list(const vector<std::string>& features,
+                                    uint16_t expected_num_features = 0) {
+            loaded_ = false;
+            feature_names_.clear();
+            feature_config_path_.clear();
+
+            if (features.empty()) {
+                eml_debug(0, "❌ IF feature_extractor init failed: empty feature list");
+                return false;
+            }
+
+            feature_names_ = features;
+            if (expected_num_features > 0 && feature_names_.size() != expected_num_features) {
+                eml_debug_2(0,
+                            "❌ IF feature_extractor init failed: feature count mismatch ",
+                            static_cast<uint32_t>(feature_names_.size()),
+                            " vs expected ",
+                            static_cast<uint32_t>(expected_num_features));
+                feature_names_.clear();
+                return false;
+            }
+
+            loaded_ = true;
+            return true;
         }
 
         bool extract_from_pe(const std::filesystem::path& pe_path, vector<float>& out_features) const {

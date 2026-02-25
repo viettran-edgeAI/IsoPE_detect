@@ -54,17 +54,16 @@ namespace model_engine {
     bool IsolationForestModelEngine::train_on_quantized_matrix(const std::vector<uint8_t>& matrix,
                                                                 size_t num_samples,
                                                                 std::string* error) {
+        (void)matrix;
+        (void)num_samples;
+
         if (!config_.isLoaded) {
             set_error(error, "Config must be loaded before training");
             return false;
         }
-        const size_t expected = num_samples * static_cast<size_t>(num_features_);
-        if (matrix.size() != expected) {
-            set_error(error, "Training matrix shape mismatch");
-            return false;
-        }
-        if (!model_.train_from_quantized_matrix(matrix.data(), num_samples, num_features_, &config_)) {
-            set_error(error, "Isolation forest training failed");
+
+        if (!model_.build_model(true)) {
+            set_error(error, "Isolation forest build failed");
             return false;
         }
         return true;
@@ -332,9 +331,9 @@ namespace model_engine {
         } else if (cfg.threshold_strategy == "model") {
             threshold.threshold = 0.0f;
             const If_binary_metrics metrics = if_compute_metrics(val_b_scores, val_m_scores, threshold.threshold);
-            threshold.fpr = metrics.fpr;
-            threshold.tpr = metrics.tpr;
-            threshold.metric = metrics.tpr;
+            threshold.fpr = metrics.fpr();
+            threshold.tpr = metrics.tpr();
+            threshold.metric = metrics.tpr();
             threshold.has_metric = true;
         } else {
             threshold = if_select_threshold_with_malware(

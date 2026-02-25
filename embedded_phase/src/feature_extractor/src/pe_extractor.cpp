@@ -84,6 +84,10 @@ const std::unordered_map<std::string, uint16_t> kDirectFeatureNameToIndex = {
   {"opt_sizeof_headers", embedded_feature_config::D_OPT_SIZEOF_HEADERS},
   {"num_suspicious_imports", embedded_feature_config::D_NUM_SUSPICIOUS_IMPORTS},
   {"has_pdb", embedded_feature_config::D_HAS_PDB},
+  {"opt_sizeof_image", embedded_feature_config::D_OPT_SIZEOF_IMAGE},
+  {"opt_major_linker", embedded_feature_config::D_OPT_MAJOR_LINKER},
+  {"overlay_ratio", embedded_feature_config::D_OVERLAY_RATIO},
+  {"num_write_sections", embedded_feature_config::D_NUM_WRITE_SECTIONS},
   {"num_sections", embedded_feature_config::D_COFF_NUM_SECTIONS},
 };
 
@@ -421,6 +425,8 @@ ExtractResult extract_row(const std::string& filepath) {
       result.direct[embedded_feature_config::D_OPT_SECTION_ALIGNMENT] = static_cast<double>(opt.section_alignment());
       result.direct[embedded_feature_config::D_OPT_IMAGEBASE] = static_cast<double>(opt.imagebase());
       result.direct[embedded_feature_config::D_OPT_SUBSYSTEM] = static_cast<double>(static_cast<uint32_t>(opt.subsystem()));
+      result.direct[embedded_feature_config::D_OPT_SIZEOF_IMAGE] = static_cast<double>(opt.sizeof_image());
+      result.direct[embedded_feature_config::D_OPT_MAJOR_LINKER] = static_cast<double>(opt.major_linker_version());
 
       result.coff_characteristics = header.characteristics();
       result.opt_dll_characteristics = opt.dll_characteristics();
@@ -432,6 +438,7 @@ ExtractResult extract_row(const std::string& filepath) {
       }
 
       size_t section_count = 0;
+      size_t write_section_count = 0;
       double entropy_sum = 0.0;
       double entropy_max = 0.0;
 
@@ -444,7 +451,11 @@ ExtractResult extract_row(const std::string& filepath) {
         const double entropy = sec.entropy();
         result.sec_entropy[section_count] = entropy;
         result.sec_vsize[section_count] = static_cast<double>(sec.virtual_size());
-        result.sec_is_write[section_count] = sec.has_characteristic(LIEF::PE::Section::CHARACTERISTICS::MEM_WRITE) ? 1.0 : 0.0;
+        const bool is_write_section = sec.has_characteristic(LIEF::PE::Section::CHARACTERISTICS::MEM_WRITE);
+        result.sec_is_write[section_count] = is_write_section ? 1.0 : 0.0;
+        if (is_write_section) {
+          write_section_count += 1;
+        }
 
         bool hash_budget_exhausted = false;
         hash_update(result.sec_name_hash, sec.name(), false, hash_updates, hash_budget_exhausted);
@@ -463,6 +474,7 @@ ExtractResult extract_row(const std::string& filepath) {
         result.direct[embedded_feature_config::D_SEC_MEAN_ENTROPY] = entropy_sum / static_cast<double>(section_count);
         result.direct[embedded_feature_config::D_SEC_MAX_ENTROPY] = entropy_max;
       }
+      result.direct[embedded_feature_config::D_NUM_WRITE_SECTIONS] = static_cast<double>(write_section_count);
 
       result.direct[embedded_feature_config::D_HAS_RESOURCES] = pe->has_resources() ? 1.0 : 0.0;
       if (pe->has_resources()) {
@@ -515,6 +527,8 @@ ExtractResult extract_row(const std::string& filepath) {
       result.direct[embedded_feature_config::D_OVERLAY_SIZE] = static_cast<double>(overlay.size());
       result.direct[embedded_feature_config::D_OVERLAY_ENTROPY] =
           overlay.empty() ? 0.0 : entropy_from_span(overlay, static_cast<size_t>(EDR_PE_MAX_OVERLAY_ENTROPY_BYTES));
+        result.direct[embedded_feature_config::D_OVERLAY_RATIO] =
+          (file_size_raw > 0u) ? (static_cast<double>(overlay.size()) / static_cast<double>(file_size_raw)) : 0.0;
 
       if (pe->has_imports()) {
         size_t dll_count = 0;

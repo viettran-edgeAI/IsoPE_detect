@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -24,6 +23,18 @@ namespace eml {
         IF_SCHEMA_FILE_EXIST    = 1u << 10
     } If_base_flags;
 
+    /*
+    resouces managed by If_base:
+    - <model_name>_dp.txt (dataset parameters)                  - If_config
+    - <model_name>_qtz.bin (quantizer)                          - If_quantizer
+    - <model_name>_optimized_config.json (model engine config)  - If_config
+    - <model_name>_optimized_features.json (optimized feature list)         - If_feature_extractor
+    - <model_name>_scaler_params.json (feature scaler parameters)           - If_scaler_layer
+    - <model_name>_feature_schema.json (feature schema for transform layer) - If_feature_transform_layer
+    - <model_name>_iforest.bin (model binary for inference)     - If_tree_container
+    - <model_name>_ben_train_nml.bin (benign train dataset for IF) - IsoForest
+    */
+
     class If_base {
     private:
         uint16_t flags = 0;
@@ -43,15 +54,6 @@ namespace eml {
                 return {};
             }
             return dir_path / (std::string(model_name) + suffix);
-        }
-
-        static std::filesystem::path first_existing(const std::array<std::filesystem::path, 2>& candidates) {
-            for (const auto& p : candidates) {
-                if (!p.empty() && std::filesystem::exists(p)) {
-                    return p;
-                }
-            }
-            return candidates[0];
         }
 
         static void write_path_to_buffer(const std::filesystem::path& p,
@@ -213,11 +215,7 @@ namespace eml {
         }
 
         std::filesystem::path get_nml_path() const {
-            const std::array<std::filesystem::path, 2> candidates = {
-                build_model_artifact_path("_ben_train_nml.bin"),
-                build_model_artifact_path("_nml.bin")
-            };
-            return first_existing(candidates);
+            return build_model_artifact_path("_ben_train_nml.bin");
         }
 
         std::filesystem::path get_benign_train_nml_path() const {
@@ -239,10 +237,6 @@ namespace eml {
 
         std::filesystem::path get_iforest_bin_path() const {
             return build_model_artifact_path("_iforest.bin");
-        }
-
-        std::filesystem::path get_legacy_if_bin_path() const {
-            return build_model_artifact_path("_if.bin");
         }
 
         std::filesystem::path get_config_path() const {

@@ -1,7 +1,11 @@
 {
     "input_path": {
-        "value": "../../development_phase/data/optimized/iforest.csv",
+        "value": "../../development_phase/data/optimized/iforest_ben_test.parquet",
         "description": "Path to the input CSV dataset file (required). Used when processing a single file directly."
+    },
+    "output_dir": {
+        "value": "auto",
+        "description": "Output directory for quantized files. Defaults to 'quantized_datasets' if empty or auto."
     },
     "quantization_bits": {
         "value": 4,

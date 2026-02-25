@@ -2,9 +2,12 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <algorithm>
+#include <array>
 #include <cstring>
 #include <fstream>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <sstream>
 #include <vector>
@@ -42,6 +45,344 @@ namespace eml {
 
         // Pending quantizer update mapping (concept drift): applied on next RAM load.
         eml_quantizer_update_filter quantizer_update_filter;
+
+        static constexpr char EML_DATA_MAGIC_[4] = {'E', 'M', 'L', 'D'};
+        static constexpr uint16_t EML_DATA_VERSION_ = 1u;
+        static constexpr uint8_t EML_ENDIAN_LITTLE_ = 1u;
+        static constexpr uint16_t EML_DATA_HEADER_SIZE_ = 32u;
+        static constexpr uint32_t EML_CHECKSUM_SEED_ = 2166136261u;
+        static constexpr uint32_t EML_CHECKSUM_PRIME_ = 16777619u;
+
+        struct dataset_file_layout {
+            bool modern_format = false;
+            uint32_t num_samples = 0u;
+            uint16_t num_features = 0u;
+            uint8_t quant_bits = 0u;
+            uint8_t label_size = 0u;
+            uint8_t label_bits = 0u;
+            uint16_t header_size = 0u;
+            uint16_t packed_feature_bytes = 0u;
+            uint16_t record_size = 0u;
+            uint64_t data_offset = 0ull;
+            uint64_t data_size = 0ull;
+            uint64_t checksum_offset = 0ull;
+            uint32_t checksum = 0u;
+        };
+
+        static bool write_exact(std::ostream& out, const void* src, size_t bytes) {
+            out.write(reinterpret_cast<const char*>(src), static_cast<std::streamsize>(bytes));
+            return static_cast<bool>(out);
+        }
+
+        static bool read_exact(std::istream& in, void* dst, size_t bytes) {
+            in.read(reinterpret_cast<char*>(dst), static_cast<std::streamsize>(bytes));
+            return static_cast<size_t>(in.gcount()) == bytes;
+        }
+
+        static uint32_t checksum_update(uint32_t checksum, const uint8_t* data, size_t size) {
+            uint32_t current = checksum;
+            for (size_t i = 0; i < size; ++i) {
+                current ^= static_cast<uint32_t>(data[i]);
+                current *= EML_CHECKSUM_PRIME_;
+            }
+            return current;
+        }
+
+        static bool write_u8(std::ostream& out, uint8_t value) {
+            return write_exact(out, &value, sizeof(value));
+        }
+
+        static bool write_u16_le(std::ostream& out, uint16_t value) {
+            const uint8_t bytes[2] = {
+                static_cast<uint8_t>(value & 0xFFu),
+                static_cast<uint8_t>((value >> 8u) & 0xFFu)
+            };
+            return write_exact(out, bytes, sizeof(bytes));
+        }
+
+        static bool write_u32_le(std::ostream& out, uint32_t value) {
+            const uint8_t bytes[4] = {
+                static_cast<uint8_t>(value & 0xFFu),
+                static_cast<uint8_t>((value >> 8u) & 0xFFu),
+                static_cast<uint8_t>((value >> 16u) & 0xFFu),
+                static_cast<uint8_t>((value >> 24u) & 0xFFu)
+            };
+            return write_exact(out, bytes, sizeof(bytes));
+        }
+
+        static bool write_u64_le(std::ostream& out, uint64_t value) {
+            const uint8_t bytes[8] = {
+                static_cast<uint8_t>(value & 0xFFull),
+                static_cast<uint8_t>((value >> 8u) & 0xFFull),
+                static_cast<uint8_t>((value >> 16u) & 0xFFull),
+                static_cast<uint8_t>((value >> 24u) & 0xFFull),
+                static_cast<uint8_t>((value >> 32u) & 0xFFull),
+                static_cast<uint8_t>((value >> 40u) & 0xFFull),
+                static_cast<uint8_t>((value >> 48u) & 0xFFull),
+                static_cast<uint8_t>((value >> 56u) & 0xFFull)
+            };
+            return write_exact(out, bytes, sizeof(bytes));
+        }
+
+        static bool read_u8(std::istream& in, uint8_t& value) {
+            return read_exact(in, &value, sizeof(value));
+        }
+
+        static bool read_u16_le(std::istream& in, uint16_t& value) {
+            uint8_t bytes[2] = {0u, 0u};
+            if (!read_exact(in, bytes, sizeof(bytes))) {
+                return false;
+            }
+            value = static_cast<uint16_t>(
+                static_cast<uint16_t>(bytes[0]) |
+                (static_cast<uint16_t>(bytes[1]) << 8u)
+            );
+            return true;
+        }
+
+        static bool read_u32_le(std::istream& in, uint32_t& value) {
+            uint8_t bytes[4] = {0u, 0u, 0u, 0u};
+            if (!read_exact(in, bytes, sizeof(bytes))) {
+                return false;
+            }
+            value = static_cast<uint32_t>(bytes[0]) |
+                    (static_cast<uint32_t>(bytes[1]) << 8u) |
+                    (static_cast<uint32_t>(bytes[2]) << 16u) |
+                    (static_cast<uint32_t>(bytes[3]) << 24u);
+            return true;
+        }
+
+        static bool read_u64_le(std::istream& in, uint64_t& value) {
+            uint8_t bytes[8] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+            if (!read_exact(in, bytes, sizeof(bytes))) {
+                return false;
+            }
+            value = static_cast<uint64_t>(bytes[0]) |
+                    (static_cast<uint64_t>(bytes[1]) << 8u) |
+                    (static_cast<uint64_t>(bytes[2]) << 16u) |
+                    (static_cast<uint64_t>(bytes[3]) << 24u) |
+                    (static_cast<uint64_t>(bytes[4]) << 32u) |
+                    (static_cast<uint64_t>(bytes[5]) << 40u) |
+                    (static_cast<uint64_t>(bytes[6]) << 48u) |
+                    (static_cast<uint64_t>(bytes[7]) << 56u);
+            return true;
+        }
+
+        static bool compute_packed_feature_bytes(uint16_t num_features,
+                                                 uint8_t quant_bits,
+                                                 uint16_t& packed_feature_bytes) {
+            if (num_features == 0u || quant_bits < 1u || quant_bits > 8u) {
+                return false;
+            }
+            const uint32_t total_bits = static_cast<uint32_t>(num_features) * quant_bits;
+            packed_feature_bytes = static_cast<uint16_t>((total_bits + 7u) / 8u);
+            return packed_feature_bytes > 0u;
+        }
+
+        static bool verify_payload_checksum(std::ifstream& file,
+                                            uint64_t data_offset,
+                                            uint64_t data_size,
+                                            uint32_t expected_checksum) {
+            file.clear();
+            file.seekg(static_cast<std::streamoff>(data_offset), std::ios::beg);
+            if (!file.good()) {
+                return false;
+            }
+
+            std::vector<uint8_t> buffer(65536u, 0u);
+            uint32_t checksum = EML_CHECKSUM_SEED_;
+            uint64_t remaining = data_size;
+
+            while (remaining > 0u) {
+                const size_t chunk_size = static_cast<size_t>(std::min<uint64_t>(remaining, buffer.size()));
+                if (!read_exact(file, buffer.data(), chunk_size)) {
+                    return false;
+                }
+                checksum = checksum_update(checksum, buffer.data(), chunk_size);
+                remaining -= chunk_size;
+            }
+
+            return checksum == expected_checksum;
+        }
+
+        static bool write_dataset_header(std::ostream& out,
+                                         uint32_t num_samples,
+                                         uint16_t num_features,
+                                         uint8_t quant_bits,
+                                         uint8_t label_size,
+                                         uint8_t label_bits,
+                                         uint64_t data_size) {
+            if (!write_exact(out, EML_DATA_MAGIC_, sizeof(EML_DATA_MAGIC_))) return false;
+            if (!write_u16_le(out, EML_DATA_VERSION_)) return false;
+            if (!write_u8(out, EML_ENDIAN_LITTLE_)) return false;
+            if (!write_u16_le(out, EML_DATA_HEADER_SIZE_)) return false;
+            if (!write_u64_le(out, data_size)) return false;
+            if (!write_u32_le(out, num_samples)) return false;
+            if (!write_u16_le(out, num_features)) return false;
+            if (!write_u8(out, quant_bits)) return false;
+            if (!write_u8(out, label_size)) return false;
+            if (!write_u8(out, label_bits)) return false;
+            if (!write_u8(out, 0u)) return false;
+
+            constexpr std::array<uint8_t, EML_DATA_HEADER_SIZE_ - 28u> k_padding = {};
+            if (!write_exact(out, k_padding.data(), k_padding.size())) return false;
+            return true;
+        }
+
+        bool parse_dataset_layout(std::ifstream& file,
+                                  dataset_file_layout& layout,
+                                  uint8_t expected_quant_bits,
+                                  uint8_t expected_label_size,
+                                  bool validate_checksum = true) const {
+            layout = dataset_file_layout{};
+
+            file.clear();
+            file.seekg(0, std::ios::end);
+            const std::streamoff file_size_off = file.tellg();
+            if (file_size_off <= 0) {
+                return false;
+            }
+            const uint64_t file_size = static_cast<uint64_t>(file_size_off);
+
+            file.clear();
+            file.seekg(0, std::ios::beg);
+            char magic[4] = {0, 0, 0, 0};
+            if (!read_exact(file, magic, sizeof(magic))) {
+                return false;
+            }
+
+            if (std::memcmp(magic, EML_DATA_MAGIC_, sizeof(EML_DATA_MAGIC_)) == 0) {
+                uint16_t version = 0u;
+                uint8_t endian_flag = 0u;
+                uint16_t header_size = 0u;
+                uint64_t data_size = 0ull;
+                uint32_t num_samples = 0u;
+                uint16_t num_features = 0u;
+                uint8_t quant_bits = 0u;
+                uint8_t label_size = 0u;
+                uint8_t label_bits = 0u;
+                uint8_t reserved = 0u;
+
+                if (!read_u16_le(file, version) ||
+                    !read_u8(file, endian_flag) ||
+                    !read_u16_le(file, header_size) ||
+                    !read_u64_le(file, data_size) ||
+                    !read_u32_le(file, num_samples) ||
+                    !read_u16_le(file, num_features) ||
+                    !read_u8(file, quant_bits) ||
+                    !read_u8(file, label_size) ||
+                    !read_u8(file, label_bits) ||
+                    !read_u8(file, reserved)) {
+                    return false;
+                }
+
+                if (version != EML_DATA_VERSION_ || endian_flag != EML_ENDIAN_LITTLE_) {
+                    return false;
+                }
+                if (header_size < EML_DATA_HEADER_SIZE_ || header_size > file_size) {
+                    return false;
+                }
+                if (quant_bits < 1u || quant_bits > 8u || quant_bits != expected_quant_bits) {
+                    return false;
+                }
+                if (label_size != expected_label_size) {
+                    return false;
+                }
+
+                uint16_t packed_feature_bytes = 0u;
+                if (!compute_packed_feature_bytes(num_features, quant_bits, packed_feature_bytes)) {
+                    return false;
+                }
+                const uint16_t record_size = static_cast<uint16_t>(packed_feature_bytes + label_size);
+                const uint64_t expected_data_size = static_cast<uint64_t>(num_samples) * static_cast<uint64_t>(record_size);
+                if (data_size != expected_data_size) {
+                    return false;
+                }
+
+                const uint64_t checksum_offset = static_cast<uint64_t>(header_size) + data_size;
+                if (checksum_offset + sizeof(uint32_t) > file_size) {
+                    return false;
+                }
+
+                file.clear();
+                file.seekg(static_cast<std::streamoff>(checksum_offset), std::ios::beg);
+                uint32_t checksum = 0u;
+                if (!read_u32_le(file, checksum)) {
+                    return false;
+                }
+
+                if (validate_checksum && !verify_payload_checksum(file, static_cast<uint64_t>(header_size), data_size, checksum)) {
+                    return false;
+                }
+
+                layout.modern_format = true;
+                layout.num_samples = num_samples;
+                layout.num_features = num_features;
+                layout.quant_bits = quant_bits;
+                layout.label_size = label_size;
+                layout.label_bits = label_bits;
+                layout.header_size = header_size;
+                layout.packed_feature_bytes = packed_feature_bytes;
+                layout.record_size = record_size;
+                layout.data_offset = static_cast<uint64_t>(header_size);
+                layout.data_size = data_size;
+                layout.checksum_offset = checksum_offset;
+                layout.checksum = checksum;
+                return true;
+            }
+
+            return false;
+        }
+
+        static bool rewrite_modern_header(std::fstream& file,
+                                          uint32_t num_samples,
+                                          uint16_t num_features,
+                                          uint8_t quant_bits,
+                                          uint8_t label_size,
+                                          uint8_t label_bits,
+                                          uint64_t data_size) {
+            file.clear();
+            file.seekp(0, std::ios::beg);
+            if (!file.good()) {
+                return false;
+            }
+            return write_dataset_header(file, num_samples, num_features, quant_bits, label_size, label_bits, data_size);
+        }
+
+        static bool write_modern_checksum(std::fstream& file,
+                                          uint64_t data_offset,
+                                          uint64_t data_size) {
+            file.clear();
+            file.seekg(static_cast<std::streamoff>(data_offset), std::ios::beg);
+            if (!file.good()) {
+                return false;
+            }
+
+            std::vector<uint8_t> buffer(65536u, 0u);
+            uint32_t checksum = EML_CHECKSUM_SEED_;
+            uint64_t remaining = data_size;
+
+            while (remaining > 0u) {
+                const size_t chunk_size = static_cast<size_t>(std::min<uint64_t>(remaining, buffer.size()));
+                if (!read_exact(file, buffer.data(), chunk_size)) {
+                    return false;
+                }
+                checksum = checksum_update(checksum, buffer.data(), chunk_size);
+                remaining -= chunk_size;
+            }
+
+            file.clear();
+            file.seekp(static_cast<std::streamoff>(data_offset + data_size), std::ios::beg);
+            if (!file.good()) {
+                return false;
+            }
+            if (!write_u32_le(file, checksum)) {
+                return false;
+            }
+
+            file.flush();
+            return file.good();
+        }
 
     public:
         bool isLoaded = false;
@@ -563,55 +904,58 @@ namespace eml {
 
             if (!reuse) {
                 eml_debug(1, "💾 Saving data to file system and clearing from RAM...");
-                // Remove any existing file
-                if (std::filesystem::exists(file_path)) {
-                    std::filesystem::remove(file_path);
+                const uint32_t numSamples = static_cast<uint32_t>(size_);
+                const uint16_t numFeatures = static_cast<uint16_t>(bitsPerSample / quantization_coefficient);
+                uint16_t packedFeatureBytes = 0u;
+                if (!compute_packed_feature_bytes(numFeatures, quantization_coefficient, packedFeatureBytes)) {
+                    eml_debug(0, "❌ Failed to derive packed-feature bytes");
+                    return false;
                 }
-                std::ofstream file(file_path, std::ios::binary);
+
+                const uint16_t recordSize = static_cast<uint16_t>(sizeof(label_type) + packedFeatureBytes);
+                const uint64_t dataSize = static_cast<uint64_t>(numSamples) * static_cast<uint64_t>(recordSize);
+                const uint8_t labelBits = static_cast<uint8_t>(allLabels.get_bits_per_value());
+
+                const std::filesystem::path target_path(file_path);
+                if (!target_path.parent_path().empty()) {
+                    std::filesystem::create_directories(target_path.parent_path());
+                }
+                const std::filesystem::path temp_path = target_path.string() + ".tmp";
+                std::ofstream file(temp_path, std::ios::binary | std::ios::trunc);
                 if (!file.is_open()) {
                     eml_debug(0, "❌ Failed to open binary file for writing: ", file_path);
                     return false;
                 }
                 eml_debug(2, "📂 Saving data to: ", file_path);
 
-                // Write binary header
-                uint32_t numSamples = static_cast<uint32_t>(size_);
-                uint16_t numFeatures = static_cast<uint16_t>(bitsPerSample / quantization_coefficient);
-
-                file.write(reinterpret_cast<const char*>(&numSamples), sizeof(numSamples));
-                file.write(reinterpret_cast<const char*>(&numFeatures), sizeof(numFeatures));
-
-                // Calculate packed bytes needed for features per sample
-                uint32_t totalBits = static_cast<uint32_t>(numFeatures) * quantization_coefficient;
-                uint16_t packedFeatureBytes = (totalBits + 7) / 8; // Round up to nearest byte
-
-                // Record size = label + packed features
-                uint16_t recordSize = sizeof(label_type) + packedFeatureBytes;
-
-                // Use a heap-allocated write buffer to batch multiple samples
-                static constexpr size_t WRITE_BUFFER_SIZE = 4096;
-                uint8_t* writeBuffer = new (std::nothrow) uint8_t[WRITE_BUFFER_SIZE];
-                if (!writeBuffer) {
-                    eml_debug(0, "❌ Failed to allocate write buffer");
+                if (!write_dataset_header(file,
+                                          numSamples,
+                                          numFeatures,
+                                          quantization_coefficient,
+                                          static_cast<uint8_t>(sizeof(label_type)),
+                                          labelBits,
+                                          dataSize)) {
+                    eml_debug(0, "❌ Failed to write dataset header: ", file_path);
                     file.close();
+                    std::filesystem::remove(temp_path);
                     return false;
                 }
-                size_t bufferPos = 0;
 
-                // Calculate how many complete samples fit in buffer
-                sample_idx_type samplesPerBuffer = static_cast<sample_idx_type>(WRITE_BUFFER_SIZE / recordSize);
-                if (samplesPerBuffer == 0) samplesPerBuffer = 1; // At least one sample per write
+                static constexpr size_t WRITE_BUFFER_SIZE = 4096;
+                std::vector<uint8_t> writeBuffer(WRITE_BUFFER_SIZE, 0u);
+                size_t bufferPos = 0;
+                uint32_t checksum = EML_CHECKSUM_SEED_;
 
                 for (sample_idx_type i = 0; i < size_; i++) {
                     // Reconstruct sample from chunked packed storage
                     sample_type s = getSample(i);
 
                     // Write label to buffer
-                    memcpy(&writeBuffer[bufferPos], &s.label, sizeof(label_type));
+                    std::memcpy(&writeBuffer[bufferPos], &s.label, sizeof(label_type));
                     bufferPos += sizeof(label_type);
 
                     // Initialize packed feature area to 0
-                    memset(&writeBuffer[bufferPos], 0, packedFeatureBytes);
+                    std::memset(&writeBuffer[bufferPos], 0, packedFeatureBytes);
 
                     // Pack features into buffer according to quantization_coefficient
                     for (size_t j = 0; j < s.features.size(); ++j) {
@@ -634,12 +978,41 @@ namespace eml {
 
                     // Flush buffer when full or last sample
                     if (bufferPos + recordSize > WRITE_BUFFER_SIZE || i == size_ - 1) {
-                        file.write(reinterpret_cast<const char*>(writeBuffer), bufferPos);
+                        if (!write_exact(file, writeBuffer.data(), bufferPos)) {
+                            eml_debug(0, "❌ Failed to write dataset payload: ", file_path);
+                            file.close();
+                            std::filesystem::remove(temp_path);
+                            return false;
+                        }
+                        checksum = checksum_update(checksum, writeBuffer.data(), bufferPos);
                         bufferPos = 0;
                     }
                 }
-                delete[] writeBuffer;
+
+                if (!write_u32_le(file, checksum)) {
+                    eml_debug(0, "❌ Failed to write dataset checksum: ", file_path);
+                    file.close();
+                    std::filesystem::remove(temp_path);
+                    return false;
+                }
+
+                file.flush();
+                if (!file.good()) {
+                    file.close();
+                    std::filesystem::remove(temp_path);
+                    return false;
+                }
                 file.close();
+
+                std::error_code ec;
+                std::filesystem::remove(target_path, ec);
+                ec.clear();
+                std::filesystem::rename(temp_path, target_path, ec);
+                if (ec) {
+                    eml_debug(0, "❌ Failed to finalize dataset file: ", file_path);
+                    std::filesystem::remove(temp_path, ec);
+                    return false;
+                }
 
                 // If we wrote the remapped data back to storage, any pending update filter is now obsolete.
                 quantizer_update_filter.clear();
@@ -669,175 +1042,117 @@ namespace eml {
                 return false;
             }
 
-            // Read binary header
-            uint32_t numSamples;
-            uint16_t numFeatures;
-
-            if (!file.read(reinterpret_cast<char*>(&numSamples), sizeof(numSamples)) ||
-                !file.read(reinterpret_cast<char*>(&numFeatures), sizeof(numFeatures))) {
-                eml_debug(0, "❌ Failed to read data header: ", file_path);
+            dataset_file_layout layout;
+            if (!parse_dataset_layout(file,
+                                      layout,
+                                      quantization_coefficient,
+                                      static_cast<uint8_t>(sizeof(label_type)),
+                                      true)) {
+                eml_debug(0, "❌ Failed to parse dataset header/checksum: ", file_path);
                 file.close();
                 return false;
             }
+
+            const uint32_t numSamples = layout.num_samples;
+            const uint16_t numFeatures = layout.num_features;
+            const uint16_t packedFeatureBytes = layout.packed_feature_bytes;
+            const size_t recordSize = layout.record_size;
+            const size_t elementsPerSample = numFeatures;
 
             if (numFeatures * quantization_coefficient != bitsPerSample) {
                 eml_debug_2(0, "❌ Feature count mismatch: expected ", bitsPerSample / quantization_coefficient, ",found ", numFeatures);
                 file.close();
                 return false;
             }
+
+            if (layout.modern_format && layout.label_bits >= 1u && layout.label_bits <= 8u) {
+                allLabels.set_bits_per_value(layout.label_bits);
+            }
+
             size_ = numSamples;
 
-            // Calculate sizes based on quantization_coefficient
-            uint32_t totalBits = static_cast<uint32_t>(numFeatures) * quantization_coefficient;
-            const uint16_t packedFeatureBytes = (totalBits + 7) / 8; // Round up to nearest byte
-            const size_t recordSize = sizeof(label_type) + packedFeatureBytes; // label + packed features
-            const size_t elementsPerSample = numFeatures; // each feature is one element in packed_vector
-
-            // Prepare storage: labels and chunks pre-sized to avoid per-sample resizing
             allLabels.clear();
             allLabels.reserve(numSamples);
             sampleChunks.clear();
             ensureChunkCapacity(numSamples);
-            // Pre-size each chunk's element count and explicitly initialize to zero
+
             size_t remaining = numSamples;
             for (size_t ci = 0; ci < sampleChunks.size(); ++ci) {
-                size_t chunkSamples = remaining > samplesEachChunk ? samplesEachChunk : remaining;
-                size_t reqElems = chunkSamples * elementsPerSample;
-                sampleChunks[ci].resize(reqElems, 0);  // Explicitly pass 0 as value
+                const size_t chunkSamples = remaining > samplesEachChunk ? samplesEachChunk : remaining;
+                const size_t reqElems = chunkSamples * elementsPerSample;
+                sampleChunks[ci].resize(reqElems, 0);
                 remaining -= chunkSamples;
-                if (remaining == 0) break;
+                if (remaining == 0u) {
+                    break;
+                }
             }
 
-            // Batch read to reduce file I/O calls
-            const size_t MAX_BATCH_BYTES = 65536; // 64KB for Linux
-            uint8_t* ioBuf = new (std::nothrow) uint8_t[MAX_BATCH_BYTES];
-            if (!ioBuf) {
-                eml_debug(1, "❌ Failed to allocate IO buffer");
+            file.clear();
+            file.seekg(static_cast<std::streamoff>(layout.data_offset), std::ios::beg);
+            if (!file.good()) {
                 file.close();
                 return false;
             }
 
-            bool fallback_yet = false;
-            size_t processed = 0;
+            const size_t max_batch_bytes = std::max<size_t>(65536u, recordSize);
+            std::vector<uint8_t> ioBuf(max_batch_bytes, 0u);
+
+            size_t processed = 0u;
             while (processed < numSamples) {
-                size_t batchSamples;
-                if (ioBuf) {
-                    size_t maxSamplesByBuf = MAX_BATCH_BYTES / recordSize;
-                    if (maxSamplesByBuf == 0) maxSamplesByBuf = 1;
-                    batchSamples = (numSamples - processed) < maxSamplesByBuf ? (numSamples - processed) : maxSamplesByBuf;
+                size_t maxSamplesByBuf = ioBuf.size() / recordSize;
+                if (maxSamplesByBuf == 0u) {
+                    maxSamplesByBuf = 1u;
+                }
+                const size_t batchSamples = std::min<size_t>(numSamples - processed, maxSamplesByBuf);
+                const size_t bytesToRead = batchSamples * recordSize;
 
-                    size_t bytesToRead = batchSamples * recordSize;
-                    file.read(reinterpret_cast<char*>(ioBuf), bytesToRead);
-                    size_t bytesRead = static_cast<size_t>(file.gcount());
-                    if (bytesRead < bytesToRead) {
-                        eml_debug(0, "❌ Read batch failed: ", file_path);
-                        delete[] ioBuf;
-                        file.close();
-                        return false;
-                    }
+                if (!read_exact(file, ioBuf.data(), bytesToRead)) {
+                    eml_debug(0, "❌ Read batch failed: ", file_path);
+                    file.close();
+                    return false;
+                }
 
-                    // Process buffer
-                    for (size_t bi = 0; bi < batchSamples; ++bi) {
-                        size_t off = bi * recordSize;
-                        label_type lbl;
-                        memcpy(&lbl, ioBuf + off, sizeof(label_type));
-                        allLabels.push_back(static_cast<uint32_t>(lbl));
+                for (size_t bi = 0u; bi < batchSamples; ++bi) {
+                    const size_t off = bi * recordSize;
+                    label_type lbl;
+                    std::memcpy(&lbl, ioBuf.data() + off, sizeof(label_type));
+                    allLabels.push_back(static_cast<uint32_t>(lbl));
 
-                        const uint8_t* packed = ioBuf + off + sizeof(label_type);
-                        size_t sampleIndex = processed + bi;
+                    const uint8_t* packed = ioBuf.data() + off + sizeof(label_type);
+                    const size_t sampleIndex = processed + bi;
 
-                        // Locate chunk and base element index for this sample
-                        auto loc = getChunkLocation(sampleIndex);
-                        size_t chunkIndex = loc.first;
-                        size_t localIndex = loc.second;
-                        size_t startElementIndex = localIndex * elementsPerSample;
+                    const auto loc = getChunkLocation(sampleIndex);
+                    const size_t chunkIndex = loc.first;
+                    const size_t localIndex = loc.second;
+                    const size_t startElementIndex = localIndex * elementsPerSample;
 
-                        // Unpack features directly into chunk storage using set_unsafe for pre-sized storage
-                        for (uint16_t j = 0; j < numFeatures; ++j) {
-                            uint32_t bitPosition = static_cast<uint32_t>(j) * quantization_coefficient;
-                            uint16_t byteIndex = bitPosition / 8;
-                            uint8_t bitOffset = bitPosition % 8;
+                    for (uint16_t j = 0; j < numFeatures; ++j) {
+                        const uint32_t bitPosition = static_cast<uint32_t>(j) * quantization_coefficient;
+                        const uint16_t byteIndex = bitPosition / 8u;
+                        const uint8_t bitOffset = static_cast<uint8_t>(bitPosition % 8u);
 
-                            uint8_t fv = 0;
-                            if (bitOffset + quantization_coefficient <= 8) {
-                                // Feature in single byte
-                                uint8_t mask = ((1 << quantization_coefficient) - 1) << bitOffset;
-                                fv = (packed[byteIndex] & mask) >> bitOffset;
-                            } else {
-                                // Feature spans two bytes
-                                uint8_t bitsInFirstByte = 8 - bitOffset;
-                                uint8_t bitsInSecondByte = quantization_coefficient - bitsInFirstByte;
-                                uint8_t mask1 = ((1 << bitsInFirstByte) - 1) << bitOffset;
-                                uint8_t mask2 = (1 << bitsInSecondByte) - 1;
-                                fv = ((packed[byteIndex] & mask1) >> bitOffset) |
-                                     ((packed[byteIndex + 1] & mask2) << bitsInFirstByte);
-                            }
+                        uint8_t fv = 0u;
+                        if (bitOffset + quantization_coefficient <= 8u) {
+                            const uint8_t mask = static_cast<uint8_t>(((1u << quantization_coefficient) - 1u) << bitOffset);
+                            fv = static_cast<uint8_t>((packed[byteIndex] & mask) >> bitOffset);
+                        } else {
+                            const uint8_t bitsInFirstByte = static_cast<uint8_t>(8u - bitOffset);
+                            const uint8_t bitsInSecondByte = static_cast<uint8_t>(quantization_coefficient - bitsInFirstByte);
+                            const uint8_t mask1 = static_cast<uint8_t>(((1u << bitsInFirstByte) - 1u) << bitOffset);
+                            const uint8_t mask2 = static_cast<uint8_t>((1u << bitsInSecondByte) - 1u);
+                            fv = static_cast<uint8_t>(((packed[byteIndex] & mask1) >> bitOffset) |
+                                 ((packed[byteIndex + 1u] & mask2) << bitsInFirstByte));
+                        }
 
-                            size_t elemIndex = startElementIndex + j;
-                            if (elemIndex >= sampleChunks[chunkIndex].size()) {
-                                eml_debug_2(0, "❌ Index out of bounds: elemIndex=", elemIndex, ", size=", sampleChunks[chunkIndex].size());
-                            }
+                        const size_t elemIndex = startElementIndex + j;
+                        if (elemIndex < sampleChunks[chunkIndex].size()) {
                             sampleChunks[chunkIndex].set_unsafe(elemIndex, fv);
                         }
                     }
-                } else {
-                    if (!fallback_yet) {
-                        eml_debug(2, "⚠️ IO buffer allocation failed, falling back to per-sample read");
-                        fallback_yet = true;
-                    }
-                    // Fallback: per-sample small buffer
-                    batchSamples = 1;
-                    label_type lbl;
-                    if (!file.read(reinterpret_cast<char*>(&lbl), sizeof(lbl))) {
-                        eml_debug_2(0, "❌ Read label failed at sample: ", processed, ": ", file_path);
-                        delete[] ioBuf;
-                        file.close();
-                        return false;
-                    }
-                    allLabels.push_back(static_cast<uint32_t>(lbl));
-                    std::vector<uint8_t> packed(packedFeatureBytes, 0);
-                    if (!file.read(reinterpret_cast<char*>(packed.data()), packedFeatureBytes)) {
-                        eml_debug_2(0, "❌ Read features failed at sample: ", processed, ": ", file_path);
-                        delete[] ioBuf;
-                        file.close();
-                        return false;
-                    }
-                    auto loc = getChunkLocation(processed);
-                    size_t chunkIndex = loc.first;
-                    size_t localIndex = loc.second;
-                    size_t startElementIndex = localIndex * elementsPerSample;
-
-                    // Unpack features according to quantization_coefficient
-                    for (uint16_t j = 0; j < numFeatures; ++j) {
-                        uint32_t bitPosition = static_cast<uint32_t>(j) * quantization_coefficient;
-                        uint16_t byteIndex = bitPosition / 8;
-                        uint8_t bitOffset = bitPosition % 8;
-
-                        uint8_t fv = 0;
-                        if (bitOffset + quantization_coefficient <= 8) {
-                            // Feature in single byte
-                            uint8_t mask = ((1 << quantization_coefficient) - 1) << bitOffset;
-                            fv = (packed[byteIndex] & mask) >> bitOffset;
-                        } else {
-                            // Feature spans two bytes
-                            uint8_t bitsInFirstByte = 8 - bitOffset;
-                            uint8_t bitsInSecondByte = quantization_coefficient - bitsInFirstByte;
-                            uint8_t mask1 = ((1 << bitsInFirstByte) - 1) << bitOffset;
-                            uint8_t mask2 = (1 << bitsInSecondByte) - 1;
-                            fv = ((packed[byteIndex] & mask1) >> bitOffset) |
-                                 ((packed[byteIndex + 1] & mask2) << bitsInFirstByte);
-                        }
-
-                        size_t elemIndex = startElementIndex + j;
-                        if (elemIndex < sampleChunks[chunkIndex].size()) {
-                            sampleChunks[chunkIndex].set(elemIndex, fv);
-                        }
-                    }
                 }
+
                 processed += batchSamples;
             }
-
-            delete[] ioBuf;
 
             allLabels.shrink_to_fit();
             for (auto& chunk : sampleChunks) {
@@ -890,15 +1205,25 @@ namespace eml {
             uint8_t bpl = source.get_bits_per_label();
             allLabels.set_bits_per_value(bpl);
 
-            // Read binary header
-            uint32_t numSamples;
-            uint16_t numFeatures;
-
-            if (!file.read(reinterpret_cast<char*>(&numSamples), sizeof(numSamples)) ||
-                !file.read(reinterpret_cast<char*>(&numFeatures), sizeof(numFeatures))) {
-                eml_debug(0, "❌ Failed to read source header: ", source.file_path);
+            dataset_file_layout layout;
+            if (!source.parse_dataset_layout(file,
+                                             layout,
+                                             source.quantization_coefficient,
+                                             static_cast<uint8_t>(sizeof(label_type)),
+                                             true)) {
+                eml_debug(0, "❌ Failed to parse source header/checksum: ", source.file_path);
                 file.close();
                 return false;
+            }
+
+            const uint32_t numSamples = layout.num_samples;
+            const uint16_t numFeatures = layout.num_features;
+            const uint16_t packedFeatureBytes = layout.packed_feature_bytes;
+            const size_t sampleDataSize = layout.record_size;
+            const uint64_t dataOffset = layout.data_offset;
+
+            if (layout.modern_format && layout.label_bits >= 1u && layout.label_bits <= 8u) {
+                allLabels.set_bits_per_value(layout.label_bits);
             }
 
             // Clear current data and initialize parameters
@@ -907,11 +1232,6 @@ namespace eml {
             bitsPerSample = static_cast<uint16_t>(numFeatures * source.quantization_coefficient);
             quantization_coefficient = source.quantization_coefficient;
             updateSamplesEachChunk();
-
-            // Calculate packed bytes needed for features
-            uint32_t totalBits = static_cast<uint32_t>(numFeatures) * quantization_coefficient;
-            uint16_t packedFeatureBytes = (totalBits + 7) / 8; // Round up to nearest byte
-            size_t sampleDataSize = sizeof(label_type) + packedFeatureBytes; // label + packed features
 
             // Reserve space for requested samples
             size_t numRequestedSamples = sample_IDs.size();
@@ -928,8 +1248,8 @@ namespace eml {
                 }
 
                 // Calculate file position for this sample
-                size_t headerSize = sizeof(uint32_t) + sizeof(uint16_t);
-                size_t sampleFilePos = headerSize + (sampleIdx * sampleDataSize);
+                const uint64_t sampleFilePos = dataOffset +
+                    (static_cast<uint64_t>(sampleIdx) * static_cast<uint64_t>(sampleDataSize));
 
                 // Seek to the sample position
                 file.seekg(static_cast<std::streamoff>(sampleFilePos));
@@ -941,7 +1261,7 @@ namespace eml {
                 sample_type s;
 
                 // Read label
-                if (!file.read(reinterpret_cast<char*>(&s.label), sizeof(s.label))) {
+                if (!read_exact(file, &s.label, sizeof(s.label))) {
                     eml_debug(2, "⚠️ Failed to read label for sample ", sampleIdx);
                     continue;
                 }
@@ -951,7 +1271,7 @@ namespace eml {
                 s.features.reserve(numFeatures);
 
                 std::vector<uint8_t> packedBuffer(packedFeatureBytes, 0);
-                if (!file.read(reinterpret_cast<char*>(packedBuffer.data()), packedFeatureBytes)) {
+                if (!read_exact(file, packedBuffer.data(), packedFeatureBytes)) {
                     eml_debug(2, "⚠️ Failed to read features for sample ", sampleIdx);
                     continue;
                 }
@@ -1044,13 +1364,13 @@ namespace eml {
                 if (std::filesystem::exists(other.file_path)) {
                     std::ifstream testFile(other.file_path, std::ios::binary);
                     if (testFile.is_open()) {
-                        uint32_t testNumSamples;
-                        uint16_t testNumFeatures;
-                        bool headerValid = false;
-                        if (testFile.read(reinterpret_cast<char*>(&testNumSamples), sizeof(testNumSamples)) &&
-                            testFile.read(reinterpret_cast<char*>(&testNumFeatures), sizeof(testNumFeatures))) {
-                            headerValid = (testNumSamples > 0 && testNumFeatures > 0);
-                        }
+                        dataset_file_layout layout;
+                        const bool headerValid = other.parse_dataset_layout(
+                            testFile,
+                            layout,
+                            other.quantization_coefficient,
+                            static_cast<uint8_t>(sizeof(label_type)),
+                            true);
                         testFile.close();
 
                         if (headerValid) {
@@ -1123,9 +1443,7 @@ namespace eml {
                 return deletedLabels;
             }
 
-            // Read current file header to get existing info
-            uint32_t currentNumSamples;
-            uint16_t numFeatures;
+            dataset_file_layout layout;
             {
                 std::ifstream file(file_path, std::ios::binary);
                 if (!file.is_open()) {
@@ -1133,14 +1451,27 @@ namespace eml {
                     return deletedLabels;
                 }
 
-                if (!file.read(reinterpret_cast<char*>(&currentNumSamples), sizeof(currentNumSamples)) ||
-                    !file.read(reinterpret_cast<char*>(&numFeatures), sizeof(numFeatures))) {
-                    eml_debug(0, "❌ Failed to read file header: ", file_path);
+                if (!parse_dataset_layout(file,
+                                          layout,
+                                          quantization_coefficient,
+                                          static_cast<uint8_t>(sizeof(label_type)),
+                                          true)) {
+                    eml_debug(0, "❌ Failed to parse dataset header/checksum: ", file_path);
                     file.close();
                     return deletedLabels;
                 }
                 file.close();
             }
+
+            uint32_t currentNumSamples = layout.num_samples;
+            const uint16_t numFeatures = layout.num_features;
+            const uint16_t packedFeatureBytes = layout.packed_feature_bytes;
+            const size_t sampleDataSize = layout.record_size;
+            const uint64_t headerSize = layout.data_offset;
+            const bool modernFormat = layout.modern_format;
+            const uint8_t labelBits = (layout.label_bits >= 1u && layout.label_bits <= 8u)
+                ? layout.label_bits
+                : static_cast<uint8_t>(allLabels.get_bits_per_value());
 
             // Validate feature count compatibility
             if (!samples.empty() && samples[0].features.size() != numFeatures) {
@@ -1148,14 +1479,8 @@ namespace eml {
                 return deletedLabels;
             }
 
-            // Calculate packed bytes needed for features
-            uint32_t totalBits = static_cast<uint32_t>(numFeatures) * quantization_coefficient;
-            uint16_t packedFeatureBytes = (totalBits + 7) / 8; // Round up to nearest byte
-            size_t sampleDataSize = sizeof(label_type) + packedFeatureBytes; // label + packed features
-            size_t headerSize = sizeof(uint32_t) + sizeof(uint16_t);
-
             uint32_t newNumSamples;
-            size_t writePosition;
+            uint64_t writePosition;
 
             // Append mode: add to existing samples
             newNumSamples = currentNumSamples + static_cast<uint32_t>(samples.size());
@@ -1174,7 +1499,7 @@ namespace eml {
                         readFile.seekg(static_cast<std::streamoff>(headerSize)); // Skip to data section
                         for (sample_idx_type i = 0; i < samples_to_remove && i < currentNumSamples; i++) {
                             label_type label;
-                            if (readFile.read(reinterpret_cast<char*>(&label), sizeof(label))) {
+                            if (read_exact(readFile, &label, sizeof(label))) {
                                 deletedLabels.push_back(label);
                             }
                             // Skip the packed features to get to next sample
@@ -1188,27 +1513,21 @@ namespace eml {
                 // This is done by reading samples after the removed ones and writing them at the beginning
                 if (samples_to_remove < currentNumSamples) {
                     sample_idx_type samples_to_keep = currentNumSamples - samples_to_remove;
-                    vector<uint8_t> temp_buffer;
-                    temp_buffer.reserve(sampleDataSize);
+                    vector<uint8_t> temp_buffer(sampleDataSize, 0u);
 
                     std::fstream shiftFile(file_path, std::ios::in | std::ios::out | std::ios::binary);
                     if (shiftFile.is_open()) {
                         // Read and shift each sample
                         for (sample_idx_type i = 0; i < samples_to_keep; i++) {
-                            size_t read_pos = headerSize + (samples_to_remove + i) * sampleDataSize;
-                            size_t write_pos = headerSize + i * sampleDataSize;
+                            uint64_t read_pos = headerSize +
+                                (static_cast<uint64_t>(samples_to_remove + i) * static_cast<uint64_t>(sampleDataSize));
+                            uint64_t write_pos = headerSize +
+                                (static_cast<uint64_t>(i) * static_cast<uint64_t>(sampleDataSize));
 
                             shiftFile.seekg(static_cast<std::streamoff>(read_pos));
-                            temp_buffer.clear();
-                            for (size_t b = 0; b < sampleDataSize; b++) {
-                                int byte_val = shiftFile.get();
-                                if (byte_val == std::char_traits<char>::eof()) break;
-                                temp_buffer.push_back(static_cast<uint8_t>(byte_val));
-                            }
-
-                            if (temp_buffer.size() == sampleDataSize) {
+                            if (read_exact(shiftFile, temp_buffer.data(), sampleDataSize)) {
                                 shiftFile.seekp(static_cast<std::streamoff>(write_pos));
-                                shiftFile.write(reinterpret_cast<const char*>(temp_buffer.data()), temp_buffer.size());
+                                write_exact(shiftFile, temp_buffer.data(), temp_buffer.size());
                             }
                         }
                         shiftFile.close();
@@ -1219,14 +1538,16 @@ namespace eml {
                 }
             }
 
-            size_t newFileSize = headerSize + (static_cast<size_t>(newNumSamples) * sampleDataSize);
+            const size_t trailerSize = modernFormat ? sizeof(uint32_t) : 0u;
+            size_t newFileSize = static_cast<size_t>(headerSize) + (static_cast<size_t>(newNumSamples) * sampleDataSize) + trailerSize;
             if (newFileSize > MAX_DATASET_BYTES) {
-                size_t maxSamplesBySize = (MAX_DATASET_BYTES - headerSize) / sampleDataSize;
+                size_t maxSamplesBySize = (MAX_DATASET_BYTES - static_cast<size_t>(headerSize) - trailerSize) / sampleDataSize;
                 eml_debug(2, "⚠️ Limiting samples by file size to ", maxSamplesBySize);
                 newNumSamples = static_cast<uint32_t>(maxSamplesBySize);
+                newFileSize = static_cast<size_t>(headerSize) + (static_cast<size_t>(newNumSamples) * sampleDataSize) + trailerSize;
             }
 
-            writePosition = headerSize + (currentNumSamples * sampleDataSize);
+            writePosition = headerSize + (static_cast<uint64_t>(currentNumSamples) * static_cast<uint64_t>(sampleDataSize));
 
             // Calculate actual number of samples to write
             uint32_t samplesToWrite = (newNumSamples - currentNumSamples);
@@ -1242,9 +1563,24 @@ namespace eml {
             }
 
             // Update header with new sample count
-            file.seekp(0);
-            file.write(reinterpret_cast<const char*>(&newNumSamples), sizeof(newNumSamples));
-            file.write(reinterpret_cast<const char*>(&numFeatures), sizeof(numFeatures));
+            if (modernFormat) {
+                const uint64_t dataSize = static_cast<uint64_t>(newNumSamples) * static_cast<uint64_t>(sampleDataSize);
+                if (!rewrite_modern_header(file,
+                                           newNumSamples,
+                                           numFeatures,
+                                           quantization_coefficient,
+                                           static_cast<uint8_t>(sizeof(label_type)),
+                                           labelBits,
+                                           dataSize)) {
+                    eml_debug(0, "❌ Failed to rewrite modern header: ", file_path);
+                    file.close();
+                    return deletedLabels;
+                }
+            } else {
+                eml_debug(0, "❌ Unsupported dataset format (legacy headers are no longer supported): ", file_path);
+                file.close();
+                return deletedLabels;
+            }
 
             // Seek to write position
             file.seekp(static_cast<std::streamoff>(writePosition));
@@ -1266,7 +1602,7 @@ namespace eml {
                 }
 
                 // Write label
-                if (!file.write(reinterpret_cast<const char*>(&sample.label), sizeof(sample.label))) {
+                if (!write_exact(file, &sample.label, sizeof(sample.label))) {
                     eml_debug_2(0, "❌ Write label failed at sample ", i, ": ", file_path);
                     break;
                 }
@@ -1292,7 +1628,7 @@ namespace eml {
                     }
                 }
 
-                if (!file.write(reinterpret_cast<const char*>(packedBuffer.data()), packedFeatureBytes)) {
+                if (!write_exact(file, packedBuffer.data(), packedFeatureBytes)) {
                     eml_debug_2(0, "❌ Write features failed at sample ", i, ": ", file_path);
                     break;
                 }
@@ -1300,7 +1636,30 @@ namespace eml {
                 written++;
             }
 
+            file.flush();
             file.close();
+
+            std::error_code ec;
+            std::filesystem::resize_file(file_path, newFileSize, ec);
+            if (ec) {
+                eml_debug(0, "❌ Failed to resize dataset file after append: ", file_path);
+                return deletedLabels;
+            }
+
+            if (modernFormat) {
+                const uint64_t dataSize = static_cast<uint64_t>(newNumSamples) * static_cast<uint64_t>(sampleDataSize);
+                std::fstream checksumFile(file_path, std::ios::in | std::ios::out | std::ios::binary);
+                if (!checksumFile.is_open()) {
+                    eml_debug(0, "❌ Failed to open file for checksum update: ", file_path);
+                    return deletedLabels;
+                }
+                if (!write_modern_checksum(checksumFile, headerSize, dataSize)) {
+                    eml_debug(0, "❌ Failed to update dataset checksum: ", file_path);
+                    checksumFile.close();
+                    return deletedLabels;
+                }
+                checksumFile.close();
+            }
 
             // Update internal size if data is loaded in memory
             if (isLoaded) {

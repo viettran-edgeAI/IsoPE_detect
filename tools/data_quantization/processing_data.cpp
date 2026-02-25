@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cctype>
 #include <set>
+#include <cstdlib>
 
 using namespace eml;
 
@@ -54,6 +55,7 @@ static uint16_t getPackedFeatureBytes(uint16_t featureCount) {
 
 struct QuantizationConfig {
     std::string inputPath;
+    std::string outputDir = "quantized_datasets";
     std::string modelName;
     std::string headerMode = "auto"; // auto|yes|no
     int quantBits = quantization_coefficient;
@@ -142,6 +144,9 @@ static QuantizationConfig loadQuantizationConfig(const std::string& configPath) 
     std::string raw;
     if (extractValue(content, "input_path", raw)) {
         cfg.inputPath = trimWhitespace(raw);
+    }
+    if (extractValue(content, "output_dir", raw)) {
+        cfg.outputDir = trimWhitespace(raw);
     }
     if (extractValue(content, "model_name", raw)) {
         cfg.modelName = trimWhitespace(raw);
@@ -1654,6 +1659,20 @@ void convertCSVToBinary(const std::string& inputCSV, const std::string& outputBi
     saveBinaryDataset(samples, outputBinary, numFeatures);
 }
 
+static bool isParquet(const std::string& path) {
+    if (path.length() < 8) return false;
+    std::string ext = path.substr(path.length() - 8);
+    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return (ext == ".parquet");
+}
+
+static bool convertParquetToCSV(const std::string& parquetPath, const std::string& csvPath) {
+    // Using python3 to perform the conversion. Requirement: pandas, pyarrow.
+    std::string cmd = "python3 -c \"import pandas as pd; pd.read_parquet('" + parquetPath + "').to_csv('" + csvPath + "', index=False)\" 2>/dev/null";
+    int ret = std::system(cmd.c_str());
+    return ret == 0;
+}
+
 int main(int argc, char* argv[]) {
     try {
         std::string configPath = "quantization_config.json";
@@ -1668,7 +1687,8 @@ int main(int argc, char* argv[]) {
                 std::cout << "Usage: " << argv[0] << " [options]\n\n";
                 std::cout << "Options:\n";
                 std::cout << "  -c, --config <path>       Path to quantization_config.json (default: quantization_config.json)\n";
-                std::cout << "  -ip, --input_path <path>  Path to input CSV dataset\n";
+                std::cout << "  -ip, --input_path <path>  Path to input dataset (CSV or Parquet)\n";
+                std::cout << "  -od, --output_dir <path>  Output directory (default: quantized_datasets)\n";
                 std::cout << "  -mn, --model_name <name>  Unified name for result files (e.g., 'iris')\n";
                 std::cout << "  -hd, --header <auto|yes|no> Whether CSV has header (default: auto)\n";
                 std::cout << "  -pt, --problem_type <classification|regression|isolation> Problem mode (default: isolation)\n";
@@ -1697,6 +1717,8 @@ int main(int argc, char* argv[]) {
             std::string arg = argv[i];
             if (arg == "-ip" || arg == "--input_path") {
                 if (i + 1 < argc) config.inputPath = argv[++i];
+            } else if (arg == "-od" || arg == "--output_dir") {
+                if (i + 1 < argc) config.outputDir = argv[++i];
             } else if (arg == "-mn" || arg == "--model_name") {
                 if (i + 1 < argc) config.modelName = argv[++i];
             } else if (arg == "-hd" || arg == "--header") {
@@ -1740,16 +1762,22 @@ int main(int argc, char* argv[]) {
             headerSpecified = true;
         }
 
-        const std::string inputFile = config.inputPath;
-        const std::string modelName = config.modelName;
+        // Handle output directory defaults
+        if (config.outputDir.empty() || config.outputDir == "auto") {
+            config.outputDir = "quantized_datasets";
+        }
+
+        const std::string originalInputFile = config.inputPath;
+        std::string inputFile = originalInputFile;
+        bool isTempInput = false;
 
         // Generate output file names based on inputFile or modelName
         std::string baseName;
         
         // extract base name if modelName are empty or "auto"
-        if (modelName.empty() || modelName == "auto") {
+        if (config.modelName.empty() || config.modelName == "auto") {
             // Extract base name from input file
-            std::string inputName(inputFile);
+            std::string inputName(originalInputFile);
             size_t slash = inputName.find_last_of("/\\");
             if (slash != std::string::npos) {
                 inputName = inputName.substr(slash + 1);
@@ -1761,17 +1789,29 @@ int main(int argc, char* argv[]) {
             }
         } else {
             // Use the provided model name
-            baseName = modelName;
+            baseName = config.modelName;
         }
 
-        std::filesystem::path configDir = std::filesystem::path(configPath).parent_path();
-        if (configDir.empty()) {
-            configDir = std::filesystem::current_path();
-        }
-        std::filesystem::path resultDirPath = configDir / "quantized_datasets";
+        std::filesystem::path resultDirPath(config.outputDir);
         if (!std::filesystem::exists(resultDirPath)) {
             std::filesystem::create_directories(resultDirPath);
         }
+
+        // Handle parquet conversion if needed
+        if (isParquet(originalInputFile)) {
+            std::string tempCSV = (resultDirPath / (baseName + "_temp.csv")).string();
+            if (!convertParquetToCSV(originalInputFile, tempCSV)) {
+                throw std::runtime_error("Failed to convert Parquet to CSV. Ensure python3 with pandas and pyarrow are installed.");
+            }
+            inputFile = tempCSV;
+            isTempInput = true;
+            // Parquet always comes with headers from pandas.to_csv
+            if (!headerSpecified) {
+                skipHeader = true;
+                headerSpecified = true;
+            }
+        }
+
         std::string quantizerFile = (resultDirPath / (baseName + "_qtz.bin")).string();
         std::string dataParamsFile = (resultDirPath / (baseName + "_dp.txt")).string();
         std::string normalizedFile = (resultDirPath / (baseName + "_nml.csv")).string();
@@ -1784,7 +1824,6 @@ int main(int argc, char* argv[]) {
         if (!headerSpecified) {
             bool hasHeader = detectCSVHeader(inputFile.c_str(), config.problemType);
             skipHeader = hasHeader; // Skip header if detected
-            (void)hasHeader; // Header detection is silent for clean CLI output
         }
 
         uint16_t resolvedNumFeatures = static_cast<uint16_t>(datasetInfo.numFeatures);
@@ -1792,9 +1831,11 @@ int main(int argc, char* argv[]) {
         if (!existingQuantizerPath.empty()) {
             Rf_quantizer loadedQuantizer;
             if (!loadedQuantizer.loadQuantizer(existingQuantizerPath.c_str())) {
+                if (isTempInput) std::filesystem::remove(inputFile);
                 throw std::runtime_error(std::string("Failed to load quantizer: ") + existingQuantizerPath);
             }
             if (loadedQuantizer.getNumFeatures() != static_cast<uint16_t>(datasetInfo.numFeatures)) {
+                if (isTempInput) std::filesystem::remove(inputFile);
                 throw std::runtime_error("Loaded quantizer feature count does not match input dataset");
             }
 
@@ -1832,7 +1873,7 @@ int main(int argc, char* argv[]) {
         // Calculate file size compression ratio
         size_t inputFileSize = 0;
         size_t outputFileSize = 0;
-        std::ifstream inputFileCheck(inputFile, std::ios::binary | std::ios::ate);
+        std::ifstream inputFileCheck(originalInputFile, std::ios::binary | std::ios::ate);
         if (inputFileCheck) {
             inputFileSize = inputFileCheck.tellg();
             inputFileCheck.close();
@@ -1843,6 +1884,11 @@ int main(int argc, char* argv[]) {
             outputFileCheck.close();
         }
         
+        // Clean up temp file
+        if (isTempInput) {
+            std::filesystem::remove(inputFile);
+        }
+
         std::cout << "\n=== Processing Complete ===\n";
         std::cout << "✅ Dataset quantized and compressed:\n";
         size_t numLabels = datasetInfo.problemType == problem_type::ISOLATION ? 1 : datasetInfo.labelMapping.size();
@@ -1850,6 +1896,7 @@ int main(int argc, char* argv[]) {
               << " | Labels: " << numLabels << "\n";
         std::cout << "   🧩 Problem type: " << problemTypeToString(datasetInfo.problemType) << "\n";
         std::cout << "   🗜️  Quantization: " << static_cast<int>(quantization_coefficient) << std::endl;
+        std::cout << "   📁 Output Dir: " << config.outputDir << "\n";
         if (!existingQuantizerPath.empty()) {
             std::cout << "   🔁 Quantizer mode: transform-only (reused " << existingQuantizerPath << ")\n";
         } else {
@@ -1868,6 +1915,5 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
-
     return 0;
 }

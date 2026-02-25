@@ -3,18 +3,8 @@
   "model_type": "IsolationForest",
   "optimized_feature_set": {
     "source_file": "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../results/iforest_optimized_features.json",
-    "n_features": 50,
+    "n_features": 40,
     "features": [
-      "dd_IMPORT_TABLE_rva",
-      "imp_dll_hash_53",
-      "has_resources",
-      "opt_sizeof_image",
-      "opt_major_linker",
-      "overlay_ratio",
-      "num_write_sections",
-      "imp_func_hash_149",
-      "opt_sizeof_init_data",
-      "coff_machine",
       "sec_mean_entropy",
       "dos_e_lfanew",
       "imp_func_hash_15",
@@ -57,16 +47,6 @@
       "checksum_matches"
     ],
     "feature_groups": {
-      "dd_IMPORT_TABLE_rva": "data_directories",
-      "imp_dll_hash_53": "imports_dll_hash",
-      "has_resources": "resources",
-      "opt_sizeof_image": "optional_header",
-      "opt_major_linker": "optional_header",
-      "overlay_ratio": "overlay",
-      "num_write_sections": "sections_counts",
-      "imp_func_hash_149": "imports_func_hash",
-      "opt_sizeof_init_data": "optional_header",
-      "coff_machine": "coff_header",
       "sec_mean_entropy": "sections_aggregate",
       "dos_e_lfanew": "dos_header",
       "imp_func_hash_15": "imports_func_hash",
@@ -116,7 +96,7 @@
     },
     "scaler": {
       "source_file": "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../results/iforest_scaler_params.json",
-      "n_features": 50
+      "n_features": 40
     }
   },
   "deployment_scaling": {
@@ -135,7 +115,7 @@
   "optimized_parameters": {
     "hyperparameters": {
       "n_estimators": 200,
-      "max_samples": 0.7,
+      "max_samples": 1.0,
       "max_features": 1.0,
       "bootstrap": false,
       "contamination": 0.005,
@@ -144,35 +124,35 @@
     "thresholding": {
       "strategy": "tpr",
       "f_beta": 1.0,
-      "threshold": 0.07776103957695624,
-      "fpr_threshold": 0.05,
+      "threshold": -0.54180455207824707,
+      "fpr_threshold": 0.03744715079665184,
       "val_fpr_target": 0.04,
       "val_fpr_delta": 0.01,
-      "offset": -0.5941229032557367
+      "offset": 0
     }
   },
   "evaluation": {
     "validation": {
-      "fpr": 0.03805113750754983,
-      "tpr": 0.9158415841584159,
-      "roc_auc": 0.9853563220223773
+      "fpr": 0.037044493658143746,
+      "tpr": 0.9207920792079208,
+      "roc_auc": 0.9877598087974692
     },
     "test": {
       "fpr": 0.04648342764753436,
-      "tpr": 0.9339532665712923,
-      "roc_auc": 0.9867733633411707
+      "tpr": 0.9403910348116357,
+      "roc_auc": 0.9885123356344225
     }
   },
   "node_resource": {
     "feature_bits": 6,
     "child_bits": 13,
-    "leaf_size_bits": 14,
+    "leaf_size_bits": 15,
     "depth_bits": 4,
     "max_depth": 15,
-    "max_nodes_per_tree": 4871,
-    "max_samples_per_tree": 22368,
-    "max_leaf_samples_per_node": 11472,
-    "num_features": 50,
+    "max_nodes_per_tree": 5739,
+    "max_samples_per_tree": 31954,
+    "max_leaf_samples_per_node": 16776,
+    "num_features": 40,
     "num_samples": 31954
   },
   "notes": [

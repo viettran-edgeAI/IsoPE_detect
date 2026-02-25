@@ -107,12 +107,14 @@ int main(int argc, char** argv) {
     fout << "{\n";
     fout << "  \"selected_threshold\": " << summary.selected_threshold << ",\n";
     fout << "  \"embedded\": {\n";
-    fout << "    \"validation\": {\"fpr\": " << summary.validation.fpr
-         << ", \"tpr\": " << summary.validation.tpr
-         << ", \"roc_auc\": " << summary.validation.roc_auc << "},\n";
-    fout << "    \"test\": {\"fpr\": " << summary.test.fpr
-         << ", \"tpr\": " << summary.test.tpr
-         << ", \"roc_auc\": " << summary.test.roc_auc << "}\n";
+    fout << "    \"validation\": {\"fpr\": " << summary.validation.fpr()
+         << ", \"tpr\": " << summary.validation.tpr()
+         << ", \"roc_auc\": " << summary.validation.roc_auc()
+         << ", \"ap\": " << summary.validation.average_precision() << "},\n";
+    fout << "    \"test\": {\"fpr\": " << summary.test.fpr()
+         << ", \"tpr\": " << summary.test.tpr()
+         << ", \"roc_auc\": " << summary.test.roc_auc()
+         << ", \"ap\": " << summary.test.average_precision() << "}\n";
     fout << "  },\n";
     fout << "  \"development\": {\n";
     fout << "    \"validation\": {\"fpr\": " << summary.development.val_fpr
@@ -123,12 +125,12 @@ int main(int argc, char** argv) {
          << ", \"roc_auc\": " << summary.development.test_roc_auc << "}\n";
     fout << "  },\n";
     fout << "  \"delta\": {\n";
-    fout << "    \"validation\": {\"fpr\": " << (summary.validation.fpr - summary.development.val_fpr)
-         << ", \"tpr\": " << (summary.validation.tpr - summary.development.val_tpr)
-         << ", \"roc_auc\": " << (summary.validation.roc_auc - summary.development.val_roc_auc) << "},\n";
-    fout << "    \"test\": {\"fpr\": " << (summary.test.fpr - summary.development.test_fpr)
-         << ", \"tpr\": " << (summary.test.tpr - summary.development.test_tpr)
-         << ", \"roc_auc\": " << (summary.test.roc_auc - summary.development.test_roc_auc) << "}\n";
+    fout << "    \"validation\": {\"fpr\": " << (summary.validation.fpr() - summary.development.val_fpr)
+         << ", \"tpr\": " << (summary.validation.tpr() - summary.development.val_tpr)
+         << ", \"roc_auc\": " << (summary.validation.roc_auc() - summary.development.val_roc_auc) << "},\n";
+    fout << "    \"test\": {\"fpr\": " << (summary.test.fpr() - summary.development.test_fpr)
+         << ", \"tpr\": " << (summary.test.tpr() - summary.development.test_tpr)
+         << ", \"roc_auc\": " << (summary.test.roc_auc() - summary.development.test_roc_auc) << "}\n";
     fout << "  }\n";
     fout << "}\n";
     fout.close();
@@ -161,12 +163,12 @@ int main(int argc, char** argv) {
 
     std::cout << "Embedded IF evaluation complete\n";
     std::cout << "  threshold: " << summary.selected_threshold << "\n";
-    std::cout << "  val: fpr=" << summary.validation.fpr
-              << ", tpr=" << summary.validation.tpr
-              << ", auc=" << summary.validation.roc_auc << "\n";
-    std::cout << "  test: fpr=" << summary.test.fpr
-              << ", tpr=" << summary.test.tpr
-              << ", auc=" << summary.test.roc_auc << "\n";
+    std::cout << "  val: fpr=" << summary.validation.fpr()
+              << ", tpr=" << summary.validation.tpr()
+              << ", auc=" << summary.validation.roc_auc() << "\n";
+    std::cout << "  test: fpr=" << summary.test.fpr()
+              << ", tpr=" << summary.test.tpr()
+              << ", auc=" << summary.test.roc_auc() << "\n";
     std::cout << "  report: " << output_path << "\n";
 
     return 0;

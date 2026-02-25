@@ -1,11 +1,11 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -15,20 +15,17 @@
 #include <utility>
 #include <vector>
 
-#include "if_base.h"
-#include "if_components.h"
-#include "if_config.h"
-#include "if_feature_extractor.h"
-#include "if_feature_transform_layer.h"
-#include "if_scaler_layer.h"
 #include "../../ml/eml_quantize.h"
 #include "../../ml/eml_predict_result.h"
+#include "../../ml/eml_metrics.h"
+
+#include "if_components.h"
 
 namespace eml {
 
     class IsoForest {
     public:
-        using InferenceResult = eml_isolation_result_t;
+        using If_quantizer = eml_quantizer<problem_type::ISOLATION>;
         using extract_callback_t = If_feature_extractor::extract_callback_t;
         using extract_content_callback_t = If_feature_extractor::extract_content_callback_t;
 
@@ -38,7 +35,7 @@ namespace eml {
         If_feature_extractor if_feature_extractor_{};
         If_feature_transform_layer if_feature_transform_layer_{};
         If_scaler_layer if_scaler_layer_{};
-        eml_quantizer<problem_type::ISOLATION> if_quantizer_{};
+        If_quantizer if_quantizer_{};
         If_tree_container if_tree_container_{};
 
         uint16_t num_features_ = 0u;
@@ -109,6 +106,142 @@ namespace eml {
             return out;
         }
 
+        struct If_build_task {
+            uint32_t node_index = 0u;
+            size_t begin = 0u;
+            size_t end = 0u;
+            uint16_t depth = 0u;
+        };
+
+        static bool build_tree_from_quantized_matrix(If_tree& tree,
+                                                     const If_node_resource* resource,
+                                                     const uint8_t* matrix,
+                                                     uint16_t num_features,
+                                                     const std::vector<uint32_t>& sampled_indices,
+                                                     uint16_t max_depth,
+                                                     uint32_t max_nodes_per_tree,
+                                                     std::mt19937& rng) {
+            if (!resource || !resource->valid() || !matrix || num_features == 0u || sampled_indices.empty()) {
+                return false;
+            }
+
+            std::vector<uint32_t> indices = sampled_indices;
+
+            tree.set_node_resources(resource, true);
+            tree.reserve_nodes(std::max<uint32_t>(8u, std::min<uint32_t>(max_nodes_per_tree, 2048u)));
+            (void)tree.append_node(IsoNode{}); // root placeholder
+            if (tree.node_count() != 1u) {
+                return false;
+            }
+
+            std::vector<If_build_task> queue;
+            queue.reserve(256u);
+            queue.push_back(If_build_task{0u, 0u, indices.size(), 0u});
+
+            uint16_t max_tree_depth = 0u;
+            size_t queue_head = 0u;
+
+            while (queue_head < queue.size()) {
+                const If_build_task task = queue[queue_head++];
+                const size_t sample_count = task.end - task.begin;
+
+                if (sample_count <= 1u || task.depth >= max_depth) {
+                    if (!tree.set_leaf_node(task.node_index, static_cast<uint32_t>(sample_count), task.depth)) {
+                        return false;
+                    }
+                    max_tree_depth = static_cast<uint16_t>(std::max<uint16_t>(max_tree_depth, task.depth));
+                    continue;
+                }
+
+                bool found_split = false;
+                uint16_t split_feature = 0u;
+                uint8_t split_threshold = 0u;
+                const uint32_t attempts = std::max<uint32_t>(8u, static_cast<uint32_t>(num_features) * 2u);
+                std::uniform_int_distribution<uint16_t> feature_dist(0u, static_cast<uint16_t>(num_features - 1u));
+
+                for (uint32_t attempt = 0u; attempt < attempts; ++attempt) {
+                    const uint16_t feature = feature_dist(rng);
+                    std::array<uint8_t, 256> value_seen{};
+                    uint16_t unique_count = 0u;
+
+                    for (size_t index = task.begin; index < task.end; ++index) {
+                        const uint8_t value = matrix[static_cast<size_t>(indices[index]) * num_features + feature];
+                        if (value_seen[value] == 0u) {
+                            value_seen[value] = 1u;
+                            ++unique_count;
+                        }
+                    }
+
+                    if (unique_count < 2u) {
+                        continue;
+                    }
+
+                    std::vector<uint8_t> unique_values;
+                    unique_values.reserve(unique_count);
+                    for (uint16_t value = 0u; value <= 255u; ++value) {
+                        if (value_seen[value] != 0u) {
+                            unique_values.push_back(static_cast<uint8_t>(value));
+                        }
+                    }
+
+                    if (unique_values.size() < 2u) {
+                        continue;
+                    }
+
+                    std::uniform_int_distribution<size_t> threshold_idx_dist(0u, unique_values.size() - 2u);
+                    found_split = true;
+                    split_feature = feature;
+                    split_threshold = unique_values[threshold_idx_dist(rng)];
+                    break;
+                }
+
+                if (!found_split) {
+                    if (!tree.set_leaf_node(task.node_index, static_cast<uint32_t>(sample_count), task.depth)) {
+                        return false;
+                    }
+                    max_tree_depth = static_cast<uint16_t>(std::max<uint16_t>(max_tree_depth, task.depth));
+                    continue;
+                }
+
+                size_t left = task.begin;
+                size_t right = task.end;
+                while (left < right) {
+                    const uint8_t value = matrix[static_cast<size_t>(indices[left]) * num_features + split_feature];
+                    if (value <= split_threshold) {
+                        ++left;
+                    } else {
+                        --right;
+                        std::swap(indices[left], indices[right]);
+                    }
+                }
+
+                const size_t mid = left;
+                if (mid == task.begin || mid == task.end || tree.node_count() + 2u > max_nodes_per_tree) {
+                    if (!tree.set_leaf_node(task.node_index, static_cast<uint32_t>(sample_count), task.depth)) {
+                        return false;
+                    }
+                    max_tree_depth = static_cast<uint16_t>(std::max<uint16_t>(max_tree_depth, task.depth));
+                    continue;
+                }
+
+                const uint32_t left_child = tree.append_node(IsoNode{});
+                const uint32_t right_child = tree.append_node(IsoNode{});
+                if (right_child != left_child + 1u) {
+                    return false;
+                }
+
+                if (!tree.set_split_node(task.node_index, split_feature, split_threshold, left_child)) {
+                    return false;
+                }
+
+                const uint16_t child_depth = static_cast<uint16_t>(task.depth + 1u);
+                queue.push_back(If_build_task{left_child, task.begin, mid, child_depth});
+                queue.push_back(If_build_task{right_child, mid, task.end, child_depth});
+            }
+
+            return tree.finalize(max_tree_depth);
+        }
+
         bool initialize_components() {
             initialized_ = false;
             loaded_ = false;
@@ -155,13 +288,14 @@ namespace eml {
                 return false;
             }
 
+            // supply the built-in file-based extractor callback if desired
+            if_feature_extractor_.set_extract_callback(
+                If_feature_extractor::default_pe_path_callback()
+            );
+
             preprocessing_initialized_ = true;
 
-            if_config_.decision_threshold = 0.0f;
-            if_config_.threshold_offset = 0.0f;
-
             if_tree_container_.unload_model();
-            if_tree_container_.reserve_tree_slots(std::max<uint16_t>(1u, if_config_.n_estimators));
             initialized_ = true;
             return true;
         }
@@ -231,41 +365,6 @@ namespace eml {
             out_quantized.resize(feature_count, 0u);
             for (uint16_t feature_index = 0; feature_index < feature_count; ++feature_index) {
                 out_quantized[feature_index] = quantized_buffer[feature_index];
-            }
-
-            return true;
-        }
-
-        bool preprocess_raw_matrix(const float* raw_matrix,
-                                   size_t num_samples,
-                                   uint16_t feature_count,
-                                   vector<uint8_t>& out_quantized_matrix) const {
-            out_quantized_matrix.clear();
-
-            if (!raw_matrix || num_samples == 0u || feature_count == 0u) {
-                return false;
-            }
-
-            if (feature_count != num_features_) {
-                return false;
-            }
-
-            out_quantized_matrix.resize(num_samples * static_cast<size_t>(feature_count), 0u);
-
-            vector<uint8_t> quantized_row;
-            quantized_row.reserve(feature_count);
-
-            for (size_t row = 0; row < num_samples; ++row) {
-                const float* raw_row = &raw_matrix[row * static_cast<size_t>(feature_count)];
-                if (!quantize_raw_feature_vector(raw_row, feature_count, quantized_row)) {
-                    out_quantized_matrix.clear();
-                    return false;
-                }
-
-                std::memcpy(
-                    &out_quantized_matrix[row * static_cast<size_t>(feature_count)],
-                    quantized_row.data(),
-                    static_cast<size_t>(feature_count) * sizeof(uint8_t));
             }
 
             return true;
@@ -475,6 +574,7 @@ namespace eml {
             return best_threshold;
         }
 
+        // 
         bool calibrate_threshold_from_validation_datasets(const std::filesystem::path& benign_val_nml_path = {},
                                                           const std::filesystem::path& malware_val_nml_path = {}) {
             if (!loaded_ || !if_tree_container_.trained()) {
@@ -581,7 +681,6 @@ namespace eml {
             if_tree_container_.set_threshold_offset(0.0f);
 
             loaded_ = true;
-            (void)calibrate_threshold_from_validation_datasets();
             return true;
         }
 
@@ -596,147 +695,11 @@ namespace eml {
             initialized_ = true;
             loaded_ = false;
             if_tree_container_.unload_model();
-            if_tree_container_.reserve_tree_slots(std::max<uint16_t>(1u, if_config_.n_estimators));
             return true;
         }
 
-        bool train_from_quantized_matrix(const uint8_t* matrix,
-                                         size_t num_samples,
-                                         uint16_t feature_count,
-                                         const If_config* config_override = nullptr) {
-            if (!matrix || num_samples == 0u || feature_count == 0u) {
-                return false;
-            }
-
-            const If_config* active_config = nullptr;
-            if (config_override != nullptr) {
-                if (!config_override->isLoaded || config_override->num_features == 0u) {
-                    return false;
-                }
-                release_preprocessing_components();
-                if_config_ = *config_override;
-                num_features_ = if_config_.num_features;
-                initialized_ = true;
-                active_config = &if_config_;
-            } else {
-                if (!ensure_initialized()) {
-                    return false;
-                }
-                active_config = &if_config_;
-            }
-
-            if (feature_count != active_config->num_features) {
-                return false;
-            }
-
-            if_tree_container_.unload_model();
-            if (!if_tree_container_.set_node_resource_layout(active_config->threshold_bits,
-                                                             active_config->feature_bits,
-                                                             active_config->child_bits,
-                                                             active_config->leaf_size_bits,
-                                                             active_config->depth_bits)) {
-                return false;
-            }
-
-            const uint32_t samples_per_tree = resolve_samples_per_tree(*active_config, num_samples);
-            if_tree_container_.set_samples_per_tree(samples_per_tree);
-            if_config_.threshold_offset = 0.0f;
-            if_tree_container_.set_threshold_offset(0.0f);
-
-            const uint16_t n_estimators = std::max<uint16_t>(1u, active_config->n_estimators);
-            const uint16_t max_depth = std::max<uint16_t>(1u, active_config->max_depth);
-            const uint32_t max_nodes_per_tree = std::max<uint32_t>(1u, active_config->max_nodes_per_tree);
-
-            if_tree_container_.reserve_tree_slots(n_estimators);
-
-            std::mt19937 rng(active_config->random_state);
-            for (uint16_t tree_index = 0; tree_index < n_estimators; ++tree_index) {
-                If_tree tree;
-                tree.set_resource(if_tree_container_.node_resource());
-
-                const std::vector<uint32_t> sampled = sample_indices(
-                    num_samples,
-                    samples_per_tree,
-                    active_config->bootstrap,
-                    rng
-                );
-
-                if (!tree.train(matrix,
-                                num_samples,
-                                feature_count,
-                                sampled,
-                                max_depth,
-                                max_nodes_per_tree,
-                                rng)) {
-                    if_tree_container_.unload_model();
-                    loaded_ = false;
-                    return false;
-                }
-
-                if_tree_container_.add_trained_tree(tree);
-            }
-
-            loaded_ = if_tree_container_.trained();
-            return loaded_;
-        }
-
-        bool train_from_raw_matrix(const float* raw_matrix,
-                                   size_t num_samples,
-                                   uint16_t feature_count,
-                                   const If_config* config_override = nullptr) {
-            if (!raw_matrix || num_samples == 0u || feature_count == 0u) {
-                return false;
-            }
-
-            if (!ensure_initialized()) {
-                return false;
-            }
-
-            const If_config* active_config = config_override ? config_override : &if_config_;
-            if (!active_config || !active_config->isLoaded || active_config->num_features == 0u) {
-                return false;
-            }
-
-            if (feature_count != active_config->num_features || feature_count != num_features_) {
-                return false;
-            }
-
-            vector<uint8_t> quantized_matrix;
-            if (!preprocess_raw_matrix(raw_matrix, num_samples, feature_count, quantized_matrix)) {
-                return false;
-            }
-
-            return train_from_quantized_matrix(
-                quantized_matrix.data(),
-                num_samples,
-                feature_count,
-                config_override
-            );
-        }
-
-        bool quantize_raw_feature_buffer(const float* raw_features,
-                                         uint16_t feature_count,
-                                         vector<uint8_t>& out_quantized) const {
-            return quantize_raw_feature_vector(raw_features, feature_count, out_quantized);
-        }
-
-        void set_extract_callback(extract_callback_t callback) {
-            if_feature_extractor_.set_extract_callback(std::move(callback));
-        }
-
-        void set_extract_content_callback(extract_content_callback_t callback) {
-            if_feature_extractor_.set_extract_content_callback(std::move(callback));
-        }
-
-        bool calibrate_threshold_from_validation(const std::filesystem::path& benign_val_nml_path = {},
-                                                 const std::filesystem::path& malware_val_nml_path = {}) {
-            if (!ensure_initialized() || !loaded_) {
-                return false;
-            }
-            return calibrate_threshold_from_validation_datasets(benign_val_nml_path, malware_val_nml_path);
-        }
-
-        bool train_from_quantized_dataset(const std::filesystem::path& benign_train_nml_path = {}) {
+        bool build_model(bool enable_calibration = true,
+                         const std::filesystem::path& benign_train_nml_path = {}) {
             if (!ensure_initialized()) {
                 return false;
             }
@@ -760,21 +723,94 @@ namespace eml {
                 return false;
             }
 
-            const bool ok = train_from_quantized_matrix(
-                matrix.data(),
-                num_samples,
-                if_config_.num_features,
-                &if_config_
-            );
+            const uint16_t feature_count = if_config_.num_features;
+
+            if_tree_container_.unload_model();
+            if (!if_tree_container_.set_node_resource_layout(if_config_.threshold_bits,
+                                                             if_config_.feature_bits,
+                                                             if_config_.child_bits,
+                                                             if_config_.leaf_size_bits,
+                                                             if_config_.depth_bits)) {
+                return false;
+            }
+
+            const uint32_t samples_per_tree = resolve_samples_per_tree(if_config_, num_samples);
+            if_config_.threshold_offset = 0.0f;
+            if_tree_container_.set_threshold_offset(0.0f);
+
+            const uint16_t n_estimators = std::max<uint16_t>(1u, if_config_.n_estimators);
+            const uint16_t max_depth = std::max<uint16_t>(1u, if_config_.max_depth);
+            const uint32_t max_nodes_per_tree = std::max<uint32_t>(1u, if_config_.max_nodes_per_tree);
+
+            std::vector<If_tree> trained_trees;
+            trained_trees.reserve(n_estimators);
+
+            std::mt19937 rng(if_config_.random_state);
+            for (uint16_t tree_index = 0; tree_index < n_estimators; ++tree_index) {
+                If_tree tree;
+
+                const std::vector<uint32_t> sampled = sample_indices(
+                    num_samples,
+                    samples_per_tree,
+                    if_config_.bootstrap,
+                    rng
+                );
+
+                if (!build_tree_from_quantized_matrix(tree,
+                                                      if_tree_container_.node_resource_ptr(),
+                                                      matrix.data(),
+                                                      feature_count,
+                                                      sampled,
+                                                      max_depth,
+                                                      max_nodes_per_tree,
+                                                      rng)) {
+                    if_tree_container_.unload_model();
+                    loaded_ = false;
+                    return false;
+                }
+
+                trained_trees.push_back(std::move(tree));
+            }
+
+            if_tree_container_.load_trained_forest(std::move(trained_trees), samples_per_tree, 0.0f);
+            loaded_ = if_tree_container_.trained();
+
             matrix.clear();
             matrix.shrink_to_fit();
 
-            if (ok) {
-                (void)calibrate_threshold_from_validation_datasets();
+            if (!loaded_) {
+                return false;
             }
 
-            loaded_ = ok;
-            return ok;
+            if (enable_calibration && !calibrate_threshold_from_validation_datasets()) {
+                return false;
+            }
+
+            if (!if_config_.persist_threshold_to_config()) {
+                return false;
+            }
+
+            if (!save_model()) {
+                return false;
+            }
+
+            if_base_.update_resource_status();
+
+            return true;
+        }
+
+        bool quantize_raw_feature_buffer(const float* raw_features,
+                                         uint16_t feature_count,
+                                         vector<uint8_t>& out_quantized) const {
+            return quantize_raw_feature_vector(raw_features, feature_count, out_quantized);
+        }
+
+        void set_extract_callback(extract_callback_t callback) {
+            if_feature_extractor_.set_extract_callback(std::move(callback));
+        }
+
+        void set_extract_content_callback(extract_content_callback_t callback) {
+            if_feature_extractor_.set_extract_content_callback(std::move(callback));
         }
 
         bool save_model() const {
@@ -792,10 +828,9 @@ namespace eml {
             return if_tree_container_.is_anomaly(quantized_features, feature_count, threshold);
         }
 
-        InferenceResult infer_quantized(const uint8_t* quantized_features,
-                                        uint16_t feature_count,
-                                        float threshold = 0.0f) const {
-            InferenceResult result;
+        eml_isolation_result_t infer_quantized(const uint8_t* quantized_features,
+                               uint16_t feature_count) const {
+            eml_isolation_result_t result;
             const auto start = std::chrono::steady_clock::now();
 
             if (!loaded_ || !quantized_features || feature_count == 0u) {
@@ -803,7 +838,7 @@ namespace eml {
                 return result;
             }
 
-            const float active_threshold = (threshold == 0.0f) ? if_config_.decision_threshold : threshold;
+            const float active_threshold = if_config_.decision_threshold;
 
             result.anomaly_score = decision_function(quantized_features, feature_count);
             result.threshold = active_threshold;
@@ -816,10 +851,9 @@ namespace eml {
             return result;
         }
 
-        InferenceResult infer_raw(const float* raw_features,
-                                  uint16_t feature_count,
-                                  float threshold = 0.0f) const {
-            InferenceResult result;
+        eml_isolation_result_t infer_raw(const float* raw_features,
+                         uint16_t feature_count) const {
+            eml_isolation_result_t result;
             const auto start = std::chrono::steady_clock::now();
 
             if (!loaded_ || !raw_features || feature_count == 0u) {
@@ -833,7 +867,7 @@ namespace eml {
                 return result;
             }
 
-            const float active_threshold = (threshold == 0.0f) ? if_config_.decision_threshold : threshold;
+            const float active_threshold = if_config_.decision_threshold;
             result.anomaly_score = decision_function(quantized_features.data(), feature_count);
             result.threshold = active_threshold;
             result.is_anomaly = result.anomaly_score < active_threshold;
@@ -845,9 +879,8 @@ namespace eml {
             return result;
         }
 
-        InferenceResult infer_pe_path(const std::filesystem::path& pe_path,
-                                      float threshold = 0.0f) const {
-            InferenceResult result;
+        eml_isolation_result_t infer_pe_path(const std::filesystem::path& pe_path) const {
+            eml_isolation_result_t result;
             if (!loaded_) {
                 result.success = false;
                 return result;
@@ -859,13 +892,12 @@ namespace eml {
                 return result;
             }
 
-            return infer_raw(raw_features.data(), static_cast<uint16_t>(raw_features.size()), threshold);
+            return infer_raw(raw_features.data(), static_cast<uint16_t>(raw_features.size()));
         }
 
-        InferenceResult infer_pe_content(const uint8_t* pe_content,
-                                         size_t pe_size,
-                                         float threshold = 0.0f) const {
-            InferenceResult result;
+        eml_isolation_result_t infer_pe_content(const uint8_t* pe_content,
+                                                size_t pe_size) const {
+            eml_isolation_result_t result;
             if (!loaded_ || !pe_content || pe_size == 0u) {
                 result.success = false;
                 return result;
@@ -877,7 +909,7 @@ namespace eml {
                 return result;
             }
 
-            return infer_raw(raw_features.data(), static_cast<uint16_t>(raw_features.size()), threshold);
+            return infer_raw(raw_features.data(), static_cast<uint16_t>(raw_features.size()));
         }
 
         bool initialized() const { return initialized_; }
@@ -889,7 +921,7 @@ namespace eml {
         const If_feature_extractor& feature_extractor() const { return if_feature_extractor_; }
         const If_feature_transform_layer& feature_transform_layer() const { return if_feature_transform_layer_; }
         const If_scaler_layer& scaler_layer() const { return if_scaler_layer_; }
-        const eml_quantizer<problem_type::ISOLATION>& quantizer() const { return if_quantizer_; }
+        const If_quantizer& quantizer() const { return if_quantizer_; }
         const If_tree_container& tree_container() const { return if_tree_container_; }
     };
 
@@ -1010,96 +1042,24 @@ namespace eml {
         return out;
     }
 
-    inline double if_roc_auc(const std::vector<float>& y_scores, const std::vector<uint8_t>& y_true) {
-        const size_t n = y_scores.size();
-        if (n == 0u || y_true.size() != n) {
-            return 0.0;
-        }
-
-        size_t n_pos = 0u;
-        for (uint8_t y : y_true) {
-            if (y != 0u) {
-                ++n_pos;
-            }
-        }
-        const size_t n_neg = n - n_pos;
-        if (n_pos == 0u || n_neg == 0u) {
-            return 0.5;
-        }
-
-        std::vector<size_t> order(n);
-        std::iota(order.begin(), order.end(), 0u);
-        std::sort(order.begin(), order.end(), [&y_scores](size_t a, size_t b) {
-            return y_scores[a] < y_scores[b];
-        });
-
-        double rank_sum_pos = 0.0;
-        size_t i = 0u;
-        while (i < n) {
-            size_t j = i + 1u;
-            while (j < n && y_scores[order[j]] == y_scores[order[i]]) {
-                ++j;
-            }
-
-            const double avg_rank = 0.5 * (static_cast<double>(i + 1u) + static_cast<double>(j));
-            for (size_t k = i; k < j; ++k) {
-                if (y_true[order[k]] != 0u) {
-                    rank_sum_pos += avg_rank;
-                }
-            }
-            i = j;
-        }
-
-        const double u = rank_sum_pos - (static_cast<double>(n_pos) * static_cast<double>(n_pos + 1u) * 0.5);
-        return u / (static_cast<double>(n_pos) * static_cast<double>(n_neg));
-    }
-
-    struct If_binary_metrics {
-        float fpr = 0.0f;
-        float tpr = 0.0f;
-        float roc_auc = 0.0f;
-    };
+    using If_binary_metrics = eml_isolation_metrics;
 
     inline If_binary_metrics if_compute_metrics(const std::vector<float>& benign_scores,
                                                 const std::vector<float>& malware_scores,
                                                 float threshold) {
         If_binary_metrics out;
-        if (benign_scores.empty() || malware_scores.empty()) {
-            return out;
-        }
-
-        size_t fp = 0u;
-        for (float s : benign_scores) {
-            if (s < threshold) {
-                ++fp;
-            }
-        }
-
-        size_t tp = 0u;
-        for (float s : malware_scores) {
-            if (s < threshold) {
-                ++tp;
-            }
-        }
-
-        out.fpr = static_cast<float>(fp) / static_cast<float>(benign_scores.size());
-        out.tpr = static_cast<float>(tp) / static_cast<float>(malware_scores.size());
-
-        std::vector<float> y_scores;
-        std::vector<uint8_t> y_true;
-        y_scores.reserve(benign_scores.size() + malware_scores.size());
-        y_true.reserve(benign_scores.size() + malware_scores.size());
+        out.reset();
+        out.set_metric(eval_metric::ROC_AUC);
 
         for (float s : benign_scores) {
-            y_scores.push_back(-s);
-            y_true.push_back(0u);
-        }
-        for (float s : malware_scores) {
-            y_scores.push_back(-s);
-            y_true.push_back(1u);
+            // Higher -s means more anomalous
+            out.update(false, s < threshold, -s);
         }
 
-        out.roc_auc = static_cast<float>(if_roc_auc(y_scores, y_true));
+        for (float s : malware_scores) {
+            out.update(true, s < threshold, -s);
+        }
+
         return out;
     }
 

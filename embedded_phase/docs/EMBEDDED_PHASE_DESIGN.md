@@ -3,6 +3,8 @@
 Date: 2026-02-25  
 Scope: `embedded_phase/`
 
+This document describes the quantized runtime, resource contract, and validation workflow as of the latest project revision.  It also notes auxiliary tools that drive the pipeline (e.g. dataset preparer).
+
 ## 1) Purpose
 
 This document is the source of truth for the embedded Isolation Forest runtime.
@@ -58,8 +60,10 @@ Note:
 
 Recommended validation sequence:
 1. Regenerate Stage-3 artifacts from `development_phase/src/model_optimization.py`.
-2. Rebuild quantized model artifacts as needed.
-3. Run quantized evaluation on test splits and record FPR/TPR/ROC-AUC.
+2. Invoke `tools/resource_prepairer/prepare_datasets.py` to produce quantized resources for train/validation splits (quantizer + nml binaries).
+3. Build or copy those resources into the canonical `embedded_phase/core/models/isolation_forest/resources` directory.
+4. Optionally run the `tools/model_tester/if_quantized_cpp_raw_pe_eval` utility on raw PE files to verify end‑to‑end detection metrics.
+5. Record FPR/TPR/ROC‑AUC and compare to deployment gates.
 
 Primary metric gate:
 - FPR on benign test must remain below target.
