@@ -220,11 +220,17 @@ CMAKE_TAPI:FILEPATH=CMAKE_TAPI-NOTFOUND
 // Studio IDE projects all commands are done without /nologo.
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
+//The directory containing a CMake configuration file for LIEF.
+LIEF_DIR:PATH=LIEF_DIR-NOTFOUND
+
 //Build model engine CLI apps
 PE_MODEL_ENGINE_BUILD_APPS:BOOL=ON
 
 //Build model engine tests
 PE_MODEL_ENGINE_BUILD_TESTS:BOOL=ON
+
+//Path to a library.
+PE_MODEL_ENGINE_LIEF_LIBRARY:FILEPATH=/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/third_party/LIEF/build/libLIEF.a
 
 //Value Computed by CMake
 edr_agent_BINARY_DIR:STATIC=/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools

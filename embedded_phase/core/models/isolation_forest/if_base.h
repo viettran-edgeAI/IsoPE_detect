@@ -290,6 +290,16 @@ namespace eml {
             buffer[buffer_size - 1] = '\0';
         }
 
+        // estimate memory usage of the base
+        size_t memory_usage() const noexcept {
+            size_t total = sizeof(*this);
+
+            const auto& str = dir_path.native();
+            total += str.capacity() * sizeof(std::filesystem::path::value_type);
+
+            return total;
+        }
+
         const char* model_name_cstr() const { return model_name; }
 
         bool ready_to_use() const { return model_name[0] != '\0' && has_flag(IF_SCANNED); }

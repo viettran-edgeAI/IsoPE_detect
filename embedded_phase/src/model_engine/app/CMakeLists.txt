@@ -11,3 +11,10 @@ add_executable(pe_model_engine_benchmark_cli
 
 target_link_libraries(pe_model_engine_benchmark_cli PRIVATE pe_model_engine)
 target_compile_features(pe_model_engine_benchmark_cli PRIVATE cxx_std_17)
+
+add_executable(endpoint_agent_capi_sample
+  endpoint_agent_capi_sample.cpp
+)
+
+target_link_libraries(endpoint_agent_capi_sample PRIVATE pe_model_engine_c)
+target_compile_features(endpoint_agent_capi_sample PRIVATE cxx_std_17)

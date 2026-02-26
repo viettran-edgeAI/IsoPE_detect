@@ -26,8 +26,6 @@ namespace eml {
     class IsoForest {
     public:
         using If_quantizer = eml_quantizer<problem_type::ISOLATION>;
-        using extract_callback_t = If_feature_extractor::extract_callback_t;
-        using extract_content_callback_t = If_feature_extractor::extract_content_callback_t;
 
     private:
         If_base if_base_{};
@@ -858,14 +856,6 @@ namespace eml {
             return quantize_raw_feature_vector(raw_features, feature_count, out_quantized);
         }
 
-        void set_extract_callback(extract_callback_t callback) {
-            if_feature_extractor_.set_extract_callback(std::move(callback));
-        }
-
-        void set_extract_content_callback(extract_content_callback_t callback) {
-            if_feature_extractor_.set_extract_content_callback(std::move(callback));
-        }
-
         bool save_model() const {
             if (!if_tree_container_.save_model_binary(if_base_.get_iforest_bin_path())) {
                 set_status(if_tree_container_.last_status());
@@ -1016,6 +1006,18 @@ namespace eml {
             }
 
             return infer_raw(raw_features.data(), static_cast<uint16_t>(raw_features.size()));
+        }
+
+        size_t memory_usage() const {
+            size_t total = sizeof(IsoForest);
+            total += if_base_.memory_usage();
+            total += if_config_.memory_usage();
+            total += if_feature_extractor_.memory_usage();
+            total += if_feature_transform_layer_.memory_usage();
+            total += if_scaler_layer_.memory_usage();
+            total += if_quantizer_.memory_usage();
+            total += if_tree_container_.memory_usage();
+            return total;
         }
 
         bool initialized() const { return initialized_; }

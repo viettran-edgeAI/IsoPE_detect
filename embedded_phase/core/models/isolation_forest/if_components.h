@@ -207,6 +207,7 @@ namespace eml {
         packed_vector<64, IsoNode> nodes_;
         const If_node_resource* resource_ = nullptr;
         uint16_t depth_ = 0;
+        uint8_t bits_per_node_ = 0;
         bool is_loaded_ = false;
 
         bool ensure_layout() {
@@ -215,6 +216,7 @@ namespace eml {
             }
             if (nodes_.get_bits_per_value() != resource_->bits_per_node()) {
                 nodes_.set_bits_per_value(resource_->bits_per_node());
+                bits_per_node_ = resource_->bits_per_node();
             }
             return true;
         }
@@ -335,6 +337,7 @@ namespace eml {
 
             resource_ = resource;
             nodes_.set_bits_per_value(resource_->bits_per_node());
+            bits_per_node_ = resource_->bits_per_node();
             nodes_.resize(node_count, IsoNode{});
             for (size_t i = 0; i < node_count; ++i) {
                 IsoNode node;
@@ -352,6 +355,14 @@ namespace eml {
                 return 0ull;
             }
             return nodes_.get(index).packed_data;
+        }
+
+        // estimate memory usage of the tree in bytes
+        size_t memory_usage() const {
+            if (!is_loaded_) {
+                return 0ull;
+            }
+            return bits_per_node_ * nodes_.capacity() + sizeof(uint16_t) + sizeof(bool) + 2 + 4;
         }
 
         size_t node_count() const { return nodes_.size(); }
@@ -1055,6 +1066,35 @@ namespace eml {
             }
             set_status(eml_status_code::ok);
             return true;
+        }
+
+        size_t model_file_size() const {
+            if (!trained_ || trees_.empty()) {
+                return 0ull;
+            }
+
+            uint64_t payload_size = 0ull;
+            if (!compute_payload_size(payload_size)) {
+                return 0ull;
+            }
+
+            const uint64_t total_size = static_cast<uint64_t>(k_model_header_size_) + payload_size + sizeof(uint32_t);
+            if (total_size > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+                return 0ull;
+            }
+            return static_cast<size_t>(total_size);
+        }
+
+        size_t memory_usage() const {
+            if (!trained_ || trees_.empty()) {
+                return sizeof(*this);
+            }
+
+            size_t total = sizeof(If_tree_container);
+            for (const If_tree& tree : trees_) {
+                total += tree.memory_usage();
+            }
+            return total;
         }
 
         size_t num_trees() const { return trees_.size(); }

@@ -219,6 +219,12 @@ namespace eml {
             set_status(eml_status_code::ok);
         }
 
+        size_t memory_usage() const {
+            size_t ram = 0ull;
+            ram += sizeof(uint8_t) * log1p_abs_mask_.capacity() + sizeof(uint16_t) + sizeof(bool) + 2;
+            return ram;
+        }
+
         bool loaded() const { return loaded_; }
         uint16_t num_features() const { return num_features_; }
         eml_status_code last_status() const { return last_status_code_; }

@@ -138,14 +138,6 @@ bool IsolationForestModelEngine::infer_raw(const std::vector<float>& raw_feature
         error);
 }
 
-void IsolationForestModelEngine::set_extract_callback(IsoForest::extract_callback_t callback) {
-    model_.set_extract_callback(std::move(callback));
-}
-
-void IsolationForestModelEngine::set_extract_content_callback(IsoForest::extract_content_callback_t callback) {
-    model_.set_extract_content_callback(std::move(callback));
-}
-
 bool IsolationForestModelEngine::infer_pe_path(const std::filesystem::path& pe_path,
                                                eml_isolation_result_t& out_result,
                                                std::string* error) const {

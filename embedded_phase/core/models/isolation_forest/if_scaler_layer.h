@@ -140,6 +140,8 @@ namespace eml {
 
             means_ = means;
             scales_ = scales;
+            means_.shrink_to_fit();
+            scales_.shrink_to_fit();
             num_features_ = static_cast<uint16_t>(means_.size());
             loaded_ = true;
             set_status(eml_status_code::ok);
@@ -211,6 +213,13 @@ namespace eml {
             }
             set_status(eml_status_code::ok);
             return true;
+        }
+
+        size_t memory_usage() const {
+            if (!loaded_) {
+                return 0ull;
+            }
+            return sizeof(float) * (means_.capacity() + scales_.capacity()) + sizeof(uint16_t) + sizeof(bool) + 2;
         }
 
         const vector<float>& means() const { return means_; }

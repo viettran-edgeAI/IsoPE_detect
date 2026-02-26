@@ -1,16 +1,19 @@
 #include <algorithm>
-#include <cstdint>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../../embedded_phase/core/models/isolation_forest/if_model.h"
 
 namespace {
+
+    constexpr double BYTES_PER_MB = 1024.0 * 1024.0;
 
     struct EvalStats {
         size_t total_files = 0u;
@@ -18,21 +21,36 @@ namespace {
         size_t failed = 0u;
         size_t flagged = 0u;
         std::vector<float> scores;
-        double total_time_sec = 0.0;            // cumulative inference time
-        uint64_t total_bytes = 0u;              // sum of file sizes processed
+        double total_time_sec = 0.0;
+        uint64_t total_bytes = 0u;
+    };
+
+    struct DatasetCounts {
+        size_t train_samples = 0u;
+        size_t validation_samples = 0u;
+        size_t validation_benign_samples = 0u;
+        size_t validation_malware_samples = 0u;
+        size_t test_samples = 0u;
+        size_t test_benign_samples = 0u;
+        size_t test_malware_samples = 0u;
+    };
+
+    struct CurvePoint {
+        float x = 0.0f;
+        float y = 0.0f;
     };
 
     struct CliArgs {
         std::filesystem::path repo_root = std::filesystem::path(".");
         std::string model_name = "iforest";
-        std::filesystem::path output_path;
+        std::filesystem::path output_txt_path;
         std::filesystem::path benign_test_dir;
         std::filesystem::path malware_test_dir;
-        bool no_calibration = false; // when true, build_model is called with enable_calibration=false
+        bool no_calibration = false;
     };
 
     void print_usage(const char* prog) {
-        std::cerr << "Usage: " << prog << " [--repo-root PATH] [--model-name NAME] [--output PATH]"
+        std::cerr << "Usage: " << prog << " [--repo-root PATH] [--model-name NAME] [--output-txt PATH]"
                   << " [--benign-test-dir PATH] [--malware-test-dir PATH]" \
                   << " [--no-calibration]" << std::endl;
     }
@@ -50,11 +68,11 @@ namespace {
                     return false;
                 }
                 args.model_name = argv[++i];
-            } else if (token == "--output") {
+            } else if (token == "--output-txt" || token == "--output") {
                 if (i + 1 >= argc) {
                     return false;
                 }
-                args.output_path = std::filesystem::path(argv[++i]);
+                args.output_txt_path = std::filesystem::path(argv[++i]);
             } else if (token == "--benign-test-dir") {
                 if (i + 1 >= argc) {
                     return false;
@@ -76,8 +94,8 @@ namespace {
         }
 
         args.repo_root = std::filesystem::absolute(args.repo_root);
-        if (args.output_path.empty()) {
-            args.output_path = args.repo_root / "development_phase/reports/if_quantized_cpp_raw_pe_eval.json";
+        if (args.output_txt_path.empty()) {
+            args.output_txt_path = args.repo_root / "development_phase/reports/if_quantized_cpp_raw_pe_eval.txt";
         }
         if (args.benign_test_dir.empty()) {
             args.benign_test_dir = args.repo_root / "datasets/BENIGN_TEST_DATASET";
@@ -137,13 +155,182 @@ namespace {
         return stats;
     }
 
-    bool write_report(const std::filesystem::path& output_path,
+    bool read_nml_sample_count(const std::filesystem::path& nml_path,
+                               size_t& out_num_samples) {
+        out_num_samples = 0u;
+
+        std::ifstream fin(nml_path, std::ios::binary);
+        if (!fin.is_open()) {
+            return false;
+        }
+
+        uint32_t num_samples = 0u;
+        uint16_t num_features = 0u;
+        fin.read(reinterpret_cast<char*>(&num_samples), sizeof(num_samples));
+        fin.read(reinterpret_cast<char*>(&num_features), sizeof(num_features));
+        if (!fin.good() && !fin.eof()) {
+            return false;
+        }
+        (void)num_features;
+
+        out_num_samples = static_cast<size_t>(num_samples);
+        return true;
+    }
+
+    DatasetCounts collect_dataset_counts(const eml::IsoForest& model,
+                                         const EvalStats& benign,
+                                         const EvalStats& malware) {
+        DatasetCounts counts;
+        counts.test_benign_samples = benign.total_files;
+        counts.test_malware_samples = malware.total_files;
+        counts.test_samples = counts.test_benign_samples + counts.test_malware_samples;
+
+        size_t benign_train = 0u;
+        if (read_nml_sample_count(model.base().get_benign_train_nml_path(), benign_train)) {
+            counts.train_samples = benign_train;
+        }
+
+        size_t benign_val = 0u;
+        size_t malware_val = 0u;
+        if (read_nml_sample_count(model.base().get_benign_val_nml_path(), benign_val)) {
+            counts.validation_benign_samples = benign_val;
+        }
+        if (read_nml_sample_count(model.base().get_malware_val_nml_path(), malware_val)) {
+            counts.validation_malware_samples = malware_val;
+        }
+        counts.validation_samples = counts.validation_benign_samples + counts.validation_malware_samples;
+
+        return counts;
+    }
+
+    std::vector<CurvePoint> compute_precision_recall_curve(const std::vector<float>& benign_scores,
+                                                           const std::vector<float>& malware_scores) {
+        struct ScoredLabel {
+            float score = 0.0f;
+            bool is_malware = false;
+        };
+
+        std::vector<ScoredLabel> samples;
+        samples.reserve(benign_scores.size() + malware_scores.size());
+        for (float score : benign_scores) {
+            samples.push_back(ScoredLabel{-score, false});
+        }
+        for (float score : malware_scores) {
+            samples.push_back(ScoredLabel{-score, true});
+        }
+
+        std::sort(samples.begin(), samples.end(), [](const ScoredLabel& left, const ScoredLabel& right) {
+            return left.score > right.score;
+        });
+
+        size_t positives = 0u;
+        for (const auto& sample : samples) {
+            if (sample.is_malware) {
+                ++positives;
+            }
+        }
+
+        std::vector<CurvePoint> curve;
+        curve.push_back(CurvePoint{0.0f, 1.0f});
+        if (samples.empty() || positives == 0u) {
+            curve.push_back(CurvePoint{1.0f, 0.0f});
+            return curve;
+        }
+
+        size_t tp = 0u;
+        size_t fp = 0u;
+        for (size_t index = 0; index < samples.size(); ++index) {
+            if (samples[index].is_malware) {
+                ++tp;
+            } else {
+                ++fp;
+            }
+
+            if (index + 1 == samples.size() || samples[index].score != samples[index + 1u].score) {
+                const float recall = static_cast<float>(tp) / static_cast<float>(positives);
+                const float precision = (tp + fp) > 0u
+                    ? static_cast<float>(tp) / static_cast<float>(tp + fp)
+                    : 0.0f;
+                curve.push_back(CurvePoint{recall, precision});
+            }
+        }
+
+        return curve;
+    }
+
+    std::vector<CurvePoint> compute_roc_curve(const std::vector<float>& benign_scores,
+                                              const std::vector<float>& malware_scores) {
+        struct ScoredLabel {
+            float score = 0.0f;
+            bool is_malware = false;
+        };
+
+        std::vector<ScoredLabel> samples;
+        samples.reserve(benign_scores.size() + malware_scores.size());
+        for (float score : benign_scores) {
+            samples.push_back(ScoredLabel{-score, false});
+        }
+        for (float score : malware_scores) {
+            samples.push_back(ScoredLabel{-score, true});
+        }
+
+        std::sort(samples.begin(), samples.end(), [](const ScoredLabel& left, const ScoredLabel& right) {
+            return left.score > right.score;
+        });
+
+        size_t positives = malware_scores.size();
+        size_t negatives = benign_scores.size();
+
+        std::vector<CurvePoint> curve;
+        curve.push_back(CurvePoint{0.0f, 0.0f});
+        if (samples.empty() || positives == 0u || negatives == 0u) {
+            curve.push_back(CurvePoint{1.0f, 1.0f});
+            return curve;
+        }
+
+        size_t tp = 0u;
+        size_t fp = 0u;
+        for (size_t index = 0; index < samples.size(); ++index) {
+            if (samples[index].is_malware) {
+                ++tp;
+            } else {
+                ++fp;
+            }
+
+            if (index + 1 == samples.size() || samples[index].score != samples[index + 1u].score) {
+                const float fpr = static_cast<float>(fp) / static_cast<float>(negatives);
+                const float tpr = static_cast<float>(tp) / static_cast<float>(positives);
+                curve.push_back(CurvePoint{fpr, tpr});
+            }
+        }
+
+        if (curve.back().x < 1.0f || curve.back().y < 1.0f) {
+            curve.push_back(CurvePoint{1.0f, 1.0f});
+        }
+
+        return curve;
+    }
+
+    uint64_t file_size_bytes(const std::filesystem::path& path) {
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(path, ec);
+        return ec ? 0u : static_cast<uint64_t>(size);
+    }
+
+    bool write_report_txt(const std::filesystem::path& output_path,
                       const std::filesystem::path& repo_root,
                       const std::string& model_name,
                       float threshold,
+                      size_t model_ram_size_bytes,
+                      uint64_t model_file_size_bytes,
+                      const std::filesystem::path& model_file_path,
+                      const DatasetCounts& counts,
                       const EvalStats& benign,
                       const EvalStats& malware,
-                      double roc_auc) {
+                      double roc_auc,
+                      double average_precision,
+                      const std::vector<CurvePoint>& pr_curve,
+                      const std::vector<CurvePoint>& roc_curve) {
         const float fpr = benign.success > 0u
             ? static_cast<float>(benign.flagged) / static_cast<float>(benign.success)
             : 0.0f;
@@ -158,32 +345,58 @@ namespace {
         }
 
         out << std::fixed << std::setprecision(6);
-        out << "{\n";
-        out << "  \"repo_root\": \"" << repo_root.string() << "\",\n";
-        out << "  \"model_name\": \"" << model_name << "\",\n";
-        out << "  \"threshold\": " << threshold << ",\n";
-        out << "  \"raw_pe_eval\": {\n";
-        out << "    \"benign_total\": " << benign.total_files << ",\n";
-        out << "    \"benign_success\": " << benign.success << ",\n";
-        out << "    \"benign_failed\": " << benign.failed << ",\n";
-        out << "    \"benign_flagged\": " << benign.flagged << ",\n";
-        out << "    \"malware_total\": " << malware.total_files << ",\n";
-        out << "    \"malware_success\": " << malware.success << ",\n";
-        out << "    \"malware_failed\": " << malware.failed << ",\n";
-        out << "    \"malware_flagged\": " << malware.flagged << ",\n";
-        out << "    \"fpr\": " << fpr << ",\n";
-        out << "    \"tpr\": " << tpr << ",\n";
-        out << "    \"roc_auc\": " << roc_auc << ",\n";
-        out << "    \"benign_total_time_sec\": " << benign.total_time_sec << ",\n";
-        out << "    \"malware_total_time_sec\": " << malware.total_time_sec << ",\n";
         double combined_files = static_cast<double>(benign.total_files + malware.total_files);
         double combined_time = benign.total_time_sec + malware.total_time_sec;
         double combined_bytes = static_cast<double>(benign.total_bytes + malware.total_bytes);
-        out << "    \"total_inference_time_sec\": " << combined_time << ",\n";
-        out << "    \"avg_time_per_file_sec\": " << (combined_files>0? combined_time/combined_files : 0.0) << ",\n";
-        out << "    \"avg_time_per_mb_sec\": " << (combined_bytes>0? combined_time/(combined_bytes/(1024.0*1024.0)) : 0.0) << "\n";
-        out << "  }\n";
-        out << "}\n";
+        const double avg_ms_per_file = combined_files > 0.0 ? (combined_time * 1000.0) / combined_files : 0.0;
+        const double avg_ms_per_mb = combined_bytes > 0.0 ? (combined_time * 1000.0) / (combined_bytes / BYTES_PER_MB) : 0.0;
+
+        out << "[metadata]\n";
+        out << "repo_root=" << repo_root.string() << "\n";
+        out << "model_name=" << model_name << "\n";
+        out << "threshold=" << threshold << "\n\n";
+
+        out << "[sample_counts]\n";
+        out << "train_samples=" << counts.train_samples << "\n";
+        out << "validation_samples=" << counts.validation_samples << "\n";
+        out << "validation_benign_samples=" << counts.validation_benign_samples << "\n";
+        out << "validation_malware_samples=" << counts.validation_malware_samples << "\n";
+        out << "test_samples=" << counts.test_samples << "\n";
+        out << "test_benign_samples=" << counts.test_benign_samples << "\n";
+        out << "test_malware_samples=" << counts.test_malware_samples << "\n\n";
+
+        out << "[model]\n";
+        out << "model_ram_size_bytes=" << model_ram_size_bytes << "\n";
+        out << "model_file_size_bytes=" << model_file_size_bytes << "\n";
+        out << "model_file_path=" << model_file_path.string() << "\n\n";
+
+        out << "[metrics]\n";
+        out << "fpr=" << fpr << "\n";
+        out << "tpr=" << tpr << "\n";
+        out << "roc_auc=" << roc_auc << "\n";
+        out << "average_precision=" << average_precision << "\n";
+        out << "prc_auc=" << average_precision << "\n\n";
+
+        out << "[speed]\n";
+        out << "benign_total_time_sec=" << benign.total_time_sec << "\n";
+        out << "malware_total_time_sec=" << malware.total_time_sec << "\n";
+        out << "total_inference_time_sec=" << combined_time << "\n";
+        out << "avg_inference_ms_per_file=" << avg_ms_per_file << "\n";
+        out << "avg_inference_ms_per_mb=" << avg_ms_per_mb << "\n\n";
+
+        out << "[pr_curve]\n";
+        out << "recall,precision\n";
+        for (const auto& point : pr_curve) {
+            out << point.x << "," << point.y << "\n";
+        }
+        out << "\n";
+
+        out << "[roc_curve]\n";
+        out << "fpr,tpr\n";
+        for (const auto& point : roc_curve) {
+            out << point.x << "," << point.y << "\n";
+        }
+        out << "\n";
 
         return true;
     }
@@ -238,16 +451,31 @@ int main(int argc, char** argv) {
     }
 
     const double roc_auc = static_cast<double>(auc_metrics.roc_auc());
+    const double average_precision = static_cast<double>(auc_metrics.average_precision());
+    const std::vector<CurvePoint> pr_curve = compute_precision_recall_curve(benign_stats.scores, malware_stats.scores);
+    const std::vector<CurvePoint> roc_curve = compute_roc_curve(benign_stats.scores, malware_stats.scores);
 
-    if (!write_report(
-            args.output_path,
+    const DatasetCounts sample_counts = collect_dataset_counts(model, benign_stats, malware_stats);
+    const size_t model_ram_size_bytes = model.memory_usage();
+    const std::filesystem::path model_file_path = model.base().get_model_path();
+    const uint64_t model_file_size = file_size_bytes(model_file_path);
+
+    if (!write_report_txt(
+            args.output_txt_path,
             args.repo_root,
             args.model_name,
             threshold,
+            model_ram_size_bytes,
+            model_file_size,
+            model_file_path,
+            sample_counts,
             benign_stats,
             malware_stats,
-            roc_auc)) {
-        std::cerr << "Failed to write report: " << args.output_path << std::endl;
+            roc_auc,
+            average_precision,
+            pr_curve,
+            roc_curve)) {
+        std::cerr << "Failed to write report: " << args.output_txt_path << std::endl;
         return 5;
     }
 
@@ -263,16 +491,21 @@ int main(int argc, char** argv) {
     std::cout << "Threshold: " << threshold << "\n";
     std::cout << "Benign: success=" << benign_stats.success << ", failed=" << benign_stats.failed << "\n";
     std::cout << "Malware: success=" << malware_stats.success << ", failed=" << malware_stats.failed << "\n";
-    std::cout << "FPR=" << fpr << ", TPR=" << tpr << ", ROC-AUC=" << roc_auc << "\n";
+    std::cout << "FPR=" << fpr << ", TPR=" << tpr << ", ROC-AUC=" << roc_auc << ", AP=" << average_precision << "\n";
+    std::cout << "Samples train=" << sample_counts.train_samples
+              << " validation=" << sample_counts.validation_samples
+              << " test=" << sample_counts.test_samples << "\n";
+    std::cout << "Model RAM (bytes): " << model_ram_size_bytes << "\n";
+    std::cout << "Model file (bytes): " << model_file_size << " [" << model_file_path.string() << "]\n";
 
     double combined_time = benign_stats.total_time_sec + malware_stats.total_time_sec;
     size_t combined_files = benign_stats.total_files + malware_stats.total_files;
     double combined_bytes = static_cast<double>(benign_stats.total_bytes + malware_stats.total_bytes);
     std::cout << "Total inference time (sec): " << combined_time << "\n";
-    std::cout << "Avg time per file (sec): " << (combined_files? combined_time/combined_files : 0.0) << "\n";
-    std::cout << "Avg time per MB (sec): " << (combined_bytes? combined_time/(combined_bytes/(1024.0*1024.0)) : 0.0) << "\n";
+    std::cout << "Avg time per file (ms): " << (combined_files ? (combined_time * 1000.0) / static_cast<double>(combined_files) : 0.0) << "\n";
+    std::cout << "Avg time per MB (ms): " << (combined_bytes ? (combined_time * 1000.0) / (combined_bytes / BYTES_PER_MB) : 0.0) << "\n";
 
-    std::cout << "Report: " << args.output_path << std::endl;
+    std::cout << "Report: " << args.output_txt_path << std::endl;
 
     return 0;
 }

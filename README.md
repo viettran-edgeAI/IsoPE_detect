@@ -22,7 +22,7 @@ Primary output artifacts are generated in `development_phase/results/` and are i
 
 The `embedded_phase` contains the C++ implementation for endpoint use:
 
-- **Task 1** — Core model library (`core/models/isolation_forest/`): C++ developer-focused headers and APIs. No cross-platform CMake. Exposes `IsoForest` lifecycle (load/train/save/infer) and `If_tree`/`If_tree_container` primitives.
+- **Task 1** — Core model library (`core/models/isolation_forest/`): C++ developer-focused headers and APIs. No cross-platform CMake. Exposes `IsoForest` lifecycle (load/train/save/infer) and `If_tree`/`If_tree_container` primitives.  The accompanying `If_feature_extractor` has been refactored to accept a JSON or runtime-provided feature list instead of requiring a compile-time header; this allows the extraction interface to be configured dynamically from development artifacts.
 - **Task 2** — Model engine runtime (`src/model_engine/`): Production packaging with CMake. Thin integration layer over Task 1. Handles deployment-oriented loading, versioning, and cross-platform artifact management.
 - Supporting components: PE feature extraction, embedded scoring, diagnostics.
 

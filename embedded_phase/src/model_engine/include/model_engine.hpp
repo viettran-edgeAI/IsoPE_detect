@@ -64,9 +64,6 @@ public:
                    eml_isolation_result_t& out_result,
                    std::string* error = nullptr) const;
 
-    void set_extract_callback(IsoForest::extract_callback_t callback);
-    void set_extract_content_callback(IsoForest::extract_content_callback_t callback);
-
     bool infer_pe_path(const std::filesystem::path& pe_path,
                        eml_isolation_result_t& out_result,
                        std::string* error = nullptr) const;

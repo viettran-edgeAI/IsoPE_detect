@@ -53,6 +53,13 @@ cmake -S . -B build_cmake_tools
 cmake --build build_cmake_tools -j
 ```
 
+If new app targets are added/renamed in CMake (for example, endpoint integration samples), rerun configure first:
+
+```bash
+cmake -S . -B build_cmake_tools
+cmake --build build_cmake_tools -j
+```
+
 ### 3.4 Run tests
 
 ```bash
@@ -79,9 +86,9 @@ ctest --test-dir build_cmake_tools --output-on-failure
 ### 3.7 Run minimal C API sample
 
 ```bash
-./build_cmake_tools/app/small_agent_capi_sample/small_agent_capi_sample \
-  embedded_phase/core/models/isolation_forest/resources \
-  iforest
+./build_cmake_tools/embedded_phase/src/model_engine/app/endpoint_agent_capi_sample \
+  --resource-dir embedded_phase/core/models/isolation_forest/resources \
+  --model-name iforest
 ```
 
 ## 4) Windows build and run (PowerShell)
@@ -132,9 +139,9 @@ ctest --test-dir build_cmake_tools -C Release --output-on-failure
 ### 4.7 Run minimal C API sample
 
 ```powershell
-.\build_cmake_tools\app\small_agent_capi_sample\Release\small_agent_capi_sample.exe `
-  embedded_phase/core/models/isolation_forest/resources `
-  iforest
+.\build_cmake_tools\embedded_phase\src\model_engine\app\Release\endpoint_agent_capi_sample.exe `
+  --resource-dir embedded_phase/core/models/isolation_forest/resources `
+  --model-name iforest
 ```
 
 ## 5) Notes for endpoint integration

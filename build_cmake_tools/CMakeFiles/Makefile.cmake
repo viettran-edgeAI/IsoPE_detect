@@ -52,5 +52,6 @@ set(CMAKE_DEPEND_INFO_FILES
   "embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine_c.dir/DependInfo.cmake"
   "embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/DependInfo.cmake"
   "embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/DependInfo.cmake"
+  "embedded_phase/src/model_engine/app/CMakeFiles/endpoint_agent_capi_sample.dir/DependInfo.cmake"
   "embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/DependInfo.cmake"
   )

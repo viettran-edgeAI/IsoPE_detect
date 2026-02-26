@@ -124,8 +124,8 @@
     "thresholding": {
       "strategy": "tpr",
       "f_beta": 1.0,
-      "threshold": -0.54687696695327759,
-      "fpr_threshold": 0.03845379501581192,
+      "threshold": -0.54180455207824707,
+      "fpr_threshold": 0.03744715079665184,
       "val_fpr_target": 0.04,
       "val_fpr_delta": 0.01,
       "offset": 0

@@ -2,6 +2,32 @@
 
 All notable changes to the EDR Agent model and optimization pipeline will be documented in this file. This project follows absolute metric tracking for model effectiveness.
 
+## [1.15.1] - 2026-02-26
+
+### Changed
+
+- Upgraded `tools/model_tester/if_quantized_cpp_raw_pe_eval.cpp`:
+  - Added benchmark text report output (`development_phase/reports/if_quantized_cpp_raw_pe_eval.txt`).
+  - Added model footprint reporting (`model_ram_size_bytes`, `model_file_size_bytes`).
+  - Added sample-count reporting (train/validation/test).
+  - Added PR/ROC curve point dumps plus AP/AUC and FPR/TPR metrics.
+  - Added inference speed reporting in milliseconds per file and per MB.
+- Added Python report visualizer `tools/model_tester/if_quantized_cpp_raw_pe_eval_report.py`:
+  - Parses the evaluator txt report.
+  - Generates report charts/images into `reports/`.
+- Added tiny endpoint integration sample in `embedded_phase/src/model_engine/app/endpoint_agent_capi_sample.cpp` and app CMake target `endpoint_agent_capi_sample`.
+- Overhauled `If_feature_extractor`:
+  - Added a new runtime-construction API that accepts a JSON feature list or `vector<string>`.
+  - Removed dependency on the compile-time `if_feature_extractor_default.h` header (now a no-op shim).
+  - Eliminated PE extraction callback plumbing from `if_model` and model-engine; features resolved during construction and cached.
+  - Allows the extractor to be initialized without rebuilding when feature sets change.
+
+### Validation (current workspace)
+
+- `endpoint_agent_capi_sample`: **PASS** (load + quantized inference).
+- `if_quantized_cpp_raw_pe_eval`: report generation **PASS**; PE inference callbacks not configured in this run (`benign_success=0`, `malware_success=0`).
+- Python report visualizer: **PASS**; generated chart files under `reports/`.
+
 ## [1.15.0] - 2026-02-26
 
 ### Changed

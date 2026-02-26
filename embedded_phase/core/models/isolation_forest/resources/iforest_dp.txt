@@ -1,5 +1,5 @@
 parameter,value
-quantization_coefficient,3
+quantization_coefficient,4
 num_features,40
 num_samples,31954
 num_labels,1

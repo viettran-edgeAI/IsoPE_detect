@@ -9,6 +9,7 @@ target_include_directories(pe_model_engine
 )
 
 target_compile_features(pe_model_engine PUBLIC cxx_std_17)
+target_link_libraries(pe_model_engine PUBLIC LIEF::LIEF)
 
 add_library(pe_model_engine_c STATIC
   model_engine_c.cpp

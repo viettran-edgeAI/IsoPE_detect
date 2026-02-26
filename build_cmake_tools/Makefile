@@ -179,6 +179,19 @@ pe_model_engine_benchmark_cli/fast:
 .PHONY : pe_model_engine_benchmark_cli/fast
 
 #=============================================================================
+# Target rules for targets named endpoint_agent_capi_sample
+
+# Build rule for target.
+endpoint_agent_capi_sample: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 endpoint_agent_capi_sample
+.PHONY : endpoint_agent_capi_sample
+
+# fast build rule for target.
+endpoint_agent_capi_sample/fast:
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/endpoint_agent_capi_sample.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/endpoint_agent_capi_sample.dir/build
+.PHONY : endpoint_agent_capi_sample/fast
+
+#=============================================================================
 # Target rules for targets named pe_model_engine_tests
 
 # Build rule for target.
@@ -200,6 +213,7 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... endpoint_agent_capi_sample"
 	@echo "... pe_model_engine"
 	@echo "... pe_model_engine_benchmark_cli"
 	@echo "... pe_model_engine_c"
