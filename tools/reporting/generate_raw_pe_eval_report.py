@@ -126,17 +126,14 @@ def save_pr_curve(pr_curve: PointList, metrics: Dict[str, str], output_dir: Path
 
 def save_roc_curve_logfpr(roc_curve: PointList, metrics: Dict[str, str], output_dir: Path) -> Path:
 	auc = value(metrics, "roc_auc")
-
-	x_values: List[float] = []
-	y_values: List[float] = []
-	for fpr, tpr in roc_curve:
-		clipped = max(float(fpr), 1e-4)
-		x_values.append(math.log10(clipped))
-		y_values.append(float(tpr))
+	fpr = max(value(metrics, "fpr"), 1e-4)
+	tpr = value(metrics, "tpr")
+	x_values: List[float] = [math.log10(fpr)]
+	y_values: List[float] = [tpr]
 
 	plt.figure(figsize=(6.8, 6.2))
 	plt.plot(x_values, y_values, color="#1f77b4", linewidth=2.0, label=f"ROC Curve (AUC={auc:.4f})")
-	plt.scatter(x_values, y_values, color="red", s=22, label="[FPR, TPR] points", zorder=3)
+	plt.scatter(x_values, y_values, color="red", s=30, label=f"[FPR, TPR] point )", zorder=3)
 
 	plt.xlim(-4.0, 0.0)
 	plt.ylim(0.0, 1.05)
@@ -155,7 +152,6 @@ def save_roc_curve_logfpr(roc_curve: PointList, metrics: Dict[str, str], output_
 
 def write_markdown_report(
 	sections: SectionMap,
-	sample_chart: Path,
 	pr_chart: Path,
 	roc_chart: Path,
 	markdown_path: Path,
@@ -215,10 +211,6 @@ Generated at: {now}
 
 ## Charts
 
-### Training/Validation Sample Counts
-
-![Sample Counts]({sample_chart.name})
-
 ### Precision-Recall Curve
 
 ![PR Curve]({pr_chart.name})
@@ -264,25 +256,21 @@ def main() -> int:
 
 	sections, pr_curve, roc_curve = parse_report(args.report_txt)
 	metrics = sections.get("metrics", {})
-	sample_counts = sections.get("sample_counts", {})
 
 	args.output_dir.mkdir(parents=True, exist_ok=True)
 	args.output_md.parent.mkdir(parents=True, exist_ok=True)
 
-	sample_chart = save_sample_count_chart(sample_counts, args.output_dir)
 	pr_chart = save_pr_curve(pr_curve, metrics, args.output_dir)
 	roc_chart = save_roc_curve_logfpr(roc_curve, metrics, args.output_dir)
 
 	write_markdown_report(
 		sections=sections,
-		sample_chart=sample_chart,
 		pr_chart=pr_chart,
 		roc_chart=roc_chart,
 		markdown_path=args.output_md,
 		quant_bits=args.quantization_bits,
 	)
 
-	print(f"Generated: {sample_chart}")
 	print(f"Generated: {pr_chart}")
 	print(f"Generated: {roc_chart}")
 	print(f"Generated: {args.output_md}")

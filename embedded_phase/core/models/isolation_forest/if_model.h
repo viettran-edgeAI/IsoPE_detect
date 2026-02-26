@@ -1009,7 +1009,7 @@ namespace eml {
         }
 
         size_t memory_usage() const {
-            size_t total = sizeof(IsoForest);
+            size_t total = 0ull;
             total += if_base_.memory_usage();
             total += if_config_.memory_usage();
             total += if_feature_extractor_.memory_usage();

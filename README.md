@@ -1,73 +1,50 @@
-# IsoPE_detect
+# EDR_AGENT
 
-## Overview
+## Model Parameters (Current Baseline)
 
-IsoPE_detect is a static PE-based malware detection project for endpoint environments. It uses a two-phase workflow: Python-based model development and C++-based embedded runtime deployment. The development phase produces model artifacts, and the embedded phase consumes those artifacts for extraction, scoring, and runtime integration.
+- Quantization: **4-bit**
+- Model: **Isolation Forest (`iforest`)**
 
-## Project Phases
+### Dataset split
+- **Train:** 32,000 benign
+- **Validation:** 5,000 benign + 400 malware
+- **Test:** 5,000 benign + 4,200 malware
 
-### development_phase
+## Data journey (training set)
+- 32.8 GB (PE files) → 10.6 MB (feature extraction – parquet format)
+- 10.6 MB → 8.4 MB (feature cleaning – parquet format)
+- 8.4 MB → 1.4 MB (feature optimized – parquet format)
+- 1.4 MB → 0.67 MB (4-bit quantization - binary format)
 
-The `development_phase` contains the data science pipeline:
+## Test-Set Benchmark (latest reporting run)
 
-- Data preparation and dataset normalization.
-- Feature engineering and feature selection.
-- Isolation Forest model optimization and threshold selection.
-- Artifact generation for deployment handoff.
+- **FPR:** 0.047457
+- **TPR:** 0.937781
+- **Model RAM size:** 4,663,482 bytes
+- **Model file size:** 8,256,197 bytes
+- **Average inference speed / file:** 16.702650 ms
+- **Average inference speed / MB:** 5.442300 ms
 
-Primary output artifacts are generated in `development_phase/results/` and are intended to be consumed by the embedded runtime; datasets trimmed to those features appear under `development_phase/data/optimized/`.
+### Benchmark graphs
+- PR curve: [reports/raw_pe_pr_curve.png](reports/raw_pe_pr_curve.png)
+- ROC curve: [reports/if_quantized_roc_curve.png](reports/if_quantized_roc_curve.png)
 
+## New improvements to the model
 
-### embedded_phase
+- **Quantization:** reduces model size.
+- **Self-retraining:** allows for self-retraining on the device itself.
 
-The `embedded_phase` contains the C++ implementation for endpoint use:
+### Known disadvantage
 
-- **Task 1** — Core model library (`core/models/isolation_forest/`): C++ developer-focused headers and APIs. No cross-platform CMake. Exposes `IsoForest` lifecycle (load/train/save/infer) and `If_tree`/`If_tree_container` primitives.  The accompanying `If_feature_extractor` has been refactored to accept a JSON or runtime-provided feature list instead of requiring a compile-time header; this allows the extraction interface to be configured dynamically from development artifacts.
-- **Task 2** — Model engine runtime (`src/model_engine/`): Production packaging with CMake. Thin integration layer over Task 1. Handles deployment-oriented loading, versioning, and cross-platform artifact management.
-- Supporting components: PE feature extraction, embedded scoring, diagnostics.
+- The model still emits output messages from the LIEF core inside the feature extractor path. This is a known issue and will be fixed in a later update.
 
-This phase consumes the artifacts produced by `development_phase`.
+## Documentation Index
 
-## Repository Layout
+- Directory structure overview: [docs/README.md](docs/README.md)
+- Development phase guide: [development_phase/docs/DEVELOPMENT_PHASE.md](development_phase/docs/DEVELOPMENT_PHASE.md)
+- Embedded phase guide: [embedded_phase/docs/EMBEDDED_PHASE.md](embedded_phase/docs/EMBEDDED_PHASE.md)
 
-- `development_phase/` — Python pipeline, schemas, configs, reports, and deployment artifacts.
-- `embedded_phase/` — C++ core/runtime code, model engine, and embedded tooling.
-- `datasets/` — benign and malware datasets used by the pipeline.
-- `tools/` — shared utilities for data preparation workflows.
+## Academic / Research Documents
 
-## Getting Started
-
-1. Prepare raw binaries by placing benign/malware samples under the corresponding `datasets/` subdirectories.
-2. Run earlier stages if needed (`feature_extraction.py`, `feature_selection.py`), or start at Stage 3 via:
-   ```bash
-   cd development_phase/src
-   python model_optimization.py --config model_config.json
-   ```
-   which produces optimized CSV datasets and handoff artifacts in `development_phase/results/`.
-3. Prepare embedded resources:
-   ```bash
-   python tools/resource_prepairer/prepare_datasets.py \
-       --benign-train development_phase/data/optimized/iforest_ben_train.csv \
-       --benign-val development_phase/data/optimized/iforest_ben_val.csv \
-       --malware-val development_phase/data/optimized/iforest_mal_val.csv \
-       --output-dir embedded_phase/core/models/isolation_forest/resources \
-       --quantization-bits 3 --model-name iforest
-   ```
-   This step fits a quantizer on the train split and transforms the validation splits, emitting the quantized nml/bin artifacts used by the runtime.
-4. Build and test the embedded runtime. For example:
-   ```bash
-   cd embedded_phase/src/feature_extractor && ./build.sh
-   cd embedded_phase && cmake -S src/model_engine -B build && cmake --build build
-   ```
-5. Optionally run the raw-PE evaluation utility:
-   ```bash
-   /tmp/if_quantized_cpp_raw_pe_eval --repo-root . --model-name iforest
-   ```
-
-This covers the full development‑to‑embedded pipeline with automated quantization and deployment artifacts.
-
-## Current Direction
-
-The current focus is to keep a strict development‑to‑embedded contract: artifact generation in `development_phase`, artifact consumption in `embedded_phase`, and progressive refactoring of the embedded stack into a clean core model library plus production-ready `model_engine` packaging/runtime.  Additional tooling such as `tools/resource_prepairer` and `tools/model_tester` now allow full pipeline validation from optimized datasets to raw‑PE inference in one flow.
-
-````
+- Malware validation/test independence assessment: [docs/malware_val_test_independence_assessment.md](docs/malware_val_test_independence_assessment.md)
+- Feature-selection pipeline notes: [development_phase/docs/feature_selection_pipeline.md](development_phase/docs/feature_selection_pipeline.md)

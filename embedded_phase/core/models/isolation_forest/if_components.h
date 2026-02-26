@@ -359,10 +359,7 @@ namespace eml {
 
         // estimate memory usage of the tree in bytes
         size_t memory_usage() const {
-            if (!is_loaded_) {
-                return 0ull;
-            }
-            return bits_per_node_ * nodes_.capacity() + sizeof(uint16_t) + sizeof(bool) + 2 + 4;
+            return nodes_.memory_usage() + sizeof(resource_) + sizeof(depth_) + sizeof(bits_per_node_) + sizeof(is_loaded_);
         }
 
         size_t node_count() const { return nodes_.size(); }
@@ -1086,11 +1083,8 @@ namespace eml {
         }
 
         size_t memory_usage() const {
-            if (!trained_ || trees_.empty()) {
-                return sizeof(*this);
-            }
-
             size_t total = sizeof(If_tree_container);
+            total += trees_.capacity() * sizeof(If_tree);
             for (const If_tree& tree : trees_) {
                 total += tree.memory_usage();
             }

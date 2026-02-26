@@ -44,8 +44,7 @@ std::string json_escape(const std::string& text) {
 }
 
 void print_usage(const char* prog) {
-  std::cerr << "Usage: " << prog << " [--output PATH] [--format csv|jsonl] <pe_file> [<pe_file> ...]\n";
-  std::cerr << "Compiled feature source: " << extractor::compiled_feature_source() << "\n";
+  (void)prog;
 }
 
 bool parse_args(int argc, char** argv, Args& args) {
@@ -93,30 +92,25 @@ int run(const Args& args) {
   const size_t max_path_bytes = static_cast<size_t>(EDR_PE_MAX_PATH_BYTES);
   for (const std::string& path : args.files) {
     if (path.empty() || path.size() > max_path_bytes) {
-      std::cerr << "Input path exceeds limits: " << path << "\n";
       return 2;
     }
 
     std::error_code ec;
     const std::filesystem::path fs_path(path);
     if (!std::filesystem::exists(fs_path, ec) || ec) {
-      std::cerr << "Input file not found: " << path << "\n";
       return 2;
     }
 
     const uintmax_t file_size = std::filesystem::file_size(fs_path, ec);
     if (ec) {
-      std::cerr << "Failed to read file size: " << path << "\n";
       return 2;
     }
 
     if (file_size > std::numeric_limits<uint64_t>::max() - total_input_bytes) {
-      std::cerr << "Input size overflow while validating batch\n";
       return 2;
     }
     total_input_bytes += static_cast<uint64_t>(file_size);
     if (total_input_bytes > max_total_input_bytes) {
-      std::cerr << "Total input batch exceeds limit\n";
       return 2;
     }
   }
@@ -126,7 +120,6 @@ int run(const Args& args) {
   if (!args.output_path.empty()) {
     file_out.open(args.output_path, std::ios::out | std::ios::trunc);
     if (!file_out) {
-      std::cerr << "Failed to open output path: " << args.output_path << "\n";
       return 2;
     }
     out = &file_out;
