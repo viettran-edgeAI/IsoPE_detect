@@ -1,4 +1,9 @@
 [
+  "overlay_ratio",
+  "num_write_sections",
+  "imp_func_hash_149",
+  "opt_sizeof_init_data",
+  "coff_machine",
   "sec_mean_entropy",
   "dos_e_lfanew",
   "imp_func_hash_15",

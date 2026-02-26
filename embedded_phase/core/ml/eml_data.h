@@ -1395,7 +1395,7 @@ namespace eml {
                 size_ = other.size_;
                 quantization_coefficient = other.quantization_coefficient;
                 // Deep copy of labels if loaded in memory
-                allLabels = other.allLabels; // b_vector has its own copy semantics
+                allLabels = other.allLabels; // vector has its own copy semantics
             }
             return *this;
         }

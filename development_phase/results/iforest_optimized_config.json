@@ -3,8 +3,13 @@
   "model_type": "IsolationForest",
   "optimized_feature_set": {
     "source_file": "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../results/iforest_optimized_features.json",
-    "n_features": 40,
+    "n_features": 45,
     "features": [
+      "overlay_ratio",
+      "num_write_sections",
+      "imp_func_hash_149",
+      "opt_sizeof_init_data",
+      "coff_machine",
       "sec_mean_entropy",
       "dos_e_lfanew",
       "imp_func_hash_15",
@@ -47,6 +52,11 @@
       "checksum_matches"
     ],
     "feature_groups": {
+      "overlay_ratio": "overlay",
+      "num_write_sections": "sections_counts",
+      "imp_func_hash_149": "imports_func_hash",
+      "opt_sizeof_init_data": "optional_header",
+      "coff_machine": "coff_header",
       "sec_mean_entropy": "sections_aggregate",
       "dos_e_lfanew": "dos_header",
       "imp_func_hash_15": "imports_func_hash",
@@ -96,7 +106,7 @@
     },
     "scaler": {
       "source_file": "/home/viettran/Documents/visual_code/EDR_AGENT/development_phase/src/../results/iforest_scaler_params.json",
-      "n_features": 40
+      "n_features": 45
     }
   },
   "deployment_scaling": {
@@ -124,23 +134,23 @@
     "thresholding": {
       "strategy": "tpr",
       "f_beta": 1.0,
-      "threshold": 0.08441254411962695,
+      "threshold": 0.0808136913266363,
       "fpr_threshold": 0.05,
       "val_fpr_target": 0.04,
       "val_fpr_delta": 0.01,
-      "offset": -0.6010632325659369
+      "offset": -0.5930132220551305
     }
   },
   "evaluation": {
     "validation": {
-      "fpr": 0.037044493658143746,
+      "fpr": 0.039259110126837124,
       "tpr": 0.9207920792079208,
-      "roc_auc": 0.9877598087974692
+      "roc_auc": 0.9885696089238479
     },
     "test": {
-      "fpr": 0.04648342764753436,
-      "tpr": 0.9403910348116357,
-      "roc_auc": 0.9885123356344225
+      "fpr": 0.046685529506871465,
+      "tpr": 0.9437291368621841,
+      "roc_auc": 0.9874613963282034
     }
   },
   "node_resource": {
@@ -149,10 +159,10 @@
     "leaf_size_bits": 15,
     "depth_bits": 4,
     "max_depth": 15,
-    "max_nodes_per_tree": 5739,
+    "max_nodes_per_tree": 5937,
     "max_samples_per_tree": 31954,
-    "max_leaf_samples_per_node": 16776,
-    "num_features": 40,
+    "max_leaf_samples_per_node": 17505,
+    "num_features": 45,
     "num_samples": 31954
   },
   "notes": [

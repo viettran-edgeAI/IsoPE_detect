@@ -39,3 +39,8 @@ sec_name_hash_8,0.8393382
 imp_func_hash_15,0.8356871
 dos_e_lfanew,0.8221411
 sec_mean_entropy,0.82118785
+coff_machine,0.81974244
+opt_sizeof_init_data,0.81725883
+imp_func_hash_149,0.81291646
+num_write_sections,0.8102389
+overlay_ratio,0.809083

@@ -1,4 +1,4 @@
-# EDR_AGENT
+# QUICK REPORT 
 
 ## Model Parameters (Current Baseline)
 
@@ -16,10 +16,10 @@
 - 8.4 MB → 1.4 MB (feature optimized – parquet format)
 - 1.4 MB → 0.67 MB (4-bit quantization - binary format)
 
-## Test-Set Benchmark (latest reporting run)
+## Test-Set Benchmark (latest reporting run with 4-bit quantization)
 
-- **FPR:** 0.047457
-- **TPR:** 0.945781
+- **FPR:** 0.0474 , **TPR:** 0.9378 (after quantization)
+- **FPR:** 0.0465 , **TPR:** 0.9404 (before quantization)
 - **Model RAM size:** 4,663,482 bytes
 - **Model file size:** 8,256,197 bytes
 - **Average inference speed / file:** 16.702650 ms
@@ -29,7 +29,7 @@
 - PR curve:
 ![reports/raw_pe_pr_curve.png](reports/raw_pe_pr_curve.png)
 - ROC curve: 
-![reports/if_quantized_roc_curve.png](reports/if_quantized_roc_curve.png)
+![reports/if_quantized_roc_curve.png](reports//raw_pe_roc_curve_log_fpr.png)
 
 ## New improvements to the model
 

@@ -2,8 +2,13 @@
   "schema_version": "1.0",
   "created_date": "2026-02-27",
   "model_name": "iforest",
-  "selected_features": 40,
+  "selected_features": 45,
   "feature_order": [
+    "overlay_ratio",
+    "num_write_sections",
+    "imp_func_hash_149",
+    "opt_sizeof_init_data",
+    "coff_machine",
     "sec_mean_entropy",
     "dos_e_lfanew",
     "imp_func_hash_15",
@@ -46,6 +51,8 @@
     "checksum_matches"
   ],
   "log_transform_features": [
+    "imp_func_hash_149",
+    "opt_sizeof_init_data",
     "imp_dll_hash_34",
     "imp_dll_hash_28",
     "sec_name_hash_20",
@@ -66,6 +73,11 @@
     "expression": "log1p(abs(x))"
   },
   "feature_groups": {
+    "overlay_ratio": "overlay",
+    "num_write_sections": "sections_counts",
+    "imp_func_hash_149": "imports_func_hash",
+    "opt_sizeof_init_data": "optional_header",
+    "coff_machine": "coff_header",
     "sec_mean_entropy": "sections_aggregate",
     "dos_e_lfanew": "dos_header",
     "imp_func_hash_15": "imports_func_hash",

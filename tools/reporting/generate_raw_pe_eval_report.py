@@ -126,14 +126,47 @@ def save_pr_curve(pr_curve: PointList, metrics: Dict[str, str], output_dir: Path
 
 def save_roc_curve_logfpr(roc_curve: PointList, metrics: Dict[str, str], output_dir: Path) -> Path:
 	auc = value(metrics, "roc_auc")
-	fpr = max(value(metrics, "fpr"), 1e-4)
+
+	# plot full ROC curve points first (converted to log-scale on FPR)
+	x_curve: List[float] = []
+	y_curve: List[float] = []
+	for (f, t) in roc_curve:
+		# avoid log10(0) by clamping to a small floor
+		clamped = max(f, 1e-4)
+		x_curve.append(math.log10(clamped))
+		y_curve.append(t)
+
+	# single test-set metrics for annotation
+	raw_fpr = value(metrics, "fpr")
+	fpr = max(raw_fpr, 1e-4)
 	tpr = value(metrics, "tpr")
-	x_values: List[float] = [math.log10(fpr)]
-	y_values: List[float] = [tpr]
 
 	plt.figure(figsize=(6.8, 6.2))
-	plt.plot(x_values, y_values, color="#1f77b4", linewidth=2.0, label=f"ROC Curve (AUC={auc:.4f})")
-	plt.scatter(x_values, y_values, color="red", s=30, label=f"[FPR, TPR] point )", zorder=3)
+	# ROC curve line
+	plt.plot(x_curve, y_curve, color="#1f77b4", linewidth=2.0, label=f"ROC Curve (AUC={auc:.4f})")
+	# highlight the specific test-point
+	x_point = math.log10(fpr)
+	plt.scatter([x_point], [tpr], color="red", s=30, label="[FPR, TPR] point", zorder=3)
+
+	# draw crosshair lines through the test-set point to axes
+	plt.axhline(y=tpr, color="red", linestyle="--", linewidth=1, alpha=0.5)
+	plt.axvline(x=x_point, color="red", linestyle="--", linewidth=1, alpha=0.5)
+
+	annotation_text = f"Test-set [FPR, TPR]\n[{raw_fpr:.6f}, {tpr:.6f}]"
+	plt.annotate(
+		annotation_text,
+		xy=(x_point, tpr),
+		xytext=(12, -30),  # slightly below the point
+		textcoords="offset points",
+		ha="left",
+		va="bottom",
+		fontsize=9,
+		bbox={"boxstyle": "round,pad=0.25", "fc": "white", "ec": "0.7", "alpha": 0.9},
+		arrowprops={"arrowstyle": "->", "color": "0.4", "lw": 0.8},
+	)
+
+	# lower legend slightly so it doesn't obscure curve/marker
+	plt.legend(loc="lower right", bbox_to_anchor=(1, -0.05))
 
 	plt.xlim(-4.0, 0.0)
 	plt.ylim(0.0, 1.05)
@@ -240,7 +273,7 @@ def main() -> int:
 	parser.add_argument(
 		"--output-md",
 		type=Path,
-		default=Path("reports/raw_pe_eval_report.md"),
+		default=Path("reports/README.md"),
 		help="Output markdown report path",
 	)
 	parser.add_argument(
