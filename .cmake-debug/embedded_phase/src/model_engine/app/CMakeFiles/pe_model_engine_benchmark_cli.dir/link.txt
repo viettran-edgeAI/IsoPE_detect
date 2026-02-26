@@ -1,1 +1,0 @@
-/usr/bin/c++ -g CMakeFiles/pe_model_engine_benchmark_cli.dir/model_engine_benchmark_cli.cpp.o -o pe_model_engine_benchmark_cli  ../src/libpe_model_engine.a 

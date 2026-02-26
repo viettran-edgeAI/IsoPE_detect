@@ -1,1 +1,0 @@
-/usr/bin/g++ -g CMakeFiles/lief_feature_extractor.dir/pe_feature_extractor_cli.cpp.o -o lief_feature_extractor  ../src/libpe_feature_extractor.a /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/third_party/LIEF/build/libLIEF.a -ldl -lpthread -lz 
