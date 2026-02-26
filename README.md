@@ -19,15 +19,17 @@
 ## Test-Set Benchmark (latest reporting run)
 
 - **FPR:** 0.047457
-- **TPR:** 0.937781
+- **TPR:** 0.945781
 - **Model RAM size:** 4,663,482 bytes
 - **Model file size:** 8,256,197 bytes
 - **Average inference speed / file:** 16.702650 ms
 - **Average inference speed / MB:** 5.442300 ms
 
 ### Benchmark graphs
-- PR curve: [reports/raw_pe_pr_curve.png](reports/raw_pe_pr_curve.png)
-- ROC curve: [reports/if_quantized_roc_curve.png](reports/if_quantized_roc_curve.png)
+- PR curve:
+![reports/raw_pe_pr_curve.png](reports/raw_pe_pr_curve.png)
+- ROC curve: 
+![reports/if_quantized_roc_curve.png](reports/if_quantized_roc_curve.png)
 
 ## New improvements to the model
 
