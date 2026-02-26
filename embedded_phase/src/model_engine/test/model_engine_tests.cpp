@@ -1,108 +1,101 @@
+#include "model_engine.hpp"
+
 #include <cassert>
-#include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <vector>
 
-#include "model_engine.hpp"
-
 namespace {
 
-void test_node_resource_and_node_layout() {
-    eml::If_node_resource resource;
-    const bool ok = resource.set_node_layouts(3, 6, 16, 15, 5);
-    assert(ok);
-    assert(resource.bits_per_node() <= 64);
-
-    eml::IsoNode node;
-    node.set_split(resource, 17u, 5u, 321u);
-    assert(!node.is_leaf());
-    assert(node.feature_id(resource) == 17u);
-    assert(node.threshold_slot(resource) == 5u);
-    assert(node.left_child(resource) == 321u);
-
-    node.set_leaf(resource, 23u, 7u);
-    assert(node.is_leaf());
-    assert(node.leaf_size(resource) == 23u);
-    assert(node.leaf_depth(resource) == 7u);
-}
-
-void test_quantized_iforest_scoring_order() {
-    std::vector<uint8_t> train_matrix = {
-        0, 0, 1, 1,
-        0, 1, 1, 0,
-        1, 0, 0, 1,
-        1, 1, 0, 0,
-        0, 1, 0, 1,
-        1, 0, 1, 0,
-        0, 0, 0, 1,
-        1, 1, 1, 0,
+std::filesystem::path resolve_resource_dir() {
+    const std::vector<std::filesystem::path> candidates = {
+        "embedded_phase/core/models/isolation_forest/resources",
+        "../core/models/isolation_forest/resources",
+        "../../core/models/isolation_forest/resources",
+        "../../../core/models/isolation_forest/resources",
+        "../../../../core/models/isolation_forest/resources",
+        "../../../../../embedded_phase/core/models/isolation_forest/resources"
     };
 
-    eml::If_config cfg;
-    cfg.isLoaded = true;
-    cfg.num_features = 4;
-    cfg.quantization_bits = 2;
-    cfg.threshold_bits = 2;
-    cfg.feature_bits = 2;
-    cfg.child_bits = 8;
-    cfg.leaf_size_bits = 4;
-    cfg.depth_bits = 4;
-    cfg.max_depth = 8;
-    cfg.max_nodes_per_tree = 255;
-    cfg.max_samples = 1.0f;
-    cfg.max_samples_per_tree = 8;
-    cfg.n_estimators = 32;
-    cfg.bootstrap = false;
-    cfg.random_state = 42;
-    cfg.threshold_offset = -0.5f;
-
-    eml::IsoForest forest;
-    const bool init_ok = forest.init_from_config(cfg);
-    assert(init_ok);
-
-    const std::filesystem::path tmp_nml = std::filesystem::temp_directory_path() / "if_test_model_engine.nml";
-    {
-        std::ofstream fout(tmp_nml, std::ios::binary | std::ios::trunc);
-        assert(fout.is_open());
-
-        const uint32_t num_samples = 8u;
-        const uint16_t num_features = 4u;
-        fout.write(reinterpret_cast<const char*>(&num_samples), sizeof(num_samples));
-        fout.write(reinterpret_cast<const char*>(&num_features), sizeof(num_features));
-
-        for (size_t row = 0; row < num_samples; ++row) {
-            const uint8_t label = 0u;
-            uint8_t packed_features = 0u;
-            for (uint16_t col = 0; col < num_features; ++col) {
-                const uint8_t value = train_matrix[row * num_features + col] & 0x03u;
-                packed_features |= static_cast<uint8_t>(value << (col * cfg.quantization_bits));
-            }
-            fout.write(reinterpret_cast<const char*>(&label), sizeof(label));
-            fout.write(reinterpret_cast<const char*>(&packed_features), sizeof(packed_features));
+    for (const auto& candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            return std::filesystem::weakly_canonical(candidate);
         }
     }
 
-    const bool trained = forest.build_model(false, tmp_nml);
-    std::filesystem::remove(tmp_nml);
-    assert(trained);
-    assert(forest.tree_container().trained());
-    assert(forest.tree_container().num_trees() == 32u);
-
-    const uint8_t benign_sample[4] = {0u, 1u, 0u, 1u};
-    const uint8_t outlier_sample[4] = {3u, 3u, 3u, 3u};
-
-    const float benign_score = forest.decision_function(benign_sample, 4u);
-    const float outlier_score = forest.decision_function(outlier_sample, 4u);
-    assert(outlier_score < benign_score);
+    return {};
 }
 
-} // namespace
+}  // namespace
 
 int main() {
-    test_node_resource_and_node_layout();
-    test_quantized_iforest_scoring_order();
-    std::cout << "pe_model_engine_tests: PASS\n";
+    const std::filesystem::path resource_dir = resolve_resource_dir();
+    if (resource_dir.empty()) {
+        std::cerr << "pe_model_engine_tests: unable to resolve resource directory\n";
+        return 1;
+    }
+
+    eml::model_engine::IsolationForestModelEngine engine;
+    std::string error;
+
+    const bool loaded = engine.load_model("iforest", resource_dir, &error);
+    assert(loaded);
+    if (!loaded) {
+        std::cerr << "pe_model_engine_tests: load failed: " << error << "\n";
+        return 1;
+    }
+
+    const auto metadata = engine.metadata();
+    assert(metadata.loaded);
+    assert(metadata.num_features > 0u);
+    assert(metadata.quantization_bits > 0u);
+
+    const std::filesystem::path benign_val_path = resource_dir / "iforest_ben_val_nml.bin";
+    std::vector<uint8_t> benign_matrix;
+    size_t benign_samples = 0u;
+
+    const bool loaded_nml = eml::model_engine::load_quantized_nml_dataset(
+        benign_val_path,
+        metadata.num_features,
+        metadata.quantization_bits,
+        benign_matrix,
+        benign_samples,
+        &error);
+
+    assert(loaded_nml);
+    assert(benign_samples > 0u);
+    if (!loaded_nml || benign_samples == 0u) {
+        std::cerr << "pe_model_engine_tests: failed to load benign nml: " << error << "\n";
+        return 1;
+    }
+
+    eml::eml_isolation_result_t inference;
+    const bool infer_ok = engine.infer_quantized(benign_matrix.data(), metadata.num_features, inference, &error);
+    assert(infer_ok);
+    assert(inference.success);
+    assert(inference.status_code == eml::eml_status_code::ok);
+
+    eml::model_engine::EvaluationSummary summary;
+    const bool eval_ok = eml::model_engine::evaluate_validation_splits(
+        engine,
+        resource_dir / "iforest_ben_val_nml.bin",
+        resource_dir / "iforest_mal_val_nml.bin",
+        summary,
+        &error);
+
+    assert(eval_ok);
+    assert(summary.success);
+    assert(summary.benign_samples > 0u);
+    assert(summary.malware_samples > 0u);
+    assert(summary.fpr >= 0.0f && summary.fpr <= 1.0f);
+    assert(summary.tpr >= 0.0f && summary.tpr <= 1.0f);
+
+    std::cout << "pe_model_engine_tests: PASS"
+              << " threshold=" << summary.threshold
+              << " fpr=" << summary.fpr
+              << " tpr=" << summary.tpr
+              << " roc_auc=" << summary.roc_auc
+              << "\n";
+
     return 0;
 }

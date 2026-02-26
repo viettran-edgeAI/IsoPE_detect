@@ -57,13 +57,23 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor
+CMAKE_SOURCE_DIR = /home/viettran/Documents/visual_code/EDR_AGENT
 
 # The top-level build directory on which CMake was run.
 CMAKE_BINARY_DIR = /home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools
 
 #=============================================================================
 # Targets provided globally by CMake.
+
+# Special rule for the target test
+test:
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Running tests..."
+	/usr/bin/ctest --force-new-ctest-process $(ARGS)
+.PHONY : test
+
+# Special rule for the target test
+test/fast: test
+.PHONY : test/fast
 
 # Special rule for the target edit_cache
 edit_cache:
@@ -116,44 +126,6 @@ depend:
 	cd /home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
-# Convenience name for target.
-app/CMakeFiles/lief_feature_extractor.dir/rule:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 app/CMakeFiles/lief_feature_extractor.dir/rule
-.PHONY : app/CMakeFiles/lief_feature_extractor.dir/rule
-
-# Convenience name for target.
-lief_feature_extractor: app/CMakeFiles/lief_feature_extractor.dir/rule
-.PHONY : lief_feature_extractor
-
-# fast build rule for target.
-lief_feature_extractor/fast:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools && $(MAKE) $(MAKESILENT) -f app/CMakeFiles/lief_feature_extractor.dir/build.make app/CMakeFiles/lief_feature_extractor.dir/build
-.PHONY : lief_feature_extractor/fast
-
-pe_feature_extractor_cli.o: pe_feature_extractor_cli.cpp.o
-.PHONY : pe_feature_extractor_cli.o
-
-# target to build an object file
-pe_feature_extractor_cli.cpp.o:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools && $(MAKE) $(MAKESILENT) -f app/CMakeFiles/lief_feature_extractor.dir/build.make app/CMakeFiles/lief_feature_extractor.dir/pe_feature_extractor_cli.cpp.o
-.PHONY : pe_feature_extractor_cli.cpp.o
-
-pe_feature_extractor_cli.i: pe_feature_extractor_cli.cpp.i
-.PHONY : pe_feature_extractor_cli.i
-
-# target to preprocess a source file
-pe_feature_extractor_cli.cpp.i:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools && $(MAKE) $(MAKESILENT) -f app/CMakeFiles/lief_feature_extractor.dir/build.make app/CMakeFiles/lief_feature_extractor.dir/pe_feature_extractor_cli.cpp.i
-.PHONY : pe_feature_extractor_cli.cpp.i
-
-pe_feature_extractor_cli.s: pe_feature_extractor_cli.cpp.s
-.PHONY : pe_feature_extractor_cli.s
-
-# target to generate assembly for a file
-pe_feature_extractor_cli.cpp.s:
-	cd /home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools && $(MAKE) $(MAKESILENT) -f app/CMakeFiles/lief_feature_extractor.dir/build.make app/CMakeFiles/lief_feature_extractor.dir/pe_feature_extractor_cli.cpp.s
-.PHONY : pe_feature_extractor_cli.cpp.s
-
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -162,10 +134,7 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... lief_feature_extractor"
-	@echo "... pe_feature_extractor_cli.o"
-	@echo "... pe_feature_extractor_cli.i"
-	@echo "... pe_feature_extractor_cli.s"
+	@echo "... test"
 .PHONY : help
 
 

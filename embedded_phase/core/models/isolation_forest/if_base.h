@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../../base/eml_base.h"
+#include "../../base/eml_status.h"
 
 namespace eml {
 
@@ -24,22 +25,34 @@ namespace eml {
     } If_base_flags;
 
     /*
-    resouces managed by If_base:
-    - <model_name>_dp.txt (dataset parameters)                  - If_config
-    - <model_name>_qtz.bin (quantizer)                          - If_quantizer
-    - <model_name>_optimized_config.json (model engine config)  - If_config
-    - <model_name>_optimized_features.json (optimized feature list)         - If_feature_extractor
-    - <model_name>_scaler_params.json (feature scaler parameters)           - If_scaler_layer
-    - <model_name>_feature_schema.json (feature schema for transform layer) - If_feature_transform_layer
-    - <model_name>_iforest.bin (model binary for inference)     - If_tree_container
-    - <model_name>_ben_train_nml.bin (benign train dataset for IF) - IsoForest
+    Resouce managed by If_base:
+    1. <model_name>_dp.txt (dataset parameters)                      - If_config
+    2. <model_name>_qtz.bin (quantizer)                              - If_quantizer
+    3. <model_name>_optimized_config.json (model engine config)      - If_config
+    4. <model_name>_optimized_features.json (optimized feature list)         - If_feature_extractor
+    5. <model_name>_scaler_params.json (feature scaler parameters)           - If_scaler_layer
+    6. <model_name>_feature_schema.json (feature schema for transform layer) - If_feature_transform_layer
+    7. <model_name>_iforest.bin (model binary for inference)            - If_tree_container
+    
+    8. <model_name>_ben_train_nml.bin (benign train dataset for IF)     - IsoForest
+    9. <model_name>_ben_val_nml.bin (benign validation dataset for IF)  - IsoForest
+    10. <model_name>_mal_val_nml.bin (malicious train dataset for IF)   - IsoForest
+
+    ------
+
+    Resource need for model inference: 1, 2, 3, 4, 5, 6, 7 || 8, 9 , 10 is required for training.
     */
 
     class If_base {
     private:
         uint16_t flags = 0;
+        eml_status_code last_status_code_ = eml_status_code::ok;
         char model_name[EML_PATH_BUFFER] = {0};
         std::filesystem::path dir_path = std::filesystem::path(".");
+
+        inline void set_status(eml_status_code status) {
+            last_status_code_ = status;
+        }
 
         inline void set_flag(If_base_flags f) {
             flags |= static_cast<uint16_t>(f);
@@ -81,72 +94,51 @@ namespace eml {
 
         void scan_current_resource() {
             flags = 0;
+            set_status(eml_status_code::ok);
 
             if (model_name[0] == '\0') {
-                eml_debug(0, "❌ IF resource scan failed: empty model name");
+                set_status(eml_status_code::empty_model_name);
                 return;
             }
 
             const auto nml_path = get_nml_path();
             if (!nml_path.empty() && std::filesystem::exists(nml_path)) {
                 set_flag(IF_BASE_DATA_EXIST);
-                eml_debug(2, "✅ Found IF benign-train dataset: ", nml_path.string().c_str());
             }
 
             const auto dp_txt_path = get_dp_txt_path();
             if (std::filesystem::exists(dp_txt_path)) {
                 set_flag(IF_DP_TXT_EXIST);
-                eml_debug(2, "✅ Found IF data params (txt): ", dp_txt_path.string().c_str());
-            } else {
-                eml_debug(1, "⚠️ IF data params file not found: ", dp_txt_path.string().c_str());
             }
 
             const auto qtz_path = get_qtz_path();
             if (std::filesystem::exists(qtz_path)) {
                 set_flag(IF_QTZ_FILE_EXIST);
-                eml_debug(2, "✅ Found IF quantizer: ", qtz_path.string().c_str());
-            } else {
-                eml_debug(1, "⚠️ IF quantizer not found: ", qtz_path.string().c_str());
             }
 
             const auto cfg_path = get_config_path();
             if (std::filesystem::exists(cfg_path)) {
                 set_flag(IF_CONFIG_FILE_EXIST);
-                eml_debug(2, "✅ Found IF optimized config: ", cfg_path.string().c_str());
-            } else {
-                eml_debug(1, "⚠️ IF optimized config not found: ", cfg_path.string().c_str());
             }
 
             const auto features_path = get_feature_config_path();
             if (std::filesystem::exists(features_path)) {
                 set_flag(IF_FEATURE_FILE_EXIST);
-                eml_debug(2, "✅ Found IF optimized features: ", features_path.string().c_str());
-            } else {
-                eml_debug(1, "⚠️ IF optimized features not found: ", features_path.string().c_str());
             }
 
             const auto scaler_path = get_scaler_params_path();
             if (std::filesystem::exists(scaler_path)) {
                 set_flag(IF_SCALER_FILE_EXIST);
-                eml_debug(2, "✅ Found IF scaler params: ", scaler_path.string().c_str());
-            } else {
-                eml_debug(1, "⚠️ IF scaler params not found: ", scaler_path.string().c_str());
             }
 
             const auto schema_path = get_feature_schema_path();
             if (std::filesystem::exists(schema_path)) {
                 set_flag(IF_SCHEMA_FILE_EXIST);
-                eml_debug(2, "✅ Found IF feature schema: ", schema_path.string().c_str());
-            } else {
-                eml_debug(1, "⚠️ IF feature schema not found: ", schema_path.string().c_str());
             }
 
             const auto model_path = get_model_path();
             if (std::filesystem::exists(model_path)) {
                 set_flag(IF_MODEL_FILE_EXIST);
-                eml_debug(2, "✅ Found IF model binary: ", model_path.string().c_str());
-            } else {
-                eml_debug(1, "⚠️ IF model binary not found: ", model_path.string().c_str());
             }
 
             if (has_required_training_resources()) {
@@ -158,6 +150,9 @@ namespace eml {
             }
 
             set_flag(IF_SCANNED);
+            if (!ready_for_inference()) {
+                set_status(eml_status_code::resource_missing);
+            }
         }
 
     public:
@@ -178,7 +173,7 @@ namespace eml {
             if (!model_name_input || std::strlen(model_name_input) == 0) {
                 model_name[0] = '\0';
                 flags = 0;
-                eml_debug(0, "❌ IF base init failed: empty model name");
+                set_status(eml_status_code::empty_model_name);
                 return;
             }
 
@@ -209,6 +204,7 @@ namespace eml {
 
         void update_resource_status() {
             if (model_name[0] == '\0') {
+                set_status(eml_status_code::empty_model_name);
                 return;
             }
             scan_current_resource();
@@ -308,6 +304,8 @@ namespace eml {
         bool has_required_core_resources() const { return has_required_core_resources_internal(); }
         bool ready_for_training() const { return has_flag(IF_ABLE_TO_TRAINING); }
         bool ready_for_inference() const { return has_flag(IF_ABLE_TO_INFERENCE); }
+        eml_status_code last_status() const { return last_status_code_; }
+        void clear_status() { set_status(eml_status_code::ok); }
 
         uint16_t status_flags() const { return flags; }
     };

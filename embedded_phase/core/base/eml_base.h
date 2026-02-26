@@ -3,6 +3,7 @@
 #include "../containers/STL_MCU.h"
 #include <type_traits>
 #include "eml_debug.h"
+#include "eml_status.h"
 
 // #define EML_STATIC_MODEL   // Uncomment to disable on-device training, saving disk & memory, speed up inference 
 // #define DEV_STAGE  // Uncomment for development stage (extra debug info, testing features and test_data)

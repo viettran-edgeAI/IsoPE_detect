@@ -42,6 +42,11 @@ namespace eml {
         bool initialized_ = false;
         bool preprocessing_initialized_ = false;
         bool loaded_ = false;
+        mutable eml_status_code last_status_code_ = eml_status_code::ok;
+
+        inline void set_status(eml_status_code status) const {
+            last_status_code_ = status;
+        }
 
         void release_preprocessing_components() {
             if_feature_extractor_.release();
@@ -243,6 +248,7 @@ namespace eml {
         }
 
         bool initialize_components() {
+            set_status(eml_status_code::ok);
             initialized_ = false;
             loaded_ = false;
             num_features_ = 0u;
@@ -250,23 +256,28 @@ namespace eml {
 
             if_base_.update_resource_status();
             if (!if_base_.ready_to_use()) {
+                const eml_status_code base_status = if_base_.last_status();
+                set_status(base_status == eml_status_code::ok ? eml_status_code::base_not_ready : base_status);
                 return false;
             }
 
             if (!if_base_.has_required_core_resources()) {
+                const eml_status_code base_status = if_base_.last_status();
+                set_status(base_status == eml_status_code::ok ? eml_status_code::resource_missing : base_status);
                 return false;
             }
 
             if_config_.init(&if_base_);
             if_config_.set_base(&if_base_);
             if (!if_config_.load_from_base()) {
+                set_status(if_config_.last_status());
                 return false;
             }
 
             num_features_ = if_config_.num_features;
 
             if (!if_feature_extractor_.init(if_base_.get_feature_config_path(), num_features_)) {
-                eml_debug(0, "❌ IF init failed: cannot initialize feature extractor from optimized feature list");
+                set_status(if_feature_extractor_.last_status());
                 return false;
             }
 
@@ -274,34 +285,31 @@ namespace eml {
                     if_base_.get_feature_schema_path(),
                     if_feature_extractor_.feature_names(),
                     num_features_)) {
-                eml_debug(0, "❌ IF init failed: cannot initialize feature transform layer");
+                set_status(if_feature_transform_layer_.last_status());
                 return false;
             }
 
             if (!if_scaler_layer_.init_from_file(if_base_.get_scaler_params_path(), num_features_)) {
-                eml_debug(0, "❌ IF init failed: cannot initialize scaler layer");
+                set_status(if_scaler_layer_.last_status());
                 return false;
             }
 
             if (!if_quantizer_.loadQuantizer(if_base_.get_qtz_path().string().c_str())) {
-                eml_debug(0, "❌ IF init failed: cannot load quantizer");
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
-
-            // supply the built-in file-based extractor callback if desired
-            if_feature_extractor_.set_extract_callback(
-                If_feature_extractor::default_pe_path_callback()
-            );
 
             preprocessing_initialized_ = true;
 
             if_tree_container_.unload_model();
             initialized_ = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
         bool ensure_initialized() {
             if (initialized_) {
+                set_status(eml_status_code::ok);
                 return true;
             }
             return initialize_components();
@@ -313,30 +321,46 @@ namespace eml {
             out_scaled_features.clear();
 
             if (!raw_features || feature_count == 0u) {
+                set_status(eml_status_code::invalid_argument);
                 return false;
             }
 
-            if (!preprocessing_initialized_ ||
-                !if_feature_transform_layer_.loaded() ||
-                !if_scaler_layer_.loaded()) {
+            if (!preprocessing_initialized_) {
+                set_status(eml_status_code::not_loaded);
+                return false;
+            }
+
+            if (!if_feature_transform_layer_.loaded()) {
+                const eml_status_code layer_status = if_feature_transform_layer_.last_status();
+                set_status(layer_status == eml_status_code::ok ? eml_status_code::not_loaded : layer_status);
+                return false;
+            }
+
+            if (!if_scaler_layer_.loaded()) {
+                const eml_status_code scaler_status = if_scaler_layer_.last_status();
+                set_status(scaler_status == eml_status_code::ok ? eml_status_code::not_loaded : scaler_status);
                 return false;
             }
 
             if (feature_count != num_features_) {
+                set_status(eml_status_code::feature_count_mismatch);
                 return false;
             }
 
             vector<float> transformed(feature_count, 0.0f);
             if (!if_feature_transform_layer_.transform(raw_features, feature_count, transformed.data())) {
+                set_status(if_feature_transform_layer_.last_status());
                 return false;
             }
 
             out_scaled_features.resize(feature_count, 0.0f);
             if (!if_scaler_layer_.transform(transformed.data(), feature_count, out_scaled_features.data())) {
                 out_scaled_features.clear();
+                set_status(if_scaler_layer_.last_status());
                 return false;
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -346,10 +370,12 @@ namespace eml {
             out_quantized.clear();
 
             if (!raw_features || feature_count == 0u) {
+                set_status(eml_status_code::invalid_argument);
                 return false;
             }
 
             if (!if_quantizer_.loaded()) {
+                set_status(eml_status_code::not_loaded);
                 return false;
             }
 
@@ -367,6 +393,7 @@ namespace eml {
                 out_quantized[feature_index] = quantized_buffer[feature_index];
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -577,7 +604,14 @@ namespace eml {
         // 
         bool calibrate_threshold_from_validation_datasets(const std::filesystem::path& benign_val_nml_path = {},
                                                           const std::filesystem::path& malware_val_nml_path = {}) {
-            if (!loaded_ || !if_tree_container_.trained()) {
+            if (!loaded_) {
+                set_status(eml_status_code::not_loaded);
+                return false;
+            }
+
+            if (!if_tree_container_.trained()) {
+                const eml_status_code tree_status = if_tree_container_.last_status();
+                set_status(tree_status == eml_status_code::ok ? eml_status_code::not_loaded : tree_status);
                 return false;
             }
 
@@ -589,10 +623,12 @@ namespace eml {
                 : malware_val_nml_path;
 
             if (benign_path.empty() || malware_path.empty()) {
+                set_status(eml_status_code::empty_path);
                 return false;
             }
 
             if (!std::filesystem::exists(benign_path) || !std::filesystem::exists(malware_path)) {
+                set_status(eml_status_code::resource_missing);
                 return false;
             }
 
@@ -606,6 +642,7 @@ namespace eml {
                                             if_config_.quantization_bits,
                                             benign_matrix,
                                             benign_samples)) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
@@ -614,6 +651,7 @@ namespace eml {
                                             if_config_.quantization_bits,
                                             malware_matrix,
                                             malware_samples)) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
@@ -623,6 +661,7 @@ namespace eml {
                 if_tree_container_, malware_matrix, malware_samples, if_config_.num_features);
 
             if (benign_scores.empty() || malware_scores.empty()) {
+                set_status(eml_status_code::size_mismatch);
                 return false;
             }
 
@@ -641,6 +680,7 @@ namespace eml {
             if_config_.fpr_threshold = calibrated_fpr;
             if_config_.threshold_offset = 0.0f;
             if_tree_container_.set_threshold_offset(0.0f);
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -669,11 +709,14 @@ namespace eml {
             }
 
             if (!if_base_.model_exists()) {
+                const eml_status_code base_status = if_base_.last_status();
+                set_status(base_status == eml_status_code::ok ? eml_status_code::resource_missing : base_status);
                 return false;
             }
 
             if_tree_container_.unload_model();
             if (!if_tree_container_.load_model_binary(if_base_.get_model_path())) {
+                set_status(if_tree_container_.last_status());
                 return false;
             }
 
@@ -681,11 +724,13 @@ namespace eml {
             if_tree_container_.set_threshold_offset(0.0f);
 
             loaded_ = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
         bool init_from_config(const If_config& config) {
             if (!config.isLoaded || config.num_features == 0) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
@@ -695,6 +740,7 @@ namespace eml {
             initialized_ = true;
             loaded_ = false;
             if_tree_container_.unload_model();
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -709,6 +755,7 @@ namespace eml {
                 : benign_train_nml_path;
 
             if (dataset_path.empty()) {
+                set_status(eml_status_code::empty_path);
                 return false;
             }
 
@@ -720,6 +767,7 @@ namespace eml {
                     if_config_.quantization_bits,
                     matrix,
                     num_samples)) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
@@ -731,6 +779,7 @@ namespace eml {
                                                              if_config_.child_bits,
                                                              if_config_.leaf_size_bits,
                                                              if_config_.depth_bits)) {
+                set_status(if_tree_container_.last_status());
                 return false;
             }
 
@@ -766,6 +815,7 @@ namespace eml {
                                                       rng)) {
                     if_tree_container_.unload_model();
                     loaded_ = false;
+                    set_status(eml_status_code::invalid_configuration);
                     return false;
                 }
 
@@ -779,6 +829,7 @@ namespace eml {
             matrix.shrink_to_fit();
 
             if (!loaded_) {
+                set_status(eml_status_code::not_loaded);
                 return false;
             }
 
@@ -787,6 +838,7 @@ namespace eml {
             }
 
             if (!if_config_.persist_threshold_to_config()) {
+                set_status(if_config_.last_status());
                 return false;
             }
 
@@ -796,6 +848,7 @@ namespace eml {
 
             if_base_.update_resource_status();
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -814,7 +867,12 @@ namespace eml {
         }
 
         bool save_model() const {
-            return if_tree_container_.save_model_binary(if_base_.get_iforest_bin_path());
+            if (!if_tree_container_.save_model_binary(if_base_.get_iforest_bin_path())) {
+                set_status(if_tree_container_.last_status());
+                return false;
+            }
+            set_status(eml_status_code::ok);
+            return true;
         }
 
         float decision_function(const uint8_t* quantized_features,
@@ -833,7 +891,16 @@ namespace eml {
             eml_isolation_result_t result;
             const auto start = std::chrono::steady_clock::now();
 
-            if (!loaded_ || !quantized_features || feature_count == 0u) {
+            if (!loaded_) {
+                result.status_code = eml_status_code::not_loaded;
+                set_status(result.status_code);
+                result.success = false;
+                return result;
+            }
+
+            if (!quantized_features || feature_count == 0u) {
+                result.status_code = eml_status_code::invalid_argument;
+                set_status(result.status_code);
                 result.success = false;
                 return result;
             }
@@ -843,7 +910,9 @@ namespace eml {
             result.anomaly_score = decision_function(quantized_features, feature_count);
             result.threshold = active_threshold;
             result.is_anomaly = result.anomaly_score < active_threshold;
+            result.status_code = eml_status_code::ok;
             result.success = true;
+            set_status(eml_status_code::ok);
 
             const auto end = std::chrono::steady_clock::now();
             result.prediction_time = static_cast<size_t>(
@@ -856,13 +925,27 @@ namespace eml {
             eml_isolation_result_t result;
             const auto start = std::chrono::steady_clock::now();
 
-            if (!loaded_ || !raw_features || feature_count == 0u) {
+            if (!loaded_) {
+                result.status_code = eml_status_code::not_loaded;
+                set_status(result.status_code);
+                result.success = false;
+                return result;
+            }
+
+            if (!raw_features || feature_count == 0u) {
+                result.status_code = eml_status_code::invalid_argument;
+                set_status(result.status_code);
                 result.success = false;
                 return result;
             }
 
             vector<uint8_t> quantized_features;
             if (!quantize_raw_feature_vector(raw_features, feature_count, quantized_features)) {
+                result.status_code = last_status_code_;
+                if (result.status_code == eml_status_code::ok) {
+                    result.status_code = eml_status_code::invalid_configuration;
+                }
+                set_status(result.status_code);
                 result.success = false;
                 return result;
             }
@@ -871,7 +954,9 @@ namespace eml {
             result.anomaly_score = decision_function(quantized_features.data(), feature_count);
             result.threshold = active_threshold;
             result.is_anomaly = result.anomaly_score < active_threshold;
+            result.status_code = eml_status_code::ok;
             result.success = true;
+            set_status(eml_status_code::ok);
 
             const auto end = std::chrono::steady_clock::now();
             result.prediction_time = static_cast<size_t>(
@@ -882,12 +967,19 @@ namespace eml {
         eml_isolation_result_t infer_pe_path(const std::filesystem::path& pe_path) const {
             eml_isolation_result_t result;
             if (!loaded_) {
+                result.status_code = eml_status_code::not_loaded;
+                set_status(result.status_code);
                 result.success = false;
                 return result;
             }
 
             vector<float> raw_features;
             if (!if_feature_extractor_.extract_from_pe(pe_path, raw_features)) {
+                result.status_code = if_feature_extractor_.last_status();
+                if (result.status_code == eml_status_code::ok) {
+                    result.status_code = eml_status_code::callback_failed;
+                }
+                set_status(result.status_code);
                 result.success = false;
                 return result;
             }
@@ -898,13 +990,27 @@ namespace eml {
         eml_isolation_result_t infer_pe_content(const uint8_t* pe_content,
                                                 size_t pe_size) const {
             eml_isolation_result_t result;
-            if (!loaded_ || !pe_content || pe_size == 0u) {
+            if (!loaded_) {
+                result.status_code = eml_status_code::not_loaded;
+                set_status(result.status_code);
+                result.success = false;
+                return result;
+            }
+
+            if (!pe_content || pe_size == 0u) {
+                result.status_code = eml_status_code::invalid_argument;
+                set_status(result.status_code);
                 result.success = false;
                 return result;
             }
 
             vector<float> raw_features;
             if (!if_feature_extractor_.extract_from_pe_content(pe_content, pe_size, raw_features)) {
+                result.status_code = if_feature_extractor_.last_status();
+                if (result.status_code == eml_status_code::ok) {
+                    result.status_code = eml_status_code::callback_failed;
+                }
+                set_status(result.status_code);
                 result.success = false;
                 return result;
             }
@@ -915,6 +1021,8 @@ namespace eml {
         bool initialized() const { return initialized_; }
         bool loaded() const { return loaded_; }
         uint16_t num_features() const { return num_features_; }
+        eml_status_code last_status() const { return last_status_code_; }
+        void clear_status() { set_status(eml_status_code::ok); }
 
         const If_base& base() const { return if_base_; }
         const If_config& config() const { return if_config_; }

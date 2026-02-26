@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -17,6 +18,8 @@ namespace {
         size_t failed = 0u;
         size_t flagged = 0u;
         std::vector<float> scores;
+        double total_time_sec = 0.0;            // cumulative inference time
+        uint64_t total_bytes = 0u;              // sum of file sizes processed
     };
 
     struct CliArgs {
@@ -108,7 +111,17 @@ namespace {
         stats.total_files = files.size();
 
         for (const auto& pe_path : files) {
+            auto start = std::chrono::steady_clock::now();
             const auto infer_result = model.infer_pe_path(pe_path);
+            auto end = std::chrono::steady_clock::now();
+            stats.total_time_sec += std::chrono::duration<double>(end - start).count();
+
+            std::error_code ec;
+            uint64_t fsz = std::filesystem::file_size(pe_path, ec);
+            if (!ec) {
+                stats.total_bytes += fsz;
+            }
+
             if (!infer_result.success) {
                 ++stats.failed;
                 continue;
@@ -160,7 +173,15 @@ namespace {
         out << "    \"malware_flagged\": " << malware.flagged << ",\n";
         out << "    \"fpr\": " << fpr << ",\n";
         out << "    \"tpr\": " << tpr << ",\n";
-        out << "    \"roc_auc\": " << roc_auc << "\n";
+        out << "    \"roc_auc\": " << roc_auc << ",\n";
+        out << "    \"benign_total_time_sec\": " << benign.total_time_sec << ",\n";
+        out << "    \"malware_total_time_sec\": " << malware.total_time_sec << ",\n";
+        double combined_files = static_cast<double>(benign.total_files + malware.total_files);
+        double combined_time = benign.total_time_sec + malware.total_time_sec;
+        double combined_bytes = static_cast<double>(benign.total_bytes + malware.total_bytes);
+        out << "    \"total_inference_time_sec\": " << combined_time << ",\n";
+        out << "    \"avg_time_per_file_sec\": " << (combined_files>0? combined_time/combined_files : 0.0) << ",\n";
+        out << "    \"avg_time_per_mb_sec\": " << (combined_bytes>0? combined_time/(combined_bytes/(1024.0*1024.0)) : 0.0) << "\n";
         out << "  }\n";
         out << "}\n";
 
@@ -185,10 +206,9 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    bool model_ready = model.load();
-    if (!model_ready) {
-        model_ready = model.build_model(!args.no_calibration);
-    }
+    // alway rebuild model at each run 
+    model.build_model(!args.no_calibration);
+    bool model_ready = model.loaded();
     if (!model_ready) {
         std::cerr << "Failed to prepare IsoForest model (load/train)" << std::endl;
         return 3;
@@ -244,6 +264,14 @@ int main(int argc, char** argv) {
     std::cout << "Benign: success=" << benign_stats.success << ", failed=" << benign_stats.failed << "\n";
     std::cout << "Malware: success=" << malware_stats.success << ", failed=" << malware_stats.failed << "\n";
     std::cout << "FPR=" << fpr << ", TPR=" << tpr << ", ROC-AUC=" << roc_auc << "\n";
+
+    double combined_time = benign_stats.total_time_sec + malware_stats.total_time_sec;
+    size_t combined_files = benign_stats.total_files + malware_stats.total_files;
+    double combined_bytes = static_cast<double>(benign_stats.total_bytes + malware_stats.total_bytes);
+    std::cout << "Total inference time (sec): " << combined_time << "\n";
+    std::cout << "Avg time per file (sec): " << (combined_files? combined_time/combined_files : 0.0) << "\n";
+    std::cout << "Avg time per MB (sec): " << (combined_bytes? combined_time/(combined_bytes/(1024.0*1024.0)) : 0.0) << "\n";
+
     std::cout << "Report: " << args.output_path << std::endl;
 
     return 0;

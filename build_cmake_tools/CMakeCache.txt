@@ -14,6 +14,12 @@
 # EXTERNAL cache entries
 ########################
 
+//Build embedded model engine
+BUILD_EMBEDDED_MODEL_ENGINE:BOOL=ON
+
+//Build standalone integration samples
+BUILD_INTEGRATION_SAMPLES:BOOL=ON
+
 //Path to a program.
 CMAKE_ADDR2LINE:FILEPATH=/usr/bin/addr2line
 
@@ -54,6 +60,29 @@ CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 
 //No help, variable specified on the command line.
 CMAKE_C_COMPILER:FILEPATH=/usr/bin/gcc
+
+//A wrapper around 'ar' adding the appropriate '--plugin' option
+// for the GCC compiler
+CMAKE_C_COMPILER_AR:FILEPATH=/usr/bin/gcc-ar-13
+
+//A wrapper around 'ranlib' adding the appropriate '--plugin' option
+// for the GCC compiler
+CMAKE_C_COMPILER_RANLIB:FILEPATH=/usr/bin/gcc-ranlib-13
+
+//Flags used by the C compiler during all build types.
+CMAKE_C_FLAGS:STRING=
+
+//Flags used by the C compiler during DEBUG builds.
+CMAKE_C_FLAGS_DEBUG:STRING=-g
+
+//Flags used by the C compiler during MINSIZEREL builds.
+CMAKE_C_FLAGS_MINSIZEREL:STRING=-Os -DNDEBUG
+
+//Flags used by the C compiler during RELEASE builds.
+CMAKE_C_FLAGS_RELEASE:STRING=-O3 -DNDEBUG
+
+//Flags used by the C compiler during RELWITHDEBINFO builds.
+CMAKE_C_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 
 //Path to a program.
 CMAKE_DLLTOOL:FILEPATH=CMAKE_DLLTOOL-NOTFOUND
@@ -124,7 +153,7 @@ CMAKE_PROJECT_DESCRIPTION:STATIC=
 CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 
 //Value Computed by CMake
-CMAKE_PROJECT_NAME:STATIC=pe_feature_extractor
+CMAKE_PROJECT_NAME:STATIC=edr_agent
 
 //Path to a program.
 CMAKE_RANLIB:FILEPATH=/usr/bin/ranlib
@@ -191,23 +220,29 @@ CMAKE_TAPI:FILEPATH=CMAKE_TAPI-NOTFOUND
 // Studio IDE projects all commands are done without /nologo.
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
-//Fetch LIEF from GitHub if not found locally
-FEATURE_EXTRACTOR_FETCH_LIEF:BOOL=ON
+//Build model engine CLI apps
+PE_MODEL_ENGINE_BUILD_APPS:BOOL=ON
 
-//Path to a library.
-FEATURE_EXTRACTOR_LIEF_LIBRARY:FILEPATH=/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/third_party/LIEF/build/libLIEF.a
-
-//The directory containing a CMake configuration file for LIEF.
-LIEF_DIR:PATH=LIEF_DIR-NOTFOUND
+//Build model engine tests
+PE_MODEL_ENGINE_BUILD_TESTS:BOOL=ON
 
 //Value Computed by CMake
-pe_feature_extractor_BINARY_DIR:STATIC=/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools
+edr_agent_BINARY_DIR:STATIC=/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools
 
 //Value Computed by CMake
-pe_feature_extractor_IS_TOP_LEVEL:STATIC=ON
+edr_agent_IS_TOP_LEVEL:STATIC=ON
 
 //Value Computed by CMake
-pe_feature_extractor_SOURCE_DIR:STATIC=/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor
+edr_agent_SOURCE_DIR:STATIC=/home/viettran/Documents/visual_code/EDR_AGENT
+
+//Value Computed by CMake
+pe_model_engine_BINARY_DIR:STATIC=/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/embedded_phase/src/model_engine
+
+//Value Computed by CMake
+pe_model_engine_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+pe_model_engine_SOURCE_DIR:STATIC=/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine
 
 
 ########################
@@ -250,6 +285,22 @@ CMAKE_CXX_FLAGS_MINSIZEREL-ADVANCED:INTERNAL=1
 CMAKE_CXX_FLAGS_RELEASE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CXX_FLAGS_RELWITHDEBINFO
 CMAKE_CXX_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_COMPILER
+CMAKE_C_COMPILER-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_COMPILER_AR
+CMAKE_C_COMPILER_AR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_COMPILER_RANLIB
+CMAKE_C_COMPILER_RANLIB-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_FLAGS
+CMAKE_C_FLAGS-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_FLAGS_DEBUG
+CMAKE_C_FLAGS_DEBUG-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_FLAGS_MINSIZEREL
+CMAKE_C_FLAGS_MINSIZEREL-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_FLAGS_RELEASE
+CMAKE_C_FLAGS_RELEASE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_FLAGS_RELWITHDEBINFO
+CMAKE_C_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_DLLTOOL
 CMAKE_DLLTOOL-ADVANCED:INTERNAL=1
 //Executable file format
@@ -276,7 +327,7 @@ CMAKE_GENERATOR_PLATFORM:INTERNAL=
 CMAKE_GENERATOR_TOOLSET:INTERNAL=
 //Source directory with the top level CMakeLists.txt file for this
 // project
-CMAKE_HOME_DIRECTORY:INTERNAL=/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor
+CMAKE_HOME_DIRECTORY:INTERNAL=/home/viettran/Documents/visual_code/EDR_AGENT
 //Install .so files without execute permission.
 CMAKE_INSTALL_SO_NO_EXE:INTERNAL=1
 //ADVANCED property for variable: CMAKE_LINKER
@@ -296,7 +347,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=3
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=5
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP

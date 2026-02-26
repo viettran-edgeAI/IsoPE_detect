@@ -1,92 +1,111 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
 
+#include "models/isolation_forest/if_components.h"
 #include "models/isolation_forest/if_model.h"
 
-namespace eml {
-namespace model_engine {
+namespace eml::model_engine {
 
-    struct DatasetBundlePaths {
-        std::filesystem::path benign_train;
-        std::filesystem::path benign_val;
-        std::filesystem::path benign_test;
-        std::filesystem::path malware_val;
-        std::filesystem::path malware_test;
-    };
+struct EngineMetadata {
+    std::string model_name;
+    std::filesystem::path resource_dir;
+    uint16_t num_features = 0u;
+    uint8_t quantization_bits = 0u;
+    float decision_threshold = 0.0f;
+    eml_status_code status_code = eml_status_code::ok;
+    bool loaded = false;
+};
 
-    struct DevelopmentMetrics {
-        float val_fpr = 0.0f;
-        float val_tpr = 0.0f;
-        float val_roc_auc = 0.0f;
-        float test_fpr = 0.0f;
-        float test_tpr = 0.0f;
-        float test_roc_auc = 0.0f;
-    };
+struct EvaluationSummary {
+    size_t benign_samples = 0u;
+    size_t malware_samples = 0u;
+    size_t true_positive = 0u;
+    size_t false_positive = 0u;
+    size_t true_negative = 0u;
+    size_t false_negative = 0u;
+    float threshold = 0.0f;
+    float fpr = 0.0f;
+    float tpr = 0.0f;
+    float roc_auc = 0.5f;
+    float average_precision = 0.0f;
+    eml_status_code status_code = eml_status_code::ok;
+    bool success = false;
+};
 
-    struct EvaluationSummary {
-        bool ok = false;
-        std::string message;
+class IsolationForestModelEngine {
+public:
+    IsolationForestModelEngine() = default;
 
-        float selected_threshold = 0.0f;
-        If_binary_metrics validation;
-        If_binary_metrics test;
+    bool load_model(const std::string& model_name = "iforest",
+                    const std::filesystem::path& resource_dir = eml::IsoForest::default_resource_dir(),
+                    std::string* error = nullptr);
 
-        DevelopmentMetrics development;
+    void unload();
 
-        // Per-sample scores for the test splits (populated when save_scores=true)
-        std::vector<float> test_benign_scores;
-        std::vector<float> test_malware_scores;
-    };
+    bool infer_quantized(const uint8_t* quantized_features,
+                         uint16_t feature_count,
+                         eml_isolation_result_t& out_result,
+                         std::string* error = nullptr) const;
 
-    class IsolationForestModelEngine {
-    private:
-        If_config config_{};
-        IsoForest model_{};
-        uint16_t num_features_ = 0;
+    bool infer_quantized(const std::vector<uint8_t>& quantized_features,
+                         eml_isolation_result_t& out_result,
+                         std::string* error = nullptr) const;
 
-    public:
-        bool load_config(const std::filesystem::path& model_engine_config,
-                         const std::filesystem::path& dp_txt,
-                         std::string* error = nullptr);
+    bool infer_raw(const float* raw_features,
+                   uint16_t feature_count,
+                   eml_isolation_result_t& out_result,
+                   std::string* error = nullptr) const;
 
-        bool train_on_quantized_matrix(const std::vector<uint8_t>& matrix,
-                                       size_t num_samples,
-                                       std::string* error = nullptr);
+    bool infer_raw(const std::vector<float>& raw_features,
+                   eml_isolation_result_t& out_result,
+                   std::string* error = nullptr) const;
 
-        float decision_function_quantized(const uint8_t* quantized_features,
-                                          uint16_t feature_count) const;
+    void set_extract_callback(IsoForest::extract_callback_t callback);
+    void set_extract_content_callback(IsoForest::extract_content_callback_t callback);
 
-        bool is_anomaly_quantized(const uint8_t* quantized_features,
-                                  uint16_t feature_count,
-                                  float threshold) const;
+    bool infer_pe_path(const std::filesystem::path& pe_path,
+                       eml_isolation_result_t& out_result,
+                       std::string* error = nullptr) const;
 
-        const If_tree_container& forest() const;
+    bool infer_pe_content(const uint8_t* pe_content,
+                          size_t pe_size,
+                          eml_isolation_result_t& out_result,
+                          std::string* error = nullptr) const;
 
-        const If_config& config() const;
-        uint16_t num_features() const;
-        bool trained() const;
-    };
+    bool loaded() const;
+    eml_status_code last_status() const;
+    const char* last_status_string() const;
+    const std::string& last_error() const;
+    EngineMetadata metadata() const;
 
-    bool load_quantized_nml_dataset(const std::filesystem::path& nml_path,
-                                    uint16_t expected_num_features,
-                                    uint8_t quantization_bits,
-                                    std::vector<uint8_t>& out_matrix,
-                                    size_t& out_num_samples,
-                                    std::string* error = nullptr);
+    const eml::IsoForest& model() const;
 
-    bool load_development_metrics(const std::filesystem::path& model_engine_config,
-                                  DevelopmentMetrics& out,
-                                  std::string* error = nullptr);
+private:
+    eml::IsoForest model_{};
+    std::string model_name_{};
+    std::filesystem::path resource_dir_{};
+    mutable eml_status_code last_status_code_ = eml_status_code::ok;
+    mutable std::string last_error_;
 
-    EvaluationSummary train_and_evaluate(const std::filesystem::path& model_engine_config,
-                                         const std::filesystem::path& dp_txt,
-                                         const DatasetBundlePaths& dataset_paths,
-                                         bool save_scores = false);
+    void set_error(eml_status_code status, const std::string& message) const;
+    void clear_error() const;
+};
 
-} // namespace model_engine
-} // namespace eml
+bool load_quantized_nml_dataset(const std::filesystem::path& nml_path,
+                                uint16_t expected_num_features,
+                                uint8_t quantization_bits,
+                                std::vector<uint8_t>& out_matrix,
+                                size_t& out_num_samples,
+                                std::string* error = nullptr);
+
+bool evaluate_validation_splits(const IsolationForestModelEngine& engine,
+                                const std::filesystem::path& benign_val_nml_path,
+                                const std::filesystem::path& malware_val_nml_path,
+                                EvaluationSummary& out_summary,
+                                std::string* error = nullptr);
+
+}  // namespace eml::model_engine

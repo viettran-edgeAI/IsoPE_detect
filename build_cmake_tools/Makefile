@@ -57,13 +57,23 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor
+CMAKE_SOURCE_DIR = /home/viettran/Documents/visual_code/EDR_AGENT
 
 # The top-level build directory on which CMake was run.
 CMAKE_BINARY_DIR = /home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools
 
 #=============================================================================
 # Targets provided globally by CMake.
+
+# Special rule for the target test
+test:
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Running tests..."
+	/usr/bin/ctest --force-new-ctest-process $(ARGS)
+.PHONY : test
+
+# Special rule for the target test
+test/fast: test
+.PHONY : test/fast
 
 # Special rule for the target edit_cache
 edit_cache:
@@ -117,30 +127,69 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named pe_feature_extractor
+# Target rules for targets named pe_model_engine
 
 # Build rule for target.
-pe_feature_extractor: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pe_feature_extractor
-.PHONY : pe_feature_extractor
+pe_model_engine: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pe_model_engine
+.PHONY : pe_model_engine
 
 # fast build rule for target.
-pe_feature_extractor/fast:
-	$(MAKE) $(MAKESILENT) -f src/CMakeFiles/pe_feature_extractor.dir/build.make src/CMakeFiles/pe_feature_extractor.dir/build
-.PHONY : pe_feature_extractor/fast
+pe_model_engine/fast:
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine.dir/build.make embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine.dir/build
+.PHONY : pe_model_engine/fast
 
 #=============================================================================
-# Target rules for targets named lief_feature_extractor
+# Target rules for targets named pe_model_engine_c
 
 # Build rule for target.
-lief_feature_extractor: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 lief_feature_extractor
-.PHONY : lief_feature_extractor
+pe_model_engine_c: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pe_model_engine_c
+.PHONY : pe_model_engine_c
 
 # fast build rule for target.
-lief_feature_extractor/fast:
-	$(MAKE) $(MAKESILENT) -f app/CMakeFiles/lief_feature_extractor.dir/build.make app/CMakeFiles/lief_feature_extractor.dir/build
-.PHONY : lief_feature_extractor/fast
+pe_model_engine_c/fast:
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine_c.dir/build.make embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine_c.dir/build
+.PHONY : pe_model_engine_c/fast
+
+#=============================================================================
+# Target rules for targets named pe_model_engine_cli
+
+# Build rule for target.
+pe_model_engine_cli: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pe_model_engine_cli
+.PHONY : pe_model_engine_cli
+
+# fast build rule for target.
+pe_model_engine_cli/fast:
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/build
+.PHONY : pe_model_engine_cli/fast
+
+#=============================================================================
+# Target rules for targets named pe_model_engine_benchmark_cli
+
+# Build rule for target.
+pe_model_engine_benchmark_cli: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pe_model_engine_benchmark_cli
+.PHONY : pe_model_engine_benchmark_cli
+
+# fast build rule for target.
+pe_model_engine_benchmark_cli/fast:
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build.make embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/build
+.PHONY : pe_model_engine_benchmark_cli/fast
+
+#=============================================================================
+# Target rules for targets named pe_model_engine_tests
+
+# Build rule for target.
+pe_model_engine_tests: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 pe_model_engine_tests
+.PHONY : pe_model_engine_tests
+
+# fast build rule for target.
+pe_model_engine_tests/fast:
+	$(MAKE) $(MAKESILENT) -f embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/build.make embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/build
+.PHONY : pe_model_engine_tests/fast
 
 # Help Target
 help:
@@ -150,8 +199,12 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... lief_feature_extractor"
-	@echo "... pe_feature_extractor"
+	@echo "... test"
+	@echo "... pe_model_engine"
+	@echo "... pe_model_engine_benchmark_cli"
+	@echo "... pe_model_engine_c"
+	@echo "... pe_model_engine_cli"
+	@echo "... pe_model_engine_tests"
 .PHONY : help
 
 

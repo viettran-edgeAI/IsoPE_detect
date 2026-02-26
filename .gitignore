@@ -2,3 +2,8 @@ LIEF_PE_Research.md
 .venv/
 datasets/
 embedded_phase/third_party/
+build/
+build_cmake_tools/
+build_*/
+.cmake-debug/
+.cmake-release/

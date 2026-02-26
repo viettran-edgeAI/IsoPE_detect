@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include "../base/eml_base.h"
+#include "../base/eml_status.h"
 #include "eml_samples.h"
 
 namespace eml {
@@ -47,6 +48,7 @@ namespace eml {
         float anomaly_score = 0.0f;  // raw anomaly score from isolation forest
         bool is_anomaly = false;     // true if score exceeds threshold
         float threshold = 0.0f;      // decision threshold used
+        eml_status_code status_code = eml_status_code::ok;
         bool success = false;
 
         void clear() {
@@ -54,6 +56,7 @@ namespace eml {
             anomaly_score = 0.0f;
             is_anomaly = false;
             threshold = 0.0f;
+            status_code = eml_status_code::ok;
             success = false;
         }
     };

@@ -19,6 +19,7 @@
 #include "if_feature_extractor.h"
 #include "if_scaler_layer.h"
 #include "if_feature_transform_layer.h"
+#include "../../base/eml_status.h"
 
 namespace eml {
 
@@ -365,6 +366,11 @@ namespace eml {
         uint32_t samples_per_tree_ = 1u;
         float threshold_offset_ = 0.0f;
         bool trained_ = false;
+        mutable eml_status_code last_status_code_ = eml_status_code::ok;
+
+        inline void set_status(eml_status_code status) const {
+            last_status_code_ = status;
+        }
 
         static constexpr char k_model_magic_[4] = {'I', 'F', 'M', 'Q'};
         static constexpr uint16_t k_model_version_ = 1u;
@@ -631,37 +637,53 @@ namespace eml {
             uint16_t header_size = 0u;
             uint64_t payload_size = 0ull;
 
-            if (!read_u16_le(fin, version) ||
-                !read_u8(fin, endian_flag) ||
-                !read_u16_le(fin, header_size) ||
-                !read_u64_le(fin, payload_size)) {
+            if (!read_u16_le(fin, version)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
+            if (!read_u8(fin, endian_flag)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
+            if (!read_u16_le(fin, header_size)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
+            if (!read_u64_le(fin, payload_size)) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
             if (version != k_model_version_) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
             if (endian_flag != k_endian_little_flag_) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
             if (header_size < k_model_header_min_size_) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
             fin.seekg(0, std::ios::end);
             const std::streamoff file_size = fin.tellg();
             if (file_size <= 0) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
             const uint64_t required_size = static_cast<uint64_t>(header_size) + payload_size + sizeof(uint32_t);
             if (required_size > static_cast<uint64_t>(file_size)) {
+                set_status(eml_status_code::size_mismatch);
                 return false;
             }
 
             fin.clear();
             fin.seekg(static_cast<std::streamoff>(header_size), std::ios::beg);
             if (!fin.good()) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
@@ -672,22 +694,48 @@ namespace eml {
             uint8_t depth_bits = 0u;
             uint32_t checksum = k_checksum_seed_;
 
-            if (!read_u8_with_checksum(fin, threshold_bits, checksum)) return false;
-            if (!read_u8_with_checksum(fin, feature_bits, checksum)) return false;
-            if (!read_u8_with_checksum(fin, child_bits, checksum)) return false;
-            if (!read_u8_with_checksum(fin, leaf_size_bits, checksum)) return false;
-            if (!read_u8_with_checksum(fin, depth_bits, checksum)) return false;
-
-            if (!resource_.set_node_layouts(threshold_bits, feature_bits, child_bits, leaf_size_bits, depth_bits)) {
+            if (!read_u8_with_checksum(fin, threshold_bits, checksum)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
+            if (!read_u8_with_checksum(fin, feature_bits, checksum)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
+            if (!read_u8_with_checksum(fin, child_bits, checksum)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
+            if (!read_u8_with_checksum(fin, leaf_size_bits, checksum)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
+            if (!read_u8_with_checksum(fin, depth_bits, checksum)) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
-            if (!read_u32_le_with_checksum(fin, samples_per_tree_, checksum)) return false;
-            if (!read_f32_le_with_checksum(fin, threshold_offset_, checksum)) return false;
+            if (!resource_.set_node_layouts(threshold_bits, feature_bits, child_bits, leaf_size_bits, depth_bits)) {
+                set_status(eml_status_code::invalid_configuration);
+                return false;
+            }
+
+            if (!read_u32_le_with_checksum(fin, samples_per_tree_, checksum)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
+            if (!read_f32_le_with_checksum(fin, threshold_offset_, checksum)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
 
             uint32_t tree_count = 0u;
-            if (!read_u32_le_with_checksum(fin, tree_count, checksum)) return false;
+            if (!read_u32_le_with_checksum(fin, tree_count, checksum)) {
+                set_status(eml_status_code::file_read_failed);
+                return false;
+            }
             if (tree_count == 0u) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
@@ -697,21 +745,30 @@ namespace eml {
             for (uint32_t i = 0u; i < tree_count; ++i) {
                 uint16_t tree_depth = 0u;
                 uint32_t node_count = 0u;
-                if (!read_u16_le_with_checksum(fin, tree_depth, checksum)) return false;
-                if (!read_u32_le_with_checksum(fin, node_count, checksum)) return false;
+                if (!read_u16_le_with_checksum(fin, tree_depth, checksum)) {
+                    set_status(eml_status_code::file_read_failed);
+                    return false;
+                }
+                if (!read_u32_le_with_checksum(fin, node_count, checksum)) {
+                    set_status(eml_status_code::file_read_failed);
+                    return false;
+                }
                 if (node_count == 0u) {
+                    set_status(eml_status_code::invalid_configuration);
                     return false;
                 }
 
                 std::vector<uint64_t> packed_nodes(node_count, 0ull);
                 for (uint32_t node_index = 0u; node_index < node_count; ++node_index) {
                     if (!read_u64_le_with_checksum(fin, packed_nodes[node_index], checksum)) {
+                        set_status(eml_status_code::file_read_failed);
                         return false;
                     }
                 }
 
                 If_tree tree;
                 if (!tree.load_serialized(&resource_, packed_nodes.data(), packed_nodes.size(), tree_depth)) {
+                    set_status(eml_status_code::invalid_configuration);
                     return false;
                 }
                 trees_.push_back(std::move(tree));
@@ -721,13 +778,16 @@ namespace eml {
             fin.clear();
             fin.seekg(static_cast<std::streamoff>(static_cast<uint64_t>(header_size) + payload_size), std::ios::beg);
             if (!read_u32_le(fin, expected_checksum)) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
             if (expected_checksum != checksum) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
             trained_ = !trees_.empty();
+            set_status(trained_ ? eml_status_code::ok : eml_status_code::not_loaded);
             return trained_;
         }
 
@@ -749,7 +809,12 @@ namespace eml {
                                       uint8_t child_bits,
                                       uint8_t leaf_size_bits,
                                       uint8_t depth_bits) {
-            return resource_.set_node_layouts(threshold_bits, feature_bits, child_bits, leaf_size_bits, depth_bits);
+            if (!resource_.set_node_layouts(threshold_bits, feature_bits, child_bits, leaf_size_bits, depth_bits)) {
+                set_status(eml_status_code::invalid_configuration);
+                return false;
+            }
+            set_status(eml_status_code::ok);
+            return true;
         }
 
         void set_samples_per_tree(uint32_t samples_per_tree) {
@@ -816,12 +881,18 @@ namespace eml {
         }
 
         bool save_model_binary(const std::filesystem::path& file_path) const {
-            if (!trained_ || trees_.empty() || !resource_.valid()) {
+            if (!trained_ || trees_.empty()) {
+                set_status(eml_status_code::not_loaded);
+                return false;
+            }
+            if (!resource_.valid()) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
             uint64_t payload_size = 0ull;
             if (!compute_payload_size(payload_size)) {
+                set_status(eml_status_code::size_mismatch);
                 return false;
             }
 
@@ -833,17 +904,36 @@ namespace eml {
             const std::filesystem::path temp_path = file_path.string() + ".tmp";
             std::ofstream fout(temp_path, std::ios::binary | std::ios::trunc);
             if (!fout.is_open()) {
+                set_status(eml_status_code::file_open_failed);
                 return false;
             }
 
-            if (!write_exact(fout, k_model_magic_, sizeof(k_model_magic_))) return false;
-            if (!write_u16_le(fout, k_model_version_)) return false;
-            if (!write_u8(fout, k_endian_little_flag_)) return false;
-            if (!write_u16_le(fout, k_model_header_size_)) return false;
-            if (!write_u64_le(fout, payload_size)) return false;
+            if (!write_exact(fout, k_model_magic_, sizeof(k_model_magic_))) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u16_le(fout, k_model_version_)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u8(fout, k_endian_little_flag_)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u16_le(fout, k_model_header_size_)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u64_le(fout, payload_size)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
 
             constexpr std::array<uint8_t, k_model_header_size_ - k_model_header_min_size_> k_header_padding = {};
-            if (!write_exact(fout, k_header_padding.data(), k_header_padding.size())) return false;
+            if (!write_exact(fout, k_header_padding.data(), k_header_padding.size())) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
 
             const uint8_t threshold_bits = resource_.threshold_bits();
             const uint8_t feature_bits = resource_.feature_bits();
@@ -853,32 +943,69 @@ namespace eml {
             const uint32_t tree_count = static_cast<uint32_t>(trees_.size());
             uint32_t checksum = k_checksum_seed_;
 
-            if (!write_u8_with_checksum(fout, threshold_bits, checksum)) return false;
-            if (!write_u8_with_checksum(fout, feature_bits, checksum)) return false;
-            if (!write_u8_with_checksum(fout, child_bits, checksum)) return false;
-            if (!write_u8_with_checksum(fout, leaf_size_bits, checksum)) return false;
-            if (!write_u8_with_checksum(fout, depth_bits, checksum)) return false;
+            if (!write_u8_with_checksum(fout, threshold_bits, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u8_with_checksum(fout, feature_bits, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u8_with_checksum(fout, child_bits, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u8_with_checksum(fout, leaf_size_bits, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u8_with_checksum(fout, depth_bits, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
 
-            if (!write_u32_le_with_checksum(fout, samples_per_tree_, checksum)) return false;
-            if (!write_f32_le_with_checksum(fout, threshold_offset_, checksum)) return false;
-            if (!write_u32_le_with_checksum(fout, tree_count, checksum)) return false;
+            if (!write_u32_le_with_checksum(fout, samples_per_tree_, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_f32_le_with_checksum(fout, threshold_offset_, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
+            if (!write_u32_le_with_checksum(fout, tree_count, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
 
             for (const If_tree& tree : trees_) {
                 const uint16_t tree_depth = tree.depth();
                 const uint32_t node_count = static_cast<uint32_t>(tree.node_count());
 
-                if (!write_u16_le_with_checksum(fout, tree_depth, checksum)) return false;
-                if (!write_u32_le_with_checksum(fout, node_count, checksum)) return false;
+                if (!write_u16_le_with_checksum(fout, tree_depth, checksum)) {
+                    set_status(eml_status_code::file_write_failed);
+                    return false;
+                }
+                if (!write_u32_le_with_checksum(fout, node_count, checksum)) {
+                    set_status(eml_status_code::file_write_failed);
+                    return false;
+                }
                 for (uint32_t node_index = 0u; node_index < node_count; ++node_index) {
                     const uint64_t packed_data = tree.packed_node(node_index);
-                    if (!write_u64_le_with_checksum(fout, packed_data, checksum)) return false;
+                    if (!write_u64_le_with_checksum(fout, packed_data, checksum)) {
+                        set_status(eml_status_code::file_write_failed);
+                        return false;
+                    }
                 }
             }
 
-            if (!write_u32_le(fout, checksum)) return false;
+            if (!write_u32_le(fout, checksum)) {
+                set_status(eml_status_code::file_write_failed);
+                return false;
+            }
 
             fout.flush();
             if (!fout.good()) {
+                set_status(eml_status_code::file_write_failed);
                 return false;
             }
             fout.close();
@@ -889,20 +1016,24 @@ namespace eml {
             std::filesystem::rename(temp_path, file_path, ec);
             if (ec) {
                 std::filesystem::remove(temp_path, ec);
+                set_status(eml_status_code::file_write_failed);
                 return false;
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
         bool load_model_binary(const std::filesystem::path& file_path) {
             std::ifstream fin(file_path, std::ios::binary);
             if (!fin.is_open()) {
+                set_status(eml_status_code::file_open_failed);
                 return false;
             }
 
             char magic[4] = {0, 0, 0, 0};
             if (!read_exact(fin, magic, sizeof(magic))) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
@@ -910,19 +1041,28 @@ namespace eml {
             fin.seekg(0, std::ios::beg);
 
             if (std::memcmp(magic, k_model_magic_, sizeof(k_model_magic_)) != 0) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
             if (!read_exact(fin, magic, sizeof(magic))) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
-            return load_model_binary_modern(fin);
+            const bool loaded = load_model_binary_modern(fin);
+            if (!loaded) {
+                return false;
+            }
+            set_status(eml_status_code::ok);
+            return true;
         }
 
         size_t num_trees() const { return trees_.size(); }
         uint32_t samples_per_tree() const { return samples_per_tree_; }
         bool trained() const { return trained_; }
         float threshold_offset() const { return threshold_offset_; }
+        eml_status_code last_status() const { return last_status_code_; }
+        void clear_status() { set_status(eml_status_code::ok); }
     };
 
 

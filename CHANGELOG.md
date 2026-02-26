@@ -2,6 +2,133 @@
 
 All notable changes to the EDR Agent model and optimization pipeline will be documented in this file. This project follows absolute metric tracking for model effectiveness.
 
+## [1.15.0] - 2026-02-26
+
+### Changed
+
+- Isolation Forest model footprint introspection:
+  - Added `IsoForest::model_file_size_bytes()` and `IsoForest::model_ram_size_bytes()`.
+  - Added tree/container memory accounting hooks used by the new RAM-size API.
+- Raw-PE evaluator update:
+  - `tools/model_tester/if_quantized_cpp_raw_pe_eval.cpp` now reports `model_file_size_bytes` and `model_ram_size_bytes` in stdout and JSON.
+- Callback cleanup:
+  - Removed `default_pe_path_callback()` from the project and removed implicit default callback wiring.
+  - Raw-PE evaluator now binds an explicit PE extraction callback at runtime.
+- Benchmark reporting tool:
+  - Added `tools/model_tester/generate_benchmark_report.py` to parse raw-PE eval JSON, generate graphs, and write a professional Markdown report in `reports/`.
+  - Report now includes model footprint (file vs RAM) metrics.
+- Standalone integration sample:
+  - Added C API single-main sample under `app/small_agent_capi_sample/` and integrated it into app-level CMake.
+  - Added short sample run report at `app/MODEL_ENGINE_C_INTEGRATION_SAMPLE_REPORT.md`.
+
+## [1.14.0] - 2026-02-26
+
+### Changed
+
+#### Embedded deployment runtime (`embedded_phase/src/model_engine`) implemented
+- Recreated and implemented the complete model-engine packaging/runtime tree:
+  - `embedded_phase/src/model_engine/include/model_engine.hpp`
+  - `embedded_phase/src/model_engine/include/model_engine_c.h`
+  - `embedded_phase/src/model_engine/src/model_engine.cpp`
+  - `embedded_phase/src/model_engine/src/model_engine_c.cpp`
+  - `embedded_phase/src/model_engine/app/model_engine_cli.cpp`
+  - `embedded_phase/src/model_engine/app/model_engine_benchmark_cli.cpp`
+  - `embedded_phase/src/model_engine/test/model_engine_tests.cpp`
+- Runtime scope is deployment-only:
+  - Loads IF resources required for inference (resources 1..7 in `If_base.h`).
+  - Supports inference for quantized feature vectors and raw feature vectors.
+  - Exposes C++ and C deployment APIs (`pe_model_engine`, `pe_model_engine_c`).
+  - Adds validation split evaluator helpers for benign/malware NML datasets.
+- Added CMake packaging for library/app/test targets under:
+  - `embedded_phase/src/model_engine/CMakeLists.txt`
+  - `embedded_phase/src/model_engine/src/CMakeLists.txt`
+  - `embedded_phase/src/model_engine/app/CMakeLists.txt`
+  - `embedded_phase/src/model_engine/test/CMakeLists.txt`
+
+#### Build-system alignment
+- Updated VS Code CMake source setting in `.vscode/settings.json` to repo root so CMake Tools builds the integrated project again.
+
+#### Cross-platform deployment documentation
+- Added runbook:
+  - `embedded_phase/src/model_engine/MODEL_ENGINE_BUILD_RUN.md`
+- Includes Ubuntu and Windows steps from repository load, dependency install, build/test, resource loading, and demo/evaluation execution.
+
+### Validation (Ubuntu, current workspace)
+
+- CMake build: **PASS** (`Build_CMakeTools`) for all new targets.
+- CTest: **PASS** (`pe_model_engine_tests`, 1/1).
+- Demo inference CLI (`pe_model_engine_cli`) on default benign sample:
+  - score: `-0.389092`
+  - threshold: `-0.546877`
+  - anomaly: `false`
+  - status: `ok`
+- Validation-split benchmark CLI (`pe_model_engine_benchmark_cli`):
+  - Threshold: `-0.546877`
+  - FPR: `0.038454`
+  - TPR: `0.915842`
+  - ROC-AUC: `0.983938`
+  - AP: `0.860797`
+  - TP: `370`, FP: `191`, TN: `4776`, FN: `34`
+- Evaluation artifact written to:
+  - `embedded_phase/src/model_engine/results/if_model_engine_eval_ubuntu.json`
+
+### Deployment gate check (model_engine validation split)
+- FPR target (`< 0.05`): **PASS** (`0.038454`)
+- TPR target (`> 0.95`): **NOT MET** (`0.915842`)
+
+## [1.13.0] - 2026-02-26
+
+### Changed
+
+#### IF model-layer authority cleanup (no model-layer logging)
+- Removed model-layer log emission from Isolation Forest core in:
+  - `embedded_phase/core/models/isolation_forest/if_base.h`
+  - `embedded_phase/core/models/isolation_forest/if_config.h`
+  - `embedded_phase/core/models/isolation_forest/if_feature_extractor.h`
+  - `embedded_phase/core/models/isolation_forest/if_scaler_layer.h`
+  - `embedded_phase/core/models/isolation_forest/if_model.h`
+- Model-layer components now report deterministic machine-readable status codes instead of printing runtime diagnostics.
+
+#### Err-code/status contract introduction
+- Added `embedded_phase/core/models/isolation_forest/if_status.h` with canonical `eml_status_code` and `eml_status_to_string(...)`.
+- Added per-component status tracking (`last_status()` / `clear_status()`) and failure mapping across IF base/config/extractor/transform/scaler/tree-container/model orchestration.
+- Extended inference result contract in `embedded_phase/core/ml/eml_predict_result.h`:
+  - `eml_isolation_result_t` now includes `status_code` while retaining `success` for compatibility.
+- Updated IF infer paths (`infer_quantized`, `infer_raw`, `infer_pe_path`, `infer_pe_content`) to return status-aware results.
+
+#### Planning artifact
+- Added implementation plan document:
+  - `embedded_phase/docs/isolation_forest_errcode_refactor_plan.md`
+
+### Validation workflow rerun (Embedded design §4)
+- Rebuilt CMake targets via VS Code CMake Tools.
+- Regenerated Stage-3 artifacts:
+  - `development_phase/src/model_optimization.py --config model_config.json`
+- Rebuilt quantized resources and copied Stage-3 JSON artifacts into canonical resource root:
+  - `tools/resource_prepairer/prepare_datasets.py --benign-train ... --benign-val ... --malware-val ... --output-dir embedded_phase/core/models/isolation_forest/resources --quantization-bits 3 --model-name iforest --dev-optimized-config-dir development_phase/results`
+- Re-ran raw-PE quantized C++ evaluator:
+  - `/tmp/if_quantized_cpp_raw_pe_eval --repo-root . --model-name iforest`
+
+### Evaluation summary
+
+- Stage-3 validation (pipeline output):
+  - FPR: `0.037000`
+  - TPR: `0.920800`
+  - ROC-AUC: `0.987800`
+- Stage-3 holdout test (pipeline output):
+  - FPR: `0.046500`
+  - TPR: `0.940400`
+  - ROC-AUC: `0.988500`
+- Raw-PE quantized C++ evaluation (from `development_phase/reports/if_quantized_cpp_raw_pe_eval.json`):
+  - Threshold: `-0.546877`
+  - FPR: `0.048058`
+  - TPR: `0.903714`
+  - ROC-AUC: `0.983336`
+
+### Deployment gate check
+- FPR target (`< 0.05`): **PASS** on raw-PE eval (`0.048058`).
+- TPR target (`> 0.95`): **NOT MET** on raw-PE eval (`0.903714`).
+
 ## [1.12.0] - 2026-02-26
 
 ### Changed

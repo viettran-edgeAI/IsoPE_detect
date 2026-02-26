@@ -8,7 +8,6 @@
 #include <string_view>
 
 #include "../../base/eml_base.h"
-
 namespace eml {
 
     class If_feature_transform_layer {
@@ -16,6 +15,11 @@ namespace eml {
         vector<uint8_t> log1p_abs_mask_;
         uint16_t num_features_ = 0;
         bool loaded_ = false;
+        mutable eml_status_code last_status_code_ = eml_status_code::ok;
+
+        inline void set_status(eml_status_code status) const {
+            last_status_code_ = status;
+        }
 
         static bool read_text_file(const std::filesystem::path& file_path, std::string& out) {
             std::ifstream fin(file_path, std::ios::in);
@@ -91,12 +95,14 @@ namespace eml {
 
         bool init_passthrough(uint16_t feature_count) {
             if (feature_count == 0u) {
+                set_status(eml_status_code::invalid_argument);
                 return false;
             }
 
             num_features_ = feature_count;
             log1p_abs_mask_.assign(feature_count, 0u);
             loaded_ = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -106,13 +112,16 @@ namespace eml {
             loaded_ = false;
             log1p_abs_mask_.clear();
             num_features_ = 0u;
+            set_status(eml_status_code::ok);
 
             if (schema_path.empty()) {
+                set_status(eml_status_code::empty_path);
                 return false;
             }
 
             std::string schema_json;
             if (!read_text_file(schema_path, schema_json)) {
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
@@ -125,11 +134,13 @@ namespace eml {
             } else if (!schema_order.empty()) {
                 effective_order = &schema_order;
             } else {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
             num_features_ = static_cast<uint16_t>(effective_order->size());
             if (expected_num_features > 0u && num_features_ != expected_num_features) {
+                set_status(eml_status_code::feature_count_mismatch);
                 return false;
             }
 
@@ -146,11 +157,21 @@ namespace eml {
             }
 
             loaded_ = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
         bool transform(const float* in_features, uint16_t feature_count, float* out_features) const {
-            if (!loaded_ || !in_features || !out_features || feature_count != num_features_) {
+            if (!loaded_) {
+                set_status(eml_status_code::not_loaded);
+                return false;
+            }
+            if (!in_features || !out_features) {
+                set_status(eml_status_code::invalid_argument);
+                return false;
+            }
+            if (feature_count != num_features_) {
+                set_status(eml_status_code::size_mismatch);
                 return false;
             }
 
@@ -162,11 +183,21 @@ namespace eml {
                 out_features[feature_index] = value;
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
         bool transform_inplace(float* features, uint16_t feature_count) const {
-            if (!loaded_ || !features || feature_count != num_features_) {
+            if (!loaded_) {
+                set_status(eml_status_code::not_loaded);
+                return false;
+            }
+            if (!features) {
+                set_status(eml_status_code::invalid_argument);
+                return false;
+            }
+            if (feature_count != num_features_) {
+                set_status(eml_status_code::size_mismatch);
                 return false;
             }
 
@@ -176,6 +207,7 @@ namespace eml {
                 }
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -184,10 +216,13 @@ namespace eml {
             log1p_abs_mask_.shrink_to_fit();
             num_features_ = 0u;
             loaded_ = false;
+            set_status(eml_status_code::ok);
         }
 
         bool loaded() const { return loaded_; }
         uint16_t num_features() const { return num_features_; }
+        eml_status_code last_status() const { return last_status_code_; }
+        void clear_status() { set_status(eml_status_code::ok); }
     };
 
 } // namespace eml

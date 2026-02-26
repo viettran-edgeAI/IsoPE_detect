@@ -1,4 +1,4 @@
-# Install script for directory: /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor
+# Install script for directory: /home/viettran/Documents/visual_code/EDR_AGENT
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,12 +44,7 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/src/cmake_install.cmake")
-endif()
-
-if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for the subdirectory.
-  include("/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/app/cmake_install.cmake")
+  include("/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/embedded_phase/src/model_engine/cmake_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)

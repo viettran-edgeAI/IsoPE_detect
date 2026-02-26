@@ -1,0 +1,19 @@
+{
+  "model_name": "iforest",
+  "resource_dir": "embedded_phase/core/models/isolation_forest/resources",
+  "num_features": 40,
+  "quantization_bits": 3,
+  "threshold": -0.546877,
+  "fpr": 0.038454,
+  "tpr": 0.915842,
+  "roc_auc": 0.983938,
+  "average_precision": 0.860797,
+  "benign_samples": 4967,
+  "malware_samples": 404,
+  "tp": 370,
+  "fp": 191,
+  "tn": 4776,
+  "fn": 34,
+  "status": "ok",
+  "success": true
+}

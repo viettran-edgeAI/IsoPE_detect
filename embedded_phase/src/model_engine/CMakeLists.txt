@@ -1,14 +1,16 @@
 cmake_minimum_required(VERSION 3.18)
 
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  project(pe_model_engine LANGUAGES CXX)
-endif()
+project(pe_model_engine LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-set(MODEL_ENGINE_MODULE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+option(PE_MODEL_ENGINE_BUILD_APPS "Build model engine CLI apps" ON)
+option(PE_MODEL_ENGINE_BUILD_TESTS "Build model engine tests" ON)
 
 add_subdirectory(src)
-add_subdirectory(app)
+
+if(PE_MODEL_ENGINE_BUILD_APPS)
+  add_subdirectory(app)
+endif()
+
+if(PE_MODEL_ENGINE_BUILD_TESTS)
+  add_subdirectory(test)
+endif()

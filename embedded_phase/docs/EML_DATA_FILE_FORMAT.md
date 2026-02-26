@@ -64,18 +64,7 @@ Validation on load:
 
 ---
 
-## 4) Compatibility Behavior
-
-`eml_data` supports both:
-- **Modern format** (`EMLD` + checksum)
-- **Legacy format** (historical `[num_samples][num_features]` header, no checksum)
-
-Write path (`releaseData(false)`) always emits modern format.
-Read path accepts modern first, then falls back to legacy parsing.
-
----
-
-## 5) RAII/Robustness Notes
+## 4) RAII/Robustness Notes
 
 - Serialization buffers are `std::vector<uint8_t>` based.
 - Save path writes to `*.tmp` then atomically renames to target file.
@@ -84,7 +73,7 @@ Read path accepts modern first, then falls back to legacy parsing.
 
 ---
 
-## 6) Multi-Platform Contract
+## 5) Multi-Platform Contract
 
 All multibyte numeric metadata uses **little-endian encoding** (explicit read/write helpers).
 No host-native struct dump is used, preventing ABI/packing/endianness drift across endpoints.

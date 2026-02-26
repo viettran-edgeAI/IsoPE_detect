@@ -18,7 +18,6 @@
 namespace eml {
 
     namespace if_config_detail {
-
         inline bool read_text_file(const std::filesystem::path& file_path, std::string& out) {
             std::ifstream fin(file_path, std::ios::in);
             if (!fin.is_open()) {
@@ -300,11 +299,16 @@ namespace eml {
     class If_config {
     private:
         const If_base* base_ptr = nullptr;
+        mutable eml_status_code last_status_code_ = eml_status_code::ok;
+
+        inline void set_status(eml_status_code status) const {
+            last_status_code_ = status;
+        }
 
         bool load_dp_txt(const std::filesystem::path& dp_path) {
             std::ifstream fin(dp_path, std::ios::in);
             if (!fin.is_open()) {
-                eml_debug(0, "❌ IF config: failed to open dp txt: ", dp_path.string().c_str());
+                set_status(eml_status_code::file_open_failed);
                 return false;
             }
 
@@ -366,30 +370,20 @@ namespace eml {
                 problem = problem_type::ISOLATION;
             }
 
-            if (problem != problem_type::ISOLATION) {
-                eml_debug(1, "⚠️ IF config: dp file problem_type is not isolation: ", problemTypeToString(problem).c_str());
-            }
-
             if (num_features == 0) {
-                eml_debug(0, "❌ IF config: invalid dp txt (num_features=0)");
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
         
         bool load_model_engine_config(const std::filesystem::path& config_file) {
             std::string json;
             if (!if_config_detail::read_text_file(config_file, json)) {
-                eml_debug(0, "❌ IF config: failed to read model_engine_config.json: ", config_file.string().c_str());
+                set_status(eml_status_code::file_read_failed);
                 return false;
-            }
-
-            std::string model_type;
-            if (if_config_detail::extract_string(json, "model_type", model_type)) {
-                if (!model_type.empty() && model_type != "IsolationForest") {
-                    eml_debug(1, "⚠️ IF config: model_type is ", model_type.c_str(), ", expected IsolationForest");
-                }
             }
 
             double value = 0.0;
@@ -441,7 +435,7 @@ namespace eml {
             }
 
             if (num_features == 0) {
-                eml_debug(0, "❌ IF config: num_features missing in optimized_config");
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
@@ -476,6 +470,7 @@ namespace eml {
                 }
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -530,14 +525,17 @@ namespace eml {
         void init(const If_base* base) {
             base_ptr = base;
             isLoaded = false;
+            set_status(eml_status_code::ok);
         }
 
         void set_base(const If_base* base) {
             base_ptr = base;
+            set_status(eml_status_code::ok);
         }
 
         bool recompute_node_layout_bits() {
             if (num_features == 0) {
+                set_status(eml_status_code::invalid_configuration);
                 return false;
             }
 
@@ -592,6 +590,7 @@ namespace eml {
             child_bits = desired_bits(max_nodes_per_tree - 1u);
             if (child_bits == 0) child_bits = 1;
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -599,6 +598,7 @@ namespace eml {
                              const std::filesystem::path& model_engine_config_file,
                              const std::filesystem::path& scaler_params_file = {}) {
             isLoaded = false;
+            set_status(eml_status_code::ok);
 
             bool dp_ok = false;
             dp_ok = load_dp_txt(dp_file);
@@ -622,19 +622,20 @@ namespace eml {
                 }
             }
             if (resolved_scaler_path.empty() || !std::filesystem::exists(resolved_scaler_path)) {
-                eml_debug(0, "❌ IF config: scaler params file is required but missing");
+                set_status(eml_status_code::resource_missing);
                 return false;
             }
 
             loaded_dp_path = dp_file;
             loaded_config_path = model_engine_config_file;
             isLoaded = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
         bool load_from_base() {
             if (!base_ptr || !base_ptr->ready_to_use()) {
-                eml_debug(0, "❌ IF config: base resource is not ready");
+                set_status(eml_status_code::base_not_ready);
                 return false;
             }
 
@@ -647,7 +648,9 @@ namespace eml {
             }
 
             if (!dp_ok) {
-                eml_debug(0, "❌ IF config: no valid data-params file found");
+                if (!base_ptr->dp_txt_exists()) {
+                    set_status(eml_status_code::resource_missing);
+                }
                 return false;
             }
 
@@ -658,53 +661,56 @@ namespace eml {
 
             const std::filesystem::path scaler_path = base_ptr->get_scaler_params_path();
             if (scaler_path.empty() || !std::filesystem::exists(scaler_path)) {
-                eml_debug(0, "❌ IF config: required scaler params file is missing");
+                set_status(eml_status_code::resource_missing);
                 return false;
             }
 
             loaded_dp_path = dp_path;
             loaded_config_path = cfg_path;
             isLoaded = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
         bool persist_threshold_to_config() const {
+            set_status(eml_status_code::ok);
             std::filesystem::path config_path = loaded_config_path;
             if (base_ptr && base_ptr->ready_to_use()) {
                 config_path = base_ptr->get_config_path();
             }
 
             if (config_path.empty()) {
-                eml_debug(0, "❌ IF config: cannot persist threshold, config path is empty");
+                set_status(eml_status_code::empty_path);
                 return false;
             }
 
             std::string json;
             if (!if_config_detail::read_text_file(config_path, json)) {
-                eml_debug(0, "❌ IF config: cannot read optimized config for threshold persist: ", config_path.string().c_str());
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
             if (!if_config_detail::replace_number_value(json, "threshold", static_cast<double>(decision_threshold)) ||
                 !if_config_detail::replace_number_value(json, "fpr_threshold", static_cast<double>(fpr_threshold)) ||
                 !if_config_detail::replace_number_value(json, "offset", static_cast<double>(threshold_offset))) {
-                eml_debug(0, "❌ IF config: missing threshold fields in optimized config: ", config_path.string().c_str());
+                set_status(eml_status_code::json_parse_failed);
                 return false;
             }
 
             std::ofstream fout(config_path, std::ios::out | std::ios::trunc);
             if (!fout.is_open()) {
-                eml_debug(0, "❌ IF config: cannot open optimized config for writing: ", config_path.string().c_str());
+                set_status(eml_status_code::file_open_failed);
                 return false;
             }
 
             fout << json;
             fout.flush();
             if (!fout.good()) {
-                eml_debug(0, "❌ IF config: failed to write updated threshold fields: ", config_path.string().c_str());
+                set_status(eml_status_code::file_write_failed);
                 return false;
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -714,6 +720,9 @@ namespace eml {
             usage += threshold_strategy.size();
             return usage;
         }
+
+        eml_status_code last_status() const { return last_status_code_; }
+        void clear_status() { set_status(eml_status_code::ok); }
     };
 
 } // namespace eml

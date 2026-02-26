@@ -1,14 +1,32 @@
 [
 {
-  "directory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/src",
-  "command": "/usr/bin/g++  -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/include -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor -isystem /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/../../third_party/LIEF/include -isystem /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/../../third_party/LIEF/src -isystem /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/../../third_party/LIEF/build/include -isystem /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/../../third_party/LIEF/build -g -std=c++17 -o CMakeFiles/pe_feature_extractor.dir/pe_extractor.cpp.o -c /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/src/pe_extractor.cpp",
-  "file": "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/src/pe_extractor.cpp",
-  "output": "src/CMakeFiles/pe_feature_extractor.dir/pe_extractor.cpp.o"
+  "directory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/embedded_phase/src/model_engine/src",
+  "command": "/usr/bin/g++  -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../include -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../../../core -g -o CMakeFiles/pe_model_engine.dir/model_engine.cpp.o -c /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/model_engine.cpp",
+  "file": "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/model_engine.cpp",
+  "output": "embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine.dir/model_engine.cpp.o"
 },
 {
-  "directory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/app",
-  "command": "/usr/bin/g++  -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/include -isystem /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/../../third_party/LIEF/include -isystem /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/../../third_party/LIEF/src -isystem /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/../../third_party/LIEF/build/include -isystem /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/../../third_party/LIEF/build -g -std=c++17 -o CMakeFiles/lief_feature_extractor.dir/pe_feature_extractor_cli.cpp.o -c /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/app/pe_feature_extractor_cli.cpp",
-  "file": "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/feature_extractor/app/pe_feature_extractor_cli.cpp",
-  "output": "app/CMakeFiles/lief_feature_extractor.dir/pe_feature_extractor_cli.cpp.o"
+  "directory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/embedded_phase/src/model_engine/src",
+  "command": "/usr/bin/g++  -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../include -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../../../core -g -o CMakeFiles/pe_model_engine_c.dir/model_engine_c.cpp.o -c /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/model_engine_c.cpp",
+  "file": "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/model_engine_c.cpp",
+  "output": "embedded_phase/src/model_engine/src/CMakeFiles/pe_model_engine_c.dir/model_engine_c.cpp.o"
+},
+{
+  "directory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/embedded_phase/src/model_engine/app",
+  "command": "/usr/bin/g++  -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../include -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../../../core -g -o CMakeFiles/pe_model_engine_cli.dir/model_engine_cli.cpp.o -c /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/app/model_engine_cli.cpp",
+  "file": "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/app/model_engine_cli.cpp",
+  "output": "embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_cli.dir/model_engine_cli.cpp.o"
+},
+{
+  "directory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/embedded_phase/src/model_engine/app",
+  "command": "/usr/bin/g++  -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../include -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../../../core -g -o CMakeFiles/pe_model_engine_benchmark_cli.dir/model_engine_benchmark_cli.cpp.o -c /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/app/model_engine_benchmark_cli.cpp",
+  "file": "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/app/model_engine_benchmark_cli.cpp",
+  "output": "embedded_phase/src/model_engine/app/CMakeFiles/pe_model_engine_benchmark_cli.dir/model_engine_benchmark_cli.cpp.o"
+},
+{
+  "directory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools/embedded_phase/src/model_engine/test",
+  "command": "/usr/bin/g++  -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../include -I/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/src/../../../core -g -o CMakeFiles/pe_model_engine_tests.dir/model_engine_tests.cpp.o -c /home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/test/model_engine_tests.cpp",
+  "file": "/home/viettran/Documents/visual_code/EDR_AGENT/embedded_phase/src/model_engine/test/model_engine_tests.cpp",
+  "output": "embedded_phase/src/model_engine/test/CMakeFiles/pe_model_engine_tests.dir/model_engine_tests.cpp.o"
 }
 ]

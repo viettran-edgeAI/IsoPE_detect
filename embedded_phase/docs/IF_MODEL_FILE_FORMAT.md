@@ -70,20 +70,9 @@ Load-time validation:
 3. Decode payload with LE readers.
 4. Recompute and compare checksum.
 5. Validate non-empty trees and per-tree node counts.
-
 ---
 
-## 4) Compatibility
-
-`load_model_binary` behavior:
-- First tries modern `IFMQ` format.
-- Falls back to legacy `IFR1` model format for backward compatibility.
-
-`save_model_binary` always emits modern `IFMQ` format.
-
----
-
-## 5) RAII/Atomicity Notes
+## 4) RAII/Atomicity Notes
 
 - Save path writes `target.tmp` first, then renames to final path.
 - No native-struct binary dump is used.
@@ -91,7 +80,7 @@ Load-time validation:
 
 ---
 
-## 6) Endpoint Portability
+## 5) Endpoint Portability
 
 This contract is independent of host struct packing and host endianness.
 The explicit little-endian, size-tagged header and payload checksum make binaries portable across endpoint platforms and toolchains.

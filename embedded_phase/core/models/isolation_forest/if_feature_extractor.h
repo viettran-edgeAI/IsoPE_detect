@@ -26,6 +26,11 @@ namespace eml {
         extract_callback_t extractor_callback_;
         extract_content_callback_t extractor_content_callback_;
         bool loaded_ = false;
+        mutable eml_status_code last_status_code_ = eml_status_code::ok;
+
+        inline void set_status(eml_status_code status) const {
+            last_status_code_ = status;
+        }
 
         static bool read_text_file(const std::filesystem::path& file_path, std::string& out) {
             std::ifstream fin(file_path, std::ios::in);
@@ -163,43 +168,37 @@ namespace eml {
     public:
         If_feature_extractor() = default;
 
-        /// Helper returning a default PE extraction callback; defined in
-        /// `if_feature_extractor_default.cpp` so that linking is optional.
-        static extract_callback_t default_pe_path_callback();
-
         bool init(const std::filesystem::path& feature_config_path,
                   uint16_t expected_num_features = 0) {
             loaded_ = false;
             feature_names_.clear();
             feature_config_path_.clear();
+            set_status(eml_status_code::ok);
 
             if (feature_config_path.empty()) {
-                eml_debug(0, "❌ IF feature_extractor init failed: empty feature config path");
+                set_status(eml_status_code::empty_path);
                 return false;
             }
 
             std::string json;
             if (!read_text_file(feature_config_path, json)) {
-                eml_debug(0, "❌ IF feature_extractor init failed: cannot read feature config: ", feature_config_path.string().c_str());
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
             if (!parse_feature_list_json(json, feature_names_)) {
-                eml_debug(0, "❌ IF feature_extractor init failed: invalid feature list JSON");
+                set_status(eml_status_code::json_parse_failed);
                 return false;
             }
 
             if (expected_num_features > 0 && feature_names_.size() != expected_num_features) {
-                eml_debug_2(0,
-                            "❌ IF feature_extractor init failed: feature count mismatch ",
-                            static_cast<uint32_t>(feature_names_.size()),
-                            " vs expected ",
-                            static_cast<uint32_t>(expected_num_features));
+                set_status(eml_status_code::feature_count_mismatch);
                 return false;
             }
 
             feature_config_path_ = feature_config_path;
             loaded_ = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -208,15 +207,16 @@ namespace eml {
             loaded_ = false;
             feature_names_.clear();
             feature_config_path_.clear();
+            set_status(eml_status_code::ok);
 
             if (optimized_config_path.empty()) {
-                eml_debug(0, "❌ IF feature_extractor init failed: empty optimized config path");
+                set_status(eml_status_code::empty_path);
                 return false;
             }
 
             std::string json;
             if (!read_text_file(optimized_config_path, json)) {
-                eml_debug(0, "❌ IF feature_extractor init failed: cannot read optimized config: ", optimized_config_path.string().c_str());
+                set_status(eml_status_code::file_read_failed);
                 return false;
             }
 
@@ -232,26 +232,23 @@ namespace eml {
 
                     std::string list_json;
                     if (!read_text_file(resolved, list_json) || !parse_feature_list_json(list_json, feature_names_)) {
-                        eml_debug(0, "❌ IF feature_extractor init failed: cannot parse source feature list from optimized config");
+                        set_status(eml_status_code::json_parse_failed);
                         return false;
                     }
                 } else {
-                    eml_debug(0, "❌ IF feature_extractor init failed: missing optimized_feature_set.features");
+                    set_status(eml_status_code::invalid_configuration);
                     return false;
                 }
             }
 
             if (expected_num_features > 0 && feature_names_.size() != expected_num_features) {
-                eml_debug_2(0,
-                            "❌ IF feature_extractor init failed: feature count mismatch ",
-                            static_cast<uint32_t>(feature_names_.size()),
-                            " vs expected ",
-                            static_cast<uint32_t>(expected_num_features));
+                set_status(eml_status_code::feature_count_mismatch);
                 return false;
             }
 
             feature_config_path_ = optimized_config_path;
             loaded_ = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -269,24 +266,22 @@ namespace eml {
             loaded_ = false;
             feature_names_.clear();
             feature_config_path_.clear();
+            set_status(eml_status_code::ok);
 
             if (features.empty()) {
-                eml_debug(0, "❌ IF feature_extractor init failed: empty feature list");
+                set_status(eml_status_code::invalid_argument);
                 return false;
             }
 
             feature_names_ = features;
             if (expected_num_features > 0 && feature_names_.size() != expected_num_features) {
-                eml_debug_2(0,
-                            "❌ IF feature_extractor init failed: feature count mismatch ",
-                            static_cast<uint32_t>(feature_names_.size()),
-                            " vs expected ",
-                            static_cast<uint32_t>(expected_num_features));
+                set_status(eml_status_code::feature_count_mismatch);
                 feature_names_.clear();
                 return false;
             }
 
             loaded_ = true;
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -294,23 +289,28 @@ namespace eml {
             out_features.clear();
 
             if (!loaded_) {
+                set_status(eml_status_code::not_loaded);
                 return false;
             }
 
             if (!extractor_callback_) {
+                set_status(eml_status_code::callback_not_set);
                 return false;
             }
 
             if (!extractor_callback_(pe_path, feature_names_, out_features)) {
                 out_features.clear();
+                set_status(eml_status_code::callback_failed);
                 return false;
             }
 
             if (out_features.size() != feature_names_.size()) {
                 out_features.clear();
+                set_status(eml_status_code::size_mismatch);
                 return false;
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -319,24 +319,34 @@ namespace eml {
                                      vector<float>& out_features) const {
             out_features.clear();
 
-            if (!loaded_ || !pe_content || pe_size == 0u) {
+            if (!loaded_) {
+                set_status(eml_status_code::not_loaded);
+                return false;
+            }
+
+            if (!pe_content || pe_size == 0u) {
+                set_status(eml_status_code::invalid_argument);
                 return false;
             }
 
             if (!extractor_content_callback_) {
+                set_status(eml_status_code::callback_not_set);
                 return false;
             }
 
             if (!extractor_content_callback_(pe_content, pe_size, feature_names_, out_features)) {
                 out_features.clear();
+                set_status(eml_status_code::callback_failed);
                 return false;
             }
 
             if (out_features.size() != feature_names_.size()) {
                 out_features.clear();
+                set_status(eml_status_code::size_mismatch);
                 return false;
             }
 
+            set_status(eml_status_code::ok);
             return true;
         }
 
@@ -351,12 +361,15 @@ namespace eml {
             extractor_callback_ = nullptr;
             extractor_content_callback_ = nullptr;
             loaded_ = false;
+            set_status(eml_status_code::ok);
         }
 
         bool loaded() const { return loaded_; }
         size_t feature_count() const { return feature_names_.size(); }
         const vector<std::string>& feature_names() const { return feature_names_; }
         const std::filesystem::path& feature_config_path() const { return feature_config_path_; }
+        eml_status_code last_status() const { return last_status_code_; }
+        void clear_status() { set_status(eml_status_code::ok); }
     };
 
 } // namespace eml
