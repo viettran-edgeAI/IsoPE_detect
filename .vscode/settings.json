@@ -1,5 +1,5 @@
 {
     "github.copilot.chat.responsesApiReasoningEffort": "medium",
-    "cmake.sourceDirectory": "/home/viettran/Documents/visual_code/EDR_AGENT",
+    "cmake.sourceDirectory": "D:/IsoPE_detect",
     "cmake.buildDirectory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools"
 }

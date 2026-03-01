@@ -1,0 +1,38 @@
+{
+  "version": 8,
+  "configurePresets": [
+    {
+      "name": "msys2-mingw64-release",
+      "displayName": "MSYS2 MinGW64 + Ninja (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/msys2-mingw64-release",
+      "environment": {
+        "PATH": "C:/msys64/mingw64/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "C:/msys64/mingw64/bin/x86_64-w64-mingw32-gcc.exe",
+        "CMAKE_CXX_COMPILER": "C:/msys64/mingw64/bin/x86_64-w64-mingw32-g++.exe",
+        "CMAKE_MAKE_PROGRAM": "C:/msys64/mingw64/bin/ninja.exe"
+      }
+    },
+    {
+      "name": "msvc-ninja-release",
+      "displayName": "MSVC + Ninja (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/msvc-ninja-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "msvc-ninja-debug",
+      "displayName": "MSVC + Ninja (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/msvc-ninja-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ]
+}

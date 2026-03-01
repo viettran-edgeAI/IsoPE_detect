@@ -1,0 +1,463 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run model tester exe",
+			"type": "shell",
+			"command": "./tools/model_tester/if_quantized_cpp_raw_pe_eval.exe",
+			"args": [
+				"--repo-root",
+				".",
+				"--model-name",
+				"iforest"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build embedded msvc dir",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"embedded_phase/build_windows_ninja_tests_msvc",
+				"--config",
+				"Release"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Install VS Build Tools",
+			"type": "shell",
+			"command": "winget",
+			"args": [
+				"install",
+				"--id",
+				"Microsoft.VisualStudio.2022.BuildTools",
+				"--exact",
+				"--accept-package-agreements",
+				"--accept-source-agreements",
+				"--override",
+				"\"--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.VC.CMake.Project --add Microsoft.VisualStudio.Component.Ninja\""
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Install VS Build Tools v2",
+			"type": "shell",
+			"command": "winget",
+			"args": [
+				"install",
+				"--id",
+				"Microsoft.VisualStudio.2022.BuildTools",
+				"--exact",
+				"--accept-package-agreements",
+				"--accept-source-agreements",
+				"--silent",
+				"--override",
+				"\"--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.VC.CMake.Project --add Microsoft.VisualStudio.Component.Ninja\""
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Install LLVM MinGW UCRT",
+			"type": "shell",
+			"command": "winget",
+			"args": [
+				"install",
+				"--id",
+				"MartinStorsjo.LLVM-MinGW.UCRT",
+				"--exact",
+				"--accept-package-agreements",
+				"--accept-source-agreements",
+				"--silent"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check LLVM MinGW install",
+			"type": "shell",
+			"command": "winget",
+			"args": [
+				"list",
+				"--id",
+				"MartinStorsjo.LLVM-MinGW.UCRT",
+				"--exact"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Install LLVM MinGW user",
+			"type": "shell",
+			"command": "winget",
+			"args": [
+				"install",
+				"--id",
+				"MartinStorsjo.LLVM-MinGW.UCRT",
+				"--exact",
+				"--scope",
+				"user",
+				"--accept-package-agreements",
+				"--accept-source-agreements",
+				"--silent"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check installer lock",
+			"type": "shell",
+			"command": "winget",
+			"args": [
+				"list"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Find compilers on PATH",
+			"type": "shell",
+			"command": "where",
+			"args": [
+				"g++.exe"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Configure msys2 preset",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--preset",
+				"msys2-mingw64-release"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Configure msys2 preset v2",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--preset",
+				"msys2-mingw64-release"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check triplet gpp version",
+			"type": "shell",
+			"command": "c:\\msys64\\mingw64\\bin\\x86_64-w64-mingw32-g++.exe",
+			"args": [
+				"--version"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Probe gpp compile",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"\"$src='out/build/msys2-mingw64-release/_probe.cpp'; Set-Content -Path $src -Value 'int main(){return 0;}'; & 'c:\\msys64\\mingw64\\bin\\x86_64-w64-mingw32-g++.exe' -o 'out/build/msys2-mingw64-release/_probe.obj' -c $src 2> 'out/build/msys2-mingw64-release/_probe.err'; if (Test-Path 'out/build/msys2-mingw64-release/_probe.err') { Get-Content 'out/build/msys2-mingw64-release/_probe.err' }; exit $LASTEXITCODE\""
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Probe gpp compile direct",
+			"type": "shell",
+			"command": "c:\\msys64\\mingw64\\bin\\x86_64-w64-mingw32-g++.exe",
+			"args": [
+				"-v",
+				"-o",
+				"out/build/msys2-mingw64-release/_probe.obj",
+				"-c",
+				"out/build/msys2-mingw64-release/_probe.cpp"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Probe cc1plus",
+			"type": "shell",
+			"command": "c:\\msys64\\mingw64\\lib\\gcc\\x86_64-w64-mingw32\\15.2.0\\cc1plus.exe",
+			"args": [
+				"--version"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Configure with mingw64 PATH",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & cmake --preset msys2-mingw64-release"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build msys2 release",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & cmake --build --preset msys2-mingw64-release -j"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build msys2 release dir",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & cmake --build out/build/msys2-mingw64-release -j"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Install VS BuildTools full cmd",
+			"type": "shell",
+			"command": "winget install --id Microsoft.VisualStudio.2022.BuildTools --exact --accept-package-agreements --accept-source-agreements --silent --custom \"--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.VC.CMake.Project --add Microsoft.VisualStudio.Component.Ninja --passive --wait\"",
+			"isBackground": false
+		},
+		{
+			"label": "Install VS BuildTools quoted",
+			"type": "shell",
+			"command": "winget install --id Microsoft.VisualStudio.2022.BuildTools --exact --accept-package-agreements --accept-source-agreements --silent --custom '--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.VC.CMake.Project --add Microsoft.VisualStudio.Component.Ninja --passive --wait'",
+			"isBackground": false
+		},
+		{
+			"label": "Build LIEF mingw64",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & cmake --build embedded_phase/third_party/LIEF/build_windows_x64 -j"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check ninja process",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,CPU,StartTime | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Wait for ninja finish",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"while (Get-Process ninja -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 10 }; Write-Output 'ninja-finished'"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Kill stale ninja",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Stop-Process -Force; Write-Output 'killed-ninja'"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build LIEF mingw64 clean",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & cmake --build embedded_phase/third_party/LIEF/build_windows_x64 --target LIEF -j 1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build LIEF target LIB_LIEF",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & cmake --build embedded_phase/third_party/LIEF/build_windows_x64 --target LIB_LIEF -j 1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Poll ninja done 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"while (Get-Process ninja -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 15 }; Write-Output 'ninja-finished'"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check ninja process 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,CPU,StartTime | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Run model tester with log",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & tools\\model_tester\\if_quantized_cpp_raw_pe_eval.exe --repo-root . --model-name iforest > tools\\model_tester\\if_quantized_cpp_raw_pe_eval_windows.log 2>&1 & echo EXITCODE:%ERRORLEVEL%"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Run model tester show exit",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & tools\\model_tester\\if_quantized_cpp_raw_pe_eval.exe --repo-root . --model-name iforest & echo EXITCODE:%ERRORLEVEL%"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Kill stale ninja",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Stop-Process -Force; Write-Output 'killed-ninja'"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Configure LIEF mingw64 x64",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & cmake -S embedded_phase/third_party/LIEF -B embedded_phase/third_party/LIEF/build_windows_x64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build LIEF target LIB_LIEF",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PATH=c:\\msys64\\mingw64\\bin;%PATH% & cmake --build embedded_phase/third_party/LIEF/build_windows_x64 --target LIB_LIEF -j 4"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check ninja process 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,CPU,StartTime | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Poll ninja done 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"while (Get-Process ninja -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 20 }; Write-Output 'ninja-finished'"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check ninja process 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,CPU,StartTime | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check ninja process 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,CPU,StartTime | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check ninja process 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,CPU,StartTime | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Poll ninja done 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"while (Get-Process ninja -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 20 }; Write-Output 'ninja-finished'"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check ninja process 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,CPU,StartTime | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Check ninja process 2",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,CPU,StartTime | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "List LIEF static libs",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Get-Process ninja,g++,gcc,cc1plus,cc1,ld -ErrorAction SilentlyContinue | Stop-Process -Force; Get-ChildItem -Path embedded_phase/third_party/LIEF/build_windows_x64 -Recurse -Filter *.a | Select-Object FullName,Length | Sort-Object FullName | Format-Table -AutoSize"
+			],
+			"isBackground": false
+		}
+	]
+}

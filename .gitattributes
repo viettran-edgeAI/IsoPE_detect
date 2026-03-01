@@ -1,0 +1,10 @@
+# enforce consistent line endings across the repo
+# automatically detect text files and normalize to LF on checkin
+* text=auto eol=lf
+
+# Windows scripts should keep CRLF for execution
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Unix/Linux shell scripts use LF
+*.sh text eol=lf

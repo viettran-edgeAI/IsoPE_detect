@@ -38,7 +38,7 @@
 
 ### Known disadvantage
 
-- The model still emits output messages from the LIEF core inside the feature extractor path. This is a known issue and will be fixed in a later update.
+- The model still emits output messages from the LIEF core inside the feature extractor path. This is a known issue and will be fixed in a later update. (solved)
 
 ## Documentation Index
 

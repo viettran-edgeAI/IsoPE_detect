@@ -26,9 +26,13 @@ Place these files under one directory (recommended canonical path: `embedded_pha
 6. `<model>_feature_schema.json`
 7. `<model>_iforest.bin`
 
-For evaluation CLI (validation scoring), also provide:
-- `<model>_ben_val_nml.bin`
-- `<model>_mal_val_nml.bin`
+For evaluation CLI (test/validation scoring), provide either of these pairs:
+- Preferred test-set names:
+  - `<model>_ben_test_nml.bin`
+  - `<model>_mal_test_nml.bin`
+- Or explicit override files (for example validation split):
+  - `<model>_ben_val_nml.bin`
+  - `<model>_mal_val_nml.bin`
 
 ## 3) Ubuntu build and run
 
@@ -83,6 +87,17 @@ ctest --test-dir build_cmake_tools --output-on-failure
   --json-output embedded_phase/src/model_engine/results/if_model_engine_eval_ubuntu.json
 ```
 
+To override default paths you may supply explicit files:
+
+```bash
+./build_cmake_tools/embedded_phase/src/model_engine/app/pe_model_engine_benchmark_cli \
+  --resource-dir embedded_phase/core/models/isolation_forest/resources \
+  --model-name iforest \
+  --benign-test path/to/ben_test_nml.bin \
+  --malware-test path/to/mal_test_nml.bin \
+  --json-output results.json
+```
+
 ### 3.7 Run minimal C API sample
 
 ```bash
@@ -91,58 +106,93 @@ ctest --test-dir build_cmake_tools --output-on-failure
   --model-name iforest
 ```
 
-## 4) Windows build and run (PowerShell)
+## 4) Windows build and run (VS Code + PowerShell)
 
-### 4.1 Install dependencies
+### 4.1 Prerequisites
 
-- Visual Studio 2022 Build Tools (Desktop development with C++)
-- CMake (3.18+)
-- Git
+- Install **CMake Tools** extension in VS Code.
+- Install **MSYS2 MinGW64** (or equivalent GNU toolchain) with:
+  - `x86_64-w64-mingw32-gcc`
+  - `x86_64-w64-mingw32-g++`
+  - `ninja`
+- Install **CMake** on Windows.
 
-### 4.2 Clone and enter repo
+This workspace already has a preset for MinGW64:
+- `msys2-mingw64-release` in `CMakePresets.json`.
+
+### 4.2 Configure and build (top-level CMake)
+
+From repository root in PowerShell:
 
 ```powershell
-git clone <your-repo-url> EDR_AGENT
-cd EDR_AGENT
+cmake --preset msys2-mingw64-release
+cmake --build out/build/msys2-mingw64-release -j
 ```
 
-### 4.3 Configure and build (Visual Studio generator)
+Expected model engine app outputs:
+
+- `out/build/msys2-mingw64-release/embedded_phase/src/model_engine/app/pe_model_engine_benchmark_cli.exe`
+- `out/build/msys2-mingw64-release/embedded_phase/src/model_engine/app/pe_model_engine_cli.exe`
+
+### 4.3 Run `pe_model_engine_benchmark_cli.exe`
+
+If your resource directory has test files (`*_ben_test_nml.bin`, `*_mal_test_nml.bin`), run:
 
 ```powershell
-cmake -S . -B build_cmake_tools -G "Visual Studio 17 2022" -A x64
-cmake --build build_cmake_tools --config Release
-```
-
-### 4.4 Run tests
-
-```powershell
-ctest --test-dir build_cmake_tools -C Release --output-on-failure
-```
-
-### 4.5 Run one-sample inference demo
-
-```powershell
-.\build_cmake_tools\embedded_phase\src\model_engine\app\Release\pe_model_engine_cli.exe `
-  --resource-dir embedded_phase/core/models/isolation_forest/resources `
-  --model-name iforest
-```
-
-### 4.6 Run validation-split evaluation
-
-```powershell
-.\build_cmake_tools\embedded_phase\src\model_engine\app\Release\pe_model_engine_benchmark_cli.exe `
+.\out\build\msys2-mingw64-release\embedded_phase\src\model_engine\app\pe_model_engine_benchmark_cli.exe `
   --resource-dir embedded_phase/core/models/isolation_forest/resources `
   --model-name iforest `
   --json-output embedded_phase/src/model_engine/results/if_model_engine_eval_windows.json
 ```
 
-### 4.7 Run minimal C API sample
+If your resource directory has validation files (`*_ben_val_nml.bin`, `*_mal_val_nml.bin`) instead, run with explicit overrides:
 
 ```powershell
-.\build_cmake_tools\embedded_phase\src\model_engine\app\Release\endpoint_agent_capi_sample.exe `
+.\out\build\msys2-mingw64-release\embedded_phase\src\model_engine\app\pe_model_engine_benchmark_cli.exe `
   --resource-dir embedded_phase/core/models/isolation_forest/resources `
-  --model-name iforest
+  --model-name iforest `
+  --benign-test embedded_phase/core/models/isolation_forest/resources/iforest_ben_val_nml.bin `
+  --malware-test embedded_phase/core/models/isolation_forest/resources/iforest_mal_val_nml.bin `
+  --json-output embedded_phase/src/model_engine/results/if_model_engine_eval_windows.json
 ```
+
+### 4.4 Build and run `tools/model_tester`
+
+`tools/model_tester` is a standalone source and not part of top-level CMake targets.
+
+Build:
+
+```powershell
+Push-Location tools/model_tester
+& "C:\msys64\mingw64\bin\x86_64-w64-mingw32-g++.exe" `
+  -std=c++17 if_quantized_cpp_raw_pe_eval.cpp `
+  -I../../embedded_phase/src/.. `
+  -I../../embedded_phase/third_party/LIEF/include `
+  -I../../embedded_phase/third_party/LIEF/src `
+  -I../../embedded_phase/third_party/LIEF/build_windows_x64/include `
+  -I../../embedded_phase/third_party/LIEF/build_windows_x64 `
+  -L../../embedded_phase/third_party/LIEF/build_windows_x64 `
+  -lLIEF -lws2_32 -lbcrypt -O2 -o if_quantized_cpp_raw_pe_eval.exe
+Pop-Location
+```
+
+Run:
+
+```powershell
+.\tools\model_tester\if_quantized_cpp_raw_pe_eval.exe --repo-root . --model-name iforest
+```
+
+Expected report output:
+
+- `development_phase/reports/if_quantized_cpp_raw_pe_eval.txt`
+
+### 4.5 VS Code CMake Tools flow (optional)
+
+In VS Code:
+1. `CMake: Select Configure Preset` → `MSYS2 MinGW64 + Ninja (Release)`
+2. `CMake: Configure`
+3. `CMake: Build`
+4. Run the executables above in the integrated PowerShell terminal.
 
 ## 5) Notes for endpoint integration
 

@@ -1,0 +1,3 @@
+# ignore compiled binaries and test output
+*.exe
+tests_output/

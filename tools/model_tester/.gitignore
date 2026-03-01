@@ -1,0 +1,3 @@
+# ignore compiled executables and log files
+*.exe
+*.log
