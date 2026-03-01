@@ -372,7 +372,6 @@ namespace eml {
         std::vector<If_tree> trees_;
         If_node_resource resource_{};
         uint32_t samples_per_tree_ = 1u;
-        float threshold_offset_ = 0.0f;
         bool trained_ = false;
         mutable eml_status_code last_status_code_ = eml_status_code::ok;
 
@@ -381,7 +380,8 @@ namespace eml {
         }
 
         static constexpr char k_model_magic_[4] = {'I', 'F', 'M', 'Q'};
-        static constexpr uint16_t k_model_version_ = 1u;
+        static constexpr uint16_t k_model_version_ = 2u;
+        static constexpr uint16_t k_model_version_legacy_with_offset_ = 1u;
         static constexpr uint8_t k_endian_little_flag_ = 1u;
         static constexpr uint16_t k_model_header_size_ = 32u;
         static constexpr uint16_t k_model_header_min_size_ = 17u;
@@ -622,7 +622,7 @@ namespace eml {
 
         bool compute_payload_size(uint64_t& payload_size) const {
             constexpr uint64_t k_payload_fixed_size =
-                static_cast<uint64_t>(5u + sizeof(uint32_t) + sizeof(float) + sizeof(uint32_t));
+                static_cast<uint64_t>(5u + sizeof(uint32_t) + sizeof(uint32_t));
             uint64_t total = k_payload_fixed_size;
 
             for (const If_tree& tree : trees_) {
@@ -662,7 +662,7 @@ namespace eml {
                 return false;
             }
 
-            if (version != k_model_version_) {
+            if (version != k_model_version_ && version != k_model_version_legacy_with_offset_) {
                 set_status(eml_status_code::invalid_configuration);
                 return false;
             }
@@ -732,9 +732,12 @@ namespace eml {
                 set_status(eml_status_code::file_read_failed);
                 return false;
             }
-            if (!read_f32_le_with_checksum(fin, threshold_offset_, checksum)) {
-                set_status(eml_status_code::file_read_failed);
-                return false;
+            if (version == k_model_version_legacy_with_offset_) {
+                float legacy_threshold_offset = 0.0f;
+                if (!read_f32_le_with_checksum(fin, legacy_threshold_offset, checksum)) {
+                    set_status(eml_status_code::file_read_failed);
+                    return false;
+                }
             }
 
             uint32_t tree_count = 0u;
@@ -829,10 +832,6 @@ namespace eml {
             samples_per_tree_ = std::max<uint32_t>(1u, samples_per_tree);
         }
 
-        void set_threshold_offset(float threshold_offset) {
-            threshold_offset_ = threshold_offset;
-        }
-
         void add_trained_tree(const If_tree& tree) {
             trees_.push_back(tree);
             trees_.back().set_node_resources(&resource_);
@@ -840,14 +839,12 @@ namespace eml {
         }
 
         void load_trained_forest(std::vector<If_tree>&& trees,
-                                 uint32_t samples_per_tree,
-                                 float threshold_offset) {
+                                 uint32_t samples_per_tree) {
             trees_ = std::move(trees);
             for (If_tree& tree : trees_) {
                 tree.set_node_resources(&resource_);
             }
             samples_per_tree_ = std::max<uint32_t>(1u, samples_per_tree);
-            threshold_offset_ = threshold_offset;
             trained_ = !trees_.empty();
         }
 
@@ -879,7 +876,7 @@ namespace eml {
         }
 
         float decision_function(const uint8_t* quantized_features, uint16_t num_features) const {
-            return score_samples(quantized_features, num_features) - threshold_offset_;
+            return score_samples(quantized_features, num_features);
         }
 
         bool is_anomaly(const uint8_t* quantized_features,
@@ -973,10 +970,6 @@ namespace eml {
             }
 
             if (!write_u32_le_with_checksum(fout, samples_per_tree_, checksum)) {
-                set_status(eml_status_code::file_write_failed);
-                return false;
-            }
-            if (!write_f32_le_with_checksum(fout, threshold_offset_, checksum)) {
                 set_status(eml_status_code::file_write_failed);
                 return false;
             }
@@ -1094,7 +1087,6 @@ namespace eml {
         size_t num_trees() const { return trees_.size(); }
         uint32_t samples_per_tree() const { return samples_per_tree_; }
         bool trained() const { return trained_; }
-        float threshold_offset() const { return threshold_offset_; }
         eml_status_code last_status() const { return last_status_code_; }
         void clear_status() { set_status(eml_status_code::ok); }
     };

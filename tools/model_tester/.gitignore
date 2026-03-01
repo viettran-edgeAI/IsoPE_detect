@@ -1,3 +1,5 @@
-# ignore compiled executables and log files
+# ignore compiled executables, elf and log files
 *.exe
 *.log
+*.elf
+if_quantized_cpp_raw_pe_eval

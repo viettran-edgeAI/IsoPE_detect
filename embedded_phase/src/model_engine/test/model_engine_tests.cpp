@@ -8,19 +8,17 @@
 namespace {
 
 std::filesystem::path resolve_resource_dir() {
-    const std::vector<std::filesystem::path> candidates = {
-        "embedded_phase/core/models/isolation_forest/resources",
-        "../core/models/isolation_forest/resources",
-        "../../core/models/isolation_forest/resources",
-        "../../../core/models/isolation_forest/resources",
-        "../../../../core/models/isolation_forest/resources",
-        "../../../../../embedded_phase/core/models/isolation_forest/resources"
-    };
-
-    for (const auto& candidate : candidates) {
+    std::filesystem::path cursor = std::filesystem::current_path();
+    for (size_t depth = 0; depth < 10u; ++depth) {
+        const auto candidate = cursor / "embedded_phase/core/models/isolation_forest/resources";
         if (std::filesystem::exists(candidate)) {
             return std::filesystem::weakly_canonical(candidate);
         }
+
+        if (!cursor.has_parent_path()) {
+            break;
+        }
+        cursor = cursor.parent_path();
     }
 
     return {};
@@ -76,10 +74,10 @@ int main() {
     assert(inference.status_code == eml::eml_status_code::ok);
 
     eml::model_engine::EvaluationSummary summary;
-    const bool eval_ok = eml::model_engine::evaluate_validation_splits(
+    const bool eval_ok = eml::model_engine::evaluate_test_splits(
         engine,
-        resource_dir / "iforest_ben_val_nml.bin",
-        resource_dir / "iforest_mal_val_nml.bin",
+        resource_dir / "iforest_ben_test_nml.bin",
+        resource_dir / "iforest_mal_test_nml.bin",
         summary,
         &error);
 

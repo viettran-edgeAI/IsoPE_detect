@@ -25,11 +25,11 @@ average_precision=0.983043
 prc_auc=0.983043
 
 [speed]
-benign_total_time_sec=32.819847
-malware_total_time_sec=132.847790
-total_inference_time_sec=165.667637
-avg_inference_ms_per_file=17.954659
-avg_inference_ms_per_mb=5.850248
+benign_total_time_sec=30.450880
+malware_total_time_sec=126.446750
+total_inference_time_sec=156.897630
+avg_inference_ms_per_file=17.004187
+avg_inference_ms_per_mb=5.540551
 
 [pr_curve]
 recall,precision
@@ -4989,7 +4989,7 @@ recall,precision
 1.000000,0.544857
 1.000000,0.544787
 1.000000,0.544716
-1.000000,0.544646
+1.000000,0.544576
 1.000000,0.544506
 1.000000,0.544436
 1.000000,0.544366
@@ -11344,7 +11344,7 @@ fpr,tpr
 0.707048,1.000000
 0.707249,1.000000
 0.707449,1.000000
-0.707649,1.000000
+0.707849,1.000000
 0.708050,1.000000
 0.708250,1.000000
 0.708450,1.000000

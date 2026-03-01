@@ -313,11 +313,11 @@ bool load_quantized_nml_dataset(const std::filesystem::path& nml_path,
     return true;
 }
 
-bool evaluate_validation_splits(const IsolationForestModelEngine& engine,
-                                const std::filesystem::path& benign_val_nml_path,
-                                const std::filesystem::path& malware_val_nml_path,
-                                EvaluationSummary& out_summary,
-                                std::string* error) {
+bool evaluate_test_splits(const IsolationForestModelEngine& engine,
+                          const std::filesystem::path& benign_test_nml_path,
+                          const std::filesystem::path& malware_test_nml_path,
+                          EvaluationSummary& out_summary,
+                          std::string* error) {
     out_summary = EvaluationSummary{};
 
     if (!engine.loaded()) {
@@ -340,7 +340,7 @@ bool evaluate_validation_splits(const IsolationForestModelEngine& engine,
     std::string loader_error;
 
     if (!load_quantized_nml_dataset(
-            benign_val_nml_path,
+            benign_test_nml_path,
             metadata.num_features,
             metadata.quantization_bits,
             benign_matrix,
@@ -352,7 +352,7 @@ bool evaluate_validation_splits(const IsolationForestModelEngine& engine,
     }
 
     if (!load_quantized_nml_dataset(
-            malware_val_nml_path,
+            malware_test_nml_path,
             metadata.num_features,
             metadata.quantization_bits,
             malware_matrix,
@@ -364,7 +364,7 @@ bool evaluate_validation_splits(const IsolationForestModelEngine& engine,
     }
 
     if (benign_samples == 0u || malware_samples == 0u) {
-        assign_error(error, "validation datasets are empty");
+        assign_error(error, "test datasets are empty");
         out_summary.status_code = eml_status_code::size_mismatch;
         return false;
     }

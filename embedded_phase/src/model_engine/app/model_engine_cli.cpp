@@ -235,7 +235,7 @@ int main(int argc, char** argv) {
             : options.malware_val_nml_path;
 
         eml::model_engine::EvaluationSummary summary;
-        if (!eml::model_engine::evaluate_validation_splits(engine, benign_path, malware_path, summary, &error)) {
+        if (!eml::model_engine::evaluate_test_splits(engine, benign_path, malware_path, summary, &error)) {
             std::cerr << "Evaluation error: " << error << "\n";
             return 1;
         }
