@@ -1,15 +1,11 @@
 {
-    "benign_train": {
-        "value": "development_phase/data/optimized/iforest_ben_train.csv",
-        "description": "Path to benign training CSV used to fit quantizer and produce <model_name>_qtz.bin + <model_name>_dp.txt."
+    "input_dir": {
+        "value": "development_phase/data/optimized",
+        "description": "Directory containing split CSV files. Expected names: <model_name>_ben_train.csv, <model_name>_ben_val.csv, <model_name>_mal_val.csv, <model_name>_ben_test.csv, <model_name>_mal_test.csv."
     },
-    "benign_val": {
-        "value": "development_phase/data/optimized/iforest_ben_val.csv",
-        "description": "Path to benign validation CSV quantized with the training quantizer (transform-only)."
-    },
-    "malware_val": {
-        "value": "development_phase/data/optimized/iforest_mal_val.csv",
-        "description": "Path to malware validation CSV quantized with the training quantizer (transform-only)."
+    "optimized_features_json": {
+        "value": "",
+        "description": "Optional path to optimized feature list JSON; if empty, tool auto-uses <output_dir>/<model_name>_optimized_features.json when present."
     },
     "output_dir": {
         "value": "embedded_phase/core/models/isolation_forest/resources",
@@ -20,7 +16,7 @@
         "description": "Base model name for generated artifacts."
     },
     "quantization_bits": {
-        "value": 3,
+        "value": 4,
         "description": "Bits per feature for quantization (1-8)."
     },
     "quantization_tool": {

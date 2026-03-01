@@ -676,8 +676,6 @@ namespace eml {
 
             if_config_.decision_threshold = calibrated_threshold;
             if_config_.fpr_threshold = calibrated_fpr;
-            if_config_.threshold_offset = 0.0f;
-            if_tree_container_.set_threshold_offset(0.0f);
             set_status(eml_status_code::ok);
             return true;
         }
@@ -717,9 +715,6 @@ namespace eml {
                 set_status(if_tree_container_.last_status());
                 return false;
             }
-
-            if_config_.threshold_offset = 0.0f;
-            if_tree_container_.set_threshold_offset(0.0f);
 
             loaded_ = true;
             set_status(eml_status_code::ok);
@@ -782,8 +777,6 @@ namespace eml {
             }
 
             const uint32_t samples_per_tree = resolve_samples_per_tree(if_config_, num_samples);
-            if_config_.threshold_offset = 0.0f;
-            if_tree_container_.set_threshold_offset(0.0f);
 
             const uint16_t n_estimators = std::max<uint16_t>(1u, if_config_.n_estimators);
             const uint16_t max_depth = std::max<uint16_t>(1u, if_config_.max_depth);
@@ -820,7 +813,7 @@ namespace eml {
                 trained_trees.push_back(std::move(tree));
             }
 
-            if_tree_container_.load_trained_forest(std::move(trained_trees), samples_per_tree, 0.0f);
+            if_tree_container_.load_trained_forest(std::move(trained_trees), samples_per_tree);
             loaded_ = if_tree_container_.trained();
 
             matrix.clear();

@@ -18,12 +18,13 @@
 
 ## Test-Set Benchmark (latest reporting run with 4-bit quantization)
 
-- **FPR:** 0.0474 , **TPR:** 0.9378 (after quantization)
 - **FPR:** 0.0465 , **TPR:** 0.9404 (before quantization)
+- **FPR:** 0.0474 , **TPR:** 0.9378 (after quantization | 4-bit)
 - **Model RAM size:** 4,663,482 bytes
 - **Model file size:** 8,256,197 bytes
 - **Average inference speed / file:** 16.702650 ms
 - **Average inference speed / MB:** 5.442300 ms
+- **Hardware:** AMD Ryzen 5 4600G, running on 1 thread.
 
 ### Benchmark graphs
 - PR curve:

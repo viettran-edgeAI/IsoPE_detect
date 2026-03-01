@@ -430,9 +430,6 @@ namespace eml {
             if (if_config_detail::extract_number(json, "val_fpr_delta", value)) {
                 val_fpr_delta = static_cast<float>(value);
             }
-            if (if_config_detail::extract_number(json, "offset", value)) {
-                threshold_offset = static_cast<float>(value);
-            }
 
             if (num_features == 0) {
                 set_status(eml_status_code::invalid_configuration);
@@ -500,7 +497,6 @@ namespace eml {
         float fpr_threshold = 0.0f;
         float val_fpr_target = 0.0f;
         float val_fpr_delta = 0.0f;
-        float threshold_offset = 0.0f;
 
         // Node packing layout controls
         uint8_t threshold_bits = 2;
@@ -691,8 +687,7 @@ namespace eml {
             }
 
             if (!if_config_detail::replace_number_value(json, "threshold", static_cast<double>(decision_threshold)) ||
-                !if_config_detail::replace_number_value(json, "fpr_threshold", static_cast<double>(fpr_threshold)) ||
-                !if_config_detail::replace_number_value(json, "offset", static_cast<double>(threshold_offset))) {
+                !if_config_detail::replace_number_value(json, "fpr_threshold", static_cast<double>(fpr_threshold))) {
                 set_status(eml_status_code::json_parse_failed);
                 return false;
             }

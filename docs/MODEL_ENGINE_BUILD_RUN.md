@@ -26,13 +26,9 @@ Place these files under one directory (recommended canonical path: `embedded_pha
 6. `<model>_feature_schema.json`
 7. `<model>_iforest.bin`
 
-For evaluation CLI (test/validation scoring), provide either of these pairs:
-- Preferred test-set names:
-  - `<model>_ben_test_nml.bin`
-  - `<model>_mal_test_nml.bin`
-- Or explicit override files (for example validation split):
-  - `<model>_ben_val_nml.bin`
-  - `<model>_mal_val_nml.bin`
+For evaluation CLI (test scoring), provide:
+- `<model>_ben_test_nml.bin`
+- `<model>_mal_test_nml.bin`
 
 ## 3) Ubuntu build and run
 
@@ -78,7 +74,10 @@ ctest --test-dir build_cmake_tools --output-on-failure
   --model-name iforest
 ```
 
-### 3.6 Run validation-split evaluation
+### 3.6 Run validation / test evaluation
+
+The benchmark app reads quantized NML files. By default it expects **test** datasets named
+`<model>_ben_test_nml.bin` and `<model>_mal_test_nml.bin` in the resource directory.
 
 ```bash
 ./build_cmake_tools/embedded_phase/src/model_engine/app/pe_model_engine_benchmark_cli \
@@ -97,7 +96,6 @@ To override default paths you may supply explicit files:
   --malware-test path/to/mal_test_nml.bin \
   --json-output results.json
 ```
-
 ### 3.7 Run minimal C API sample
 
 ```bash
@@ -114,7 +112,7 @@ To override default paths you may supply explicit files:
 - Install **MSYS2 MinGW64** (or equivalent GNU toolchain) with:
   - `x86_64-w64-mingw32-gcc`
   - `x86_64-w64-mingw32-g++`
-  - `ninja`
+  - `make` (or `mingw32-make`)
 - Install **CMake** on Windows.
 
 This workspace already has a preset for MinGW64:
@@ -129,30 +127,46 @@ cmake --preset msys2-mingw64-release
 cmake --build out/build/msys2-mingw64-release -j
 ```
 
+Run tests from the same preset build directory:
+
+```powershell
+ctest --test-dir out/build/msys2-mingw64-release --output-on-failure
+```
+
+If you switch presets/toolchains and hit stale-cache configure errors, clear the preset build folder and reconfigure:
+
+```powershell
+Remove-Item -Recurse -Force out/build/msys2-mingw64-release
+cmake --preset msys2-mingw64-release
+```
+
+Before running benchmark/model tester, regenerate resource artifacts so quantized NML files match the selected model features:
+
+```powershell
+.\.venv\Scripts\python.exe tools\resource_prepairer\prepare_datasets.py `
+  -c tools\resource_prepairer\resource_prepairer_config.json
+```
+
+Expected quantized split outputs in `embedded_phase/core/models/isolation_forest/resources`:
+
+- `<model>_ben_val_nml.bin`
+- `<model>_mal_val_nml.bin`
+- `<model>_ben_test_nml.bin`
+- `<model>_mal_test_nml.bin`
+
 Expected model engine app outputs:
 
 - `out/build/msys2-mingw64-release/embedded_phase/src/model_engine/app/pe_model_engine_benchmark_cli.exe`
 - `out/build/msys2-mingw64-release/embedded_phase/src/model_engine/app/pe_model_engine_cli.exe`
 
-### 4.3 Run `pe_model_engine_benchmark_cli.exe`
+### 4.3 Run `pe_model_engine_benchmark_cli.exe` (test sets only)
 
-If your resource directory has test files (`*_ben_test_nml.bin`, `*_mal_test_nml.bin`), run:
-
-```powershell
-.\out\build\msys2-mingw64-release\embedded_phase\src\model_engine\app\pe_model_engine_benchmark_cli.exe `
-  --resource-dir embedded_phase/core/models/isolation_forest/resources `
-  --model-name iforest `
-  --json-output embedded_phase/src/model_engine/results/if_model_engine_eval_windows.json
-```
-
-If your resource directory has validation files (`*_ben_val_nml.bin`, `*_mal_val_nml.bin`) instead, run with explicit overrides:
+`pe_model_engine_benchmark_cli.exe` evaluates quantized **test** NML splits only:
 
 ```powershell
 .\out\build\msys2-mingw64-release\embedded_phase\src\model_engine\app\pe_model_engine_benchmark_cli.exe `
   --resource-dir embedded_phase/core/models/isolation_forest/resources `
   --model-name iforest `
-  --benign-test embedded_phase/core/models/isolation_forest/resources/iforest_ben_val_nml.bin `
-  --malware-test embedded_phase/core/models/isolation_forest/resources/iforest_mal_val_nml.bin `
   --json-output embedded_phase/src/model_engine/results/if_model_engine_eval_windows.json
 ```
 
@@ -182,6 +196,8 @@ Run:
 .\tools\model_tester\if_quantized_cpp_raw_pe_eval.exe --repo-root . --model-name iforest
 ```
 
+This run consumes PE files from `datasets/BENIGN_TEST_DATASET` and `datasets/MALWARE_TEST_DATASET`, while loading model resources from `embedded_phase/core/models/isolation_forest/resources`.
+
 Expected report output:
 
 - `development_phase/reports/if_quantized_cpp_raw_pe_eval.txt`
@@ -189,10 +205,11 @@ Expected report output:
 ### 4.5 VS Code CMake Tools flow (optional)
 
 In VS Code:
-1. `CMake: Select Configure Preset` → `MSYS2 MinGW64 + Ninja (Release)`
+1. `CMake: Select Configure Preset` → `MSYS2 MinGW64 (GNU Release)`
 2. `CMake: Configure`
 3. `CMake: Build`
-4. Run the executables above in the integrated PowerShell terminal.
+4. `CMake: Run Tests` (or run `ctest --test-dir out/build/msys2-mingw64-release --output-on-failure`)
+5. Run the executables above in the integrated PowerShell terminal.
 
 ## 5) Notes for endpoint integration
 

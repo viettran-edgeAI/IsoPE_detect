@@ -24,8 +24,6 @@ void print_usage() {
         << "  --model-name <name>     Model prefix (default: iforest)\n"
         << "  --benign-test <path>    Benign test NML file\n"
         << "  --malware-test <path>   Malware test NML file\n"
-        << "  --benign-val <path>     (legacy alias) Benign NML file\n"
-        << "  --malware-val <path>    (legacy alias) Malware NML file\n"
         << "  --json-output <path>    Optional JSON output file\n"
         << "  --help                  Show this message\n";
 }
@@ -54,10 +52,10 @@ bool parse_arguments(int argc, char** argv, BenchmarkOptions& options, std::stri
         } else if (arg == "--model-name") {
             if (!require_value(arg, value)) return false;
             options.model_name = value;
-        } else if (arg == "--benign-test" || arg == "--benign-val") {
+        } else if (arg == "--benign-test") {
             if (!require_value(arg, value)) return false;
             options.benign_test_nml_path = value;
-        } else if (arg == "--malware-test" || arg == "--malware-val") {
+        } else if (arg == "--malware-test") {
             if (!require_value(arg, value)) return false;
             options.malware_test_nml_path = value;
         } else if (arg == "--json-output") {
@@ -143,7 +141,7 @@ int main(int argc, char** argv) {
     }
 
     eml::model_engine::EvaluationSummary summary;
-    if (!eml::model_engine::evaluate_validation_splits(engine, benign_path, malware_path, summary, &error)) {
+    if (!eml::model_engine::evaluate_test_splits(engine, benign_path, malware_path, summary, &error)) {
         std::cerr << "Evaluation error: " << error << "\n";
         return 1;
     }

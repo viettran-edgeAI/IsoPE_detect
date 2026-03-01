@@ -1,5 +1,10 @@
 {
-    "github.copilot.chat.responsesApiReasoningEffort": "medium",
-    "cmake.sourceDirectory": "D:/IsoPE_detect",
-    "cmake.buildDirectory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools"
+    "github.copilot.chat.responsesApiReasoningEffort": "high",
+    "cmake.useCMakePresets": "always",
+    "cmake.defaultConfigurePreset": "linux-gcc-debug",
+    "cmake.defaultBuildPreset": "linux-gcc-debug-build",
+    "cmake.defaultTestPreset": "linux-gcc-debug-test",
+    "cmake.sourceDirectory": "/home/viettran/Documents/visual_code/EDR_AGENT",
+    "cmake.buildDirectory": "/home/viettran/Documents/visual_code/EDR_AGENT/build_cmake_tools",
+    "github.copilot.chat.anthropic.tools.websearch.enabled": true
 }

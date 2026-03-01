@@ -99,10 +99,10 @@ bool load_quantized_nml_dataset(const std::filesystem::path& nml_path,
                                 size_t& out_num_samples,
                                 std::string* error = nullptr);
 
-bool evaluate_validation_splits(const IsolationForestModelEngine& engine,
-                                const std::filesystem::path& benign_val_nml_path,
-                                const std::filesystem::path& malware_val_nml_path,
-                                EvaluationSummary& out_summary,
-                                std::string* error = nullptr);
+bool evaluate_test_splits(const IsolationForestModelEngine& engine,
+                          const std::filesystem::path& benign_test_nml_path,
+                          const std::filesystem::path& malware_test_nml_path,
+                          EvaluationSummary& out_summary,
+                          std::string* error = nullptr);
 
 }  // namespace eml::model_engine

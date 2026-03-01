@@ -31,7 +31,7 @@ Canonical modern format:
 ```
 
 Current values:
-- `VERSION = 1`
+- `VERSION = 2`
 - `ENDIAN FLAG = 1` (little-endian canonical storage)
 - `HEADER SIZE = 32`
 
@@ -44,7 +44,6 @@ Payload schema:
 [leaf_size_bits: uint8]
 [depth_bits: uint8]
 [samples_per_tree: uint32 LE]
-[threshold_offset: float32 LE]
 [tree_count: uint32 LE]
 for each tree:
   [tree_depth: uint16 LE]

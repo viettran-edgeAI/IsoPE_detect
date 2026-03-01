@@ -2,18 +2,33 @@
   "version": 8,
   "configurePresets": [
     {
+      "name": "linux-gcc-debug",
+      "displayName": "Linux GCC (Debug)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build_cmake_tools",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
       "name": "msys2-mingw64-release",
-      "displayName": "MSYS2 MinGW64 + Ninja (Release)",
-      "generator": "Ninja",
+      "displayName": "MSYS2 MinGW64 (GNU Release)",
+      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/out/build/msys2-mingw64-release",
-      "environment": {
-        "PATH": "C:/msys64/mingw64/bin;$penv{PATH}"
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_C_COMPILER": "C:/msys64/mingw64/bin/x86_64-w64-mingw32-gcc.exe",
-        "CMAKE_CXX_COMPILER": "C:/msys64/mingw64/bin/x86_64-w64-mingw32-g++.exe",
-        "CMAKE_MAKE_PROGRAM": "C:/msys64/mingw64/bin/ninja.exe"
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
       }
     },
     {
@@ -21,6 +36,11 @@
       "displayName": "MSVC + Ninja (Release)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/msvc-ninja-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -30,8 +50,83 @@
       "displayName": "MSVC + Ninja (Debug)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/msvc-ninja-debug",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-gcc-debug-build",
+      "displayName": "Build Linux GCC (Debug)",
+      "configurePreset": "linux-gcc-debug",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "msys2-mingw64-release-build",
+      "displayName": "Build MSYS2 MinGW64 (Release)",
+      "configurePreset": "msys2-mingw64-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "msvc-ninja-release-build",
+      "displayName": "Build MSVC Ninja (Release)",
+      "configurePreset": "msvc-ninja-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "msvc-ninja-debug-build",
+      "displayName": "Build MSVC Ninja (Debug)",
+      "configurePreset": "msvc-ninja-debug",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-gcc-debug-test",
+      "displayName": "CTest Linux GCC (Debug)",
+      "configurePreset": "linux-gcc-debug",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "msys2-mingw64-release-test",
+      "displayName": "CTest MSYS2 MinGW64 (Release)",
+      "configurePreset": "msys2-mingw64-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "output": {
+        "outputOnFailure": true
       }
     }
   ]

@@ -127,8 +127,7 @@
       "threshold": -0.54180455207824707,
       "fpr_threshold": 0.03744715079665184,
       "val_fpr_target": 0.04,
-      "val_fpr_delta": 0.01,
-      "offset": 0
+      "val_fpr_delta": 0.01
     }
   },
   "evaluation": {
