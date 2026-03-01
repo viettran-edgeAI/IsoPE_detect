@@ -1,9 +1,9 @@
 {
   "feature_selection": {
-    "top_k_list": [30,40,45]
+    "top_k_list": [40, 45]
   },
   "model": {
-    "n_estimators": [200],
+    "n_estimators": [70, 100],
     "max_samples": [0.5, 0.7, 1.0],
     "contamination": [0.005],
     "max_features": [0.6, 0.8, 1.0],
@@ -13,7 +13,7 @@
   },
   "thresholding": {
     "fpr_threshold": 0.05,
-    "val_fpr_delta": 0.01,
+    "val_fpr_delta": 0.04,
     "strategy": "tpr",
     "f_beta": 1.0,
     "expose_test_during_search": false

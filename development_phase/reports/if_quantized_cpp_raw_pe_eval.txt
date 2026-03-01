@@ -25,11 +25,11 @@ average_precision=0.983043
 prc_auc=0.983043
 
 [speed]
-benign_total_time_sec=24.525598
-malware_total_time_sec=129.589752
-total_inference_time_sec=154.115350
-avg_inference_ms_per_file=16.702650
-avg_inference_ms_per_mb=5.442300
+benign_total_time_sec=32.819847
+malware_total_time_sec=132.847790
+total_inference_time_sec=165.667637
+avg_inference_ms_per_file=17.954659
+avg_inference_ms_per_mb=5.850248
 
 [pr_curve]
 recall,precision

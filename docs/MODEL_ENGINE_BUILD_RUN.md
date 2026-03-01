@@ -74,7 +74,11 @@ ctest --test-dir build_cmake_tools --output-on-failure
   --model-name iforest
 ```
 
-### 3.6 Run validation-split evaluation
+### 3.6 Run validation / test evaluation
+
+The benchmark app reads quantized NML files. By default it expects **test** datasets named
+`<model>_ben_test_nml.bin` and `<model>_mal_test_nml.bin` in the resource directory. Legacy
+`--benign-val`/`--malware-val` options still work for validation splits.
 
 ```bash
 ./build_cmake_tools/embedded_phase/src/model_engine/app/pe_model_engine_benchmark_cli \
@@ -83,6 +87,16 @@ ctest --test-dir build_cmake_tools --output-on-failure
   --json-output embedded_phase/src/model_engine/results/if_model_engine_eval_ubuntu.json
 ```
 
+To override default paths you may supply explicit files:
+
+```bash
+./build_cmake_tools/embedded_phase/src/model_engine/app/pe_model_engine_benchmark_cli \
+  --resource-dir embedded_phase/core/models/isolation_forest/resources \
+  --model-name iforest \
+  --benign-test path/to/ben_test_nml.bin \
+  --malware-test path/to/mal_test_nml.bin \
+  --json-output results.json
+```
 ### 3.7 Run minimal C API sample
 
 ```bash

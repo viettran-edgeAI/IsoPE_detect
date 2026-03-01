@@ -10,8 +10,8 @@ namespace {
 struct BenchmarkOptions {
     std::filesystem::path resource_dir = eml::IsoForest::default_resource_dir();
     std::string model_name = "iforest";
-    std::filesystem::path benign_val_nml_path;
-    std::filesystem::path malware_val_nml_path;
+    std::filesystem::path benign_test_nml_path;
+    std::filesystem::path malware_test_nml_path;
     std::filesystem::path json_output_path;
     bool help = false;
 };
@@ -22,8 +22,10 @@ void print_usage() {
         << "Options:\n"
         << "  --resource-dir <path>   Resource directory\n"
         << "  --model-name <name>     Model prefix (default: iforest)\n"
-        << "  --benign-val <path>     Benign validation NML file\n"
-        << "  --malware-val <path>    Malware validation NML file\n"
+        << "  --benign-test <path>    Benign test NML file\n"
+        << "  --malware-test <path>   Malware test NML file\n"
+        << "  --benign-val <path>     (legacy alias) Benign NML file\n"
+        << "  --malware-val <path>    (legacy alias) Malware NML file\n"
         << "  --json-output <path>    Optional JSON output file\n"
         << "  --help                  Show this message\n";
 }
@@ -52,12 +54,12 @@ bool parse_arguments(int argc, char** argv, BenchmarkOptions& options, std::stri
         } else if (arg == "--model-name") {
             if (!require_value(arg, value)) return false;
             options.model_name = value;
-        } else if (arg == "--benign-val") {
+        } else if (arg == "--benign-test" || arg == "--benign-val") {
             if (!require_value(arg, value)) return false;
-            options.benign_val_nml_path = value;
-        } else if (arg == "--malware-val") {
+            options.benign_test_nml_path = value;
+        } else if (arg == "--malware-test" || arg == "--malware-val") {
             if (!require_value(arg, value)) return false;
-            options.malware_val_nml_path = value;
+            options.malware_test_nml_path = value;
         } else if (arg == "--json-output") {
             if (!require_value(arg, value)) return false;
             options.json_output_path = value;
@@ -126,13 +128,13 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const std::filesystem::path benign_path = options.benign_val_nml_path.empty()
-        ? (options.resource_dir / (options.model_name + "_ben_val_nml.bin"))
-        : options.benign_val_nml_path;
+    const std::filesystem::path benign_path = options.benign_test_nml_path.empty()
+        ? (options.resource_dir / (options.model_name + "_ben_test_nml.bin"))
+        : options.benign_test_nml_path;
 
-    const std::filesystem::path malware_path = options.malware_val_nml_path.empty()
-        ? (options.resource_dir / (options.model_name + "_mal_val_nml.bin"))
-        : options.malware_val_nml_path;
+    const std::filesystem::path malware_path = options.malware_test_nml_path.empty()
+        ? (options.resource_dir / (options.model_name + "_mal_test_nml.bin"))
+        : options.malware_test_nml_path;
 
     eml::model_engine::IsolationForestModelEngine engine;
     if (!engine.load_model(options.model_name, options.resource_dir, &error)) {

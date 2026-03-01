@@ -20,6 +20,7 @@
 
 #include <LIEF/PE.hpp>
 #include <LIEF/PE/signature/Signature.hpp>
+#include <LIEF/logging.hpp>
 
 #include "../../base/eml_base.h"
 
@@ -484,6 +485,7 @@ public:
         if (size > EDR_PE_MAX_INPUT_FILE_BYTES) { set_status(eml_status_code::size_mismatch); return false; }
 
         try {
+            const LIEF::logging::Scoped scoped_lief_logging(LIEF::logging::LEVEL::OFF);
             std::unique_ptr<LIEF::PE::Binary> pe = LIEF::PE::Parser::parse(pe_path.string());
             if (!pe) { set_status(eml_status_code::callback_failed); return false; }
             
@@ -509,6 +511,7 @@ public:
         if (size > EDR_PE_MAX_INPUT_FILE_BYTES) { set_status(eml_status_code::size_mismatch); return false; }
 
         try {
+            const LIEF::logging::Scoped scoped_lief_logging(LIEF::logging::LEVEL::OFF);
             std::unique_ptr<LIEF::PE::Binary> pe = LIEF::PE::Parser::parse(content, size);
             if (!pe) { set_status(eml_status_code::callback_failed); return false; }
 
