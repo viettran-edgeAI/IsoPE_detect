@@ -11,8 +11,8 @@ target_include_directories(pe_model_engine
 target_compile_features(pe_model_engine PUBLIC cxx_std_17)
 target_link_libraries(pe_model_engine PUBLIC LIEF::LIEF)
 
-# LIEF's mbedtls sub-library uses inet_pton (ws2_32) and BCryptGenRandom (bcrypt)
-# on Windows. Add these system libs when building with MinGW / any Windows toolchain.
+# LIEF's mbedtls sub-library uses inet_pton (ws2_32) on Windows
+# bcrypt is optional for this build configuration
 if(WIN32)
   target_link_libraries(pe_model_engine PUBLIC ws2_32 bcrypt)
 endif()

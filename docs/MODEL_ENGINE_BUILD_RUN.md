@@ -110,13 +110,17 @@ To override default paths you may supply explicit files:
 
 - Install **CMake Tools** extension in VS Code.
 - Install **MSYS2 MinGW64** (or equivalent GNU toolchain) with:
-  - `x86_64-w64-mingw32-gcc`
-  - `x86_64-w64-mingw32-g++`
-  - `make` (or `mingw32-make`)
+  - `gcc` / `x86_64-w64-mingw32-gcc`
+  - `g++` / `x86_64-w64-mingw32-g++`
+  - `ninja`
 - Install **CMake** on Windows.
 
 This workspace already has a preset for MinGW64:
 - `msys2-mingw64-release` in `CMakePresets.json`.
+
+The preset injects required MSYS2 runtime/toolchain paths automatically:
+- `C:/msys64/usr/bin`
+- `C:/msys64/mingw64/bin`
 
 ### 4.2 Configure and build (top-level CMake)
 
@@ -124,13 +128,13 @@ From repository root in PowerShell:
 
 ```powershell
 cmake --preset msys2-mingw64-release
-cmake --build out/build/msys2-mingw64-release -j
+cmake --build --preset msys2-mingw64-release-build -j
 ```
 
 Run tests from the same preset build directory:
 
 ```powershell
-ctest --test-dir out/build/msys2-mingw64-release --output-on-failure
+ctest --preset msys2-mingw64-release-test
 ```
 
 If you switch presets/toolchains and hit stale-cache configure errors, clear the preset build folder and reconfigure:
@@ -178,6 +182,7 @@ Build:
 
 ```powershell
 Push-Location tools/model_tester
+$env:Path = "C:\msys64\usr\bin;C:\msys64\mingw64\bin;$env:Path"
 & "C:\msys64\mingw64\bin\x86_64-w64-mingw32-g++.exe" `
   -std=c++17 if_quantized_cpp_raw_pe_eval.cpp `
   -I../../embedded_phase/src/.. `
@@ -193,6 +198,7 @@ Pop-Location
 Run:
 
 ```powershell
+$env:Path = "C:\msys64\usr\bin;C:\msys64\mingw64\bin;$env:Path"
 .\tools\model_tester\if_quantized_cpp_raw_pe_eval.exe --repo-root . --model-name iforest
 ```
 
@@ -205,10 +211,10 @@ Expected report output:
 ### 4.5 VS Code CMake Tools flow (optional)
 
 In VS Code:
-1. `CMake: Select Configure Preset` → `MSYS2 MinGW64 (GNU Release)`
+1. `CMake: Select Configure Preset` → `MSYS2 MinGW64 + Ninja (GNU Release)`
 2. `CMake: Configure`
 3. `CMake: Build`
-4. `CMake: Run Tests` (or run `ctest --test-dir out/build/msys2-mingw64-release --output-on-failure`)
+4. `CMake: Run Tests` (or run `ctest --preset msys2-mingw64-release-test`)
 5. Run the executables above in the integrated PowerShell terminal.
 
 ## 5) Notes for endpoint integration

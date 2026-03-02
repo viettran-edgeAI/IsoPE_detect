@@ -22,9 +22,10 @@
 - **FPR:** 0.0474 , **TPR:** 0.9378 (after quantization | 4-bit)
 - **Model RAM size:** 4,663,482 bytes
 - **Model file size:** 8,256,197 bytes
-- **Average inference speed / file:** 16.702650 ms
-- **Average inference speed / MB:** 5.442300 ms
-- **Hardware:** AMD Ryzen 5 4600G, running on 1 thread.
+- **Average inference speed / file:** 17.3 ms
+- **Average inference speed / MB:** 5.6 ms
+- **Core model inference speed / file:** 120 us
+- **Hardware:** Intel i7-6600U - 2.6GHz - running on 1 thread.
 
 ### Benchmark graphs
 - PR curve:

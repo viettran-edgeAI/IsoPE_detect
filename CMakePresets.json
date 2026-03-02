@@ -17,18 +17,21 @@
     },
     {
       "name": "msys2-mingw64-release",
-      "displayName": "MSYS2 MinGW64 (GNU Release)",
-      "generator": "Unix Makefiles",
+      "displayName": "MSYS2 MinGW64 + Ninja (GNU Release)",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/msys2-mingw64-release",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
       },
+      "environment": {
+        "PATH": "C:/msys64/usr/bin;C:/msys64/mingw64/bin;$penv{PATH}"
+      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_C_COMPILER": "gcc",
-        "CMAKE_CXX_COMPILER": "g++"
+        "CMAKE_C_COMPILER": "C:/msys64/mingw64/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "C:/msys64/mingw64/bin/g++.exe"
       }
     },
     {
@@ -73,7 +76,7 @@
     },
     {
       "name": "msys2-mingw64-release-build",
-      "displayName": "Build MSYS2 MinGW64 (Release)",
+      "displayName": "Build MSYS2 MinGW64 + Ninja (Release)",
       "configurePreset": "msys2-mingw64-release",
       "condition": {
         "type": "equals",
@@ -118,7 +121,7 @@
     },
     {
       "name": "msys2-mingw64-release-test",
-      "displayName": "CTest MSYS2 MinGW64 (Release)",
+      "displayName": "CTest MSYS2 MinGW64 + Ninja (Release)",
       "configurePreset": "msys2-mingw64-release",
       "condition": {
         "type": "equals",

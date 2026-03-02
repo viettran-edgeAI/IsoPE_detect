@@ -95,7 +95,7 @@ namespace {
 
         args.repo_root = std::filesystem::absolute(args.repo_root);
         if (args.output_txt_path.empty()) {
-            args.output_txt_path = args.repo_root / "development_phase/reports/if_quantized_cpp_raw_pe_eval.txt";
+            args.output_txt_path = args.repo_root / "reports/if_quantized_cpp_raw_pe_eval.txt";
         }
         if (args.benign_test_dir.empty()) {
             args.benign_test_dir = args.repo_root / "datasets/BENIGN_TEST_DATASET";

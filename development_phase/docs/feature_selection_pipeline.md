@@ -15,7 +15,7 @@ Stage 2: Cleaning          → ~600 features (NaN/inf/type fixes, drop unparseab
 Stage 3: Variance Filter   → ~400 features (remove near-zero-variance)
 Stage 4: Correlation Prune → ~250 features (remove redundant pairs)
 Stage 5: Stability Filter  → ~200 features (remove unstable distributions)
-Stage 6: Model-Based       → ~120-180 features (optional importance ranking)
+Stage 6: Model-Based       → ~40-70 features (optional importance ranking)
          ─────────────────
          Final Feature Set  → stored in feature_schema.json + Parquet
 ```
@@ -152,9 +152,9 @@ Output: `cleaning_config.json` with imputation values, clip bounds, dropped colu
 
 | Parameter | Initial | Search Range |
 |-----------|---------|--------------|
-| n_estimators | 300 | {100, 200, 300, 500, 1000} |
-| max_samples | 256 | {128, 256, 512, 1024, 2048} |
-| max_features | 0.5 | {0.3, 0.5, 0.7, 1.0} |
+| n_estimators | 200 | {100, 200, 300, 500, 1000} |
+| max_samples | 0.7 | {256, 0.4, 0.7, 0.9} |
+| max_features | 1.0 | {0.5, 0.7, 1.0} |
 
 ### Threshold Tuning
 - Use benign validation set (1,500 samples)
@@ -196,8 +196,9 @@ C++ Complexity  ┌──────────────┬─────�
 
 | Set | Size | Usage |
 |-----|------|-------|
-| Benign Train | 15,400 | Feature selection + IF training |
-| Benign Val | 1,500 | Threshold tuning, hyperparameter selection |
+| Benign Train | 32000 | Feature selection + IF training |
+| Benign Val | 5000 | Threshold tuning, hyperparameter selection |
+| Malware Val | 4200 | Threshold tuning, hyperparametere selection |
 | Benign Test | 2,800 | Final FPR verification (never tuned on) |
 | Malware Test | 2,500 | TPR/AUC evaluation (never trained on) |
 
